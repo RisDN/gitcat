@@ -1,0 +1,25 @@
+[package]
+name = "gitcat-desktop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "gitcat_desktop_lib"
+# GitCat currently ships as a desktop executable. Keeping this crate as an
+# `rlib` avoids producing an unused Windows GNU DLL; PE DLLs are limited to
+# 65,535 exports and the transitive Tauri/WebView2 graph exceeds that limit.
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+gitcat-contracts = { path = "../../../crates/gitcat-contracts" }
+gitcat-core = { path = "../../../crates/gitcat-core" }
+gitcat-git-cli = { path = "../../../crates/gitcat-git-cli" }
+serde.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tokio-util.workspace = true

@@ -1,0 +1,439 @@
+use std::sync::Arc;
+
+use gitcat_contracts::{
+    ApiError, ApiResult, CloneOptions, CommitActionAvailability, CommitDetails, CommitOptions,
+    CommitSearchQuery, CommitSearchResult, ContinueOperation, DiffRequest, ExpectedState,
+    FetchOptions, FileDiff, GitVersion, HistoryPage, HistoryQuery, MutationResult, PersistedState,
+    PullOptions, PushOptions, RepositoryId, RepositoryInfo, RepositorySnapshot, ResetMode,
+    StashEntry,
+};
+use gitcat_core::{CoreApi, JsonStateStore};
+use gitcat_git_cli::GitCliBackend;
+use serde::Serialize;
+use tauri::{Manager, State};
+use tokio_util::sync::CancellationToken;
+
+#[derive(Debug, Serialize)]
+pub struct OpenedRepository {
+    pub repository_id: RepositoryId,
+    pub info: RepositoryInfo,
+}
+
+impl From<(RepositoryId, RepositoryInfo)> for OpenedRepository {
+    fn from((repository_id, info): (RepositoryId, RepositoryInfo)) -> Self {
+        Self {
+            repository_id,
+            info,
+        }
+    }
+}
+
+#[tauri::command]
+async fn git_probe(core: State<'_, Arc<CoreApi>>) -> ApiResult<GitVersion> {
+    core.probe().await
+}
+
+#[tauri::command]
+async fn repository_open(
+    core: State<'_, Arc<CoreApi>>,
+    path: String,
+) -> ApiResult<OpenedRepository> {
+    core.open(path).await.map(Into::into)
+}
+
+#[tauri::command]
+async fn repository_init(
+    core: State<'_, Arc<CoreApi>>,
+    path: String,
+    default_branch: String,
+) -> ApiResult<OpenedRepository> {
+    core.init(path, &default_branch).await.map(Into::into)
+}
+
+#[tauri::command]
+async fn repository_clone(
+    core: State<'_, Arc<CoreApi>>,
+    options: CloneOptions,
+) -> ApiResult<OpenedRepository> {
+    core.clone_repository(&options, CancellationToken::new())
+        .await
+        .map(Into::into)
+}
+
+#[tauri::command]
+async fn repository_close(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+) -> ApiResult<()> {
+    core.close(&repository_id).await
+}
+
+#[tauri::command]
+async fn repository_snapshot(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+) -> ApiResult<RepositorySnapshot> {
+    core.snapshot(&repository_id).await
+}
+
+#[tauri::command]
+async fn history_page(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    query: HistoryQuery,
+) -> ApiResult<HistoryPage> {
+    core.history(&repository_id, &query).await
+}
+
+#[tauri::command]
+async fn history_search(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    query: CommitSearchQuery,
+) -> ApiResult<CommitSearchResult> {
+    core.search(&repository_id, &query).await
+}
+
+#[tauri::command]
+async fn commit_details(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    oid: String,
+    parent_index: usize,
+) -> ApiResult<CommitDetails> {
+    core.details(&repository_id, &oid, parent_index).await
+}
+
+#[tauri::command]
+async fn file_diff(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    request: DiffRequest,
+) -> ApiResult<FileDiff> {
+    core.diff(&repository_id, &request).await
+}
+
+#[tauri::command]
+async fn paths_stage(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    paths: Vec<String>,
+) -> ApiResult<MutationResult> {
+    core.stage(&repository_id, &paths).await
+}
+
+#[tauri::command]
+async fn paths_unstage(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    paths: Vec<String>,
+) -> ApiResult<MutationResult> {
+    core.unstage(&repository_id, &paths).await
+}
+
+#[tauri::command]
+async fn create_commit(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    options: CommitOptions,
+) -> ApiResult<MutationResult> {
+    core.commit(&repository_id, &options).await
+}
+
+#[tauri::command]
+async fn branch_create(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    name: String,
+    start_oid: String,
+    checkout: bool,
+) -> ApiResult<MutationResult> {
+    core.create_branch(&repository_id, &name, &start_oid, checkout)
+        .await
+}
+
+#[tauri::command]
+async fn branch_checkout(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    name: String,
+) -> ApiResult<MutationResult> {
+    core.checkout_branch(&repository_id, &name).await
+}
+
+#[tauri::command]
+async fn branch_rename(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    old_name: String,
+    new_name: String,
+) -> ApiResult<MutationResult> {
+    core.rename_branch(&repository_id, &old_name, &new_name)
+        .await
+}
+
+#[tauri::command]
+async fn branch_delete(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    name: String,
+    force: bool,
+    confirmed: bool,
+    expected: ExpectedState,
+) -> ApiResult<MutationResult> {
+    core.delete_branch(&repository_id, &name, force, confirmed, &expected)
+        .await
+}
+
+#[tauri::command]
+async fn branch_set_upstream(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    branch: String,
+    upstream: String,
+) -> ApiResult<MutationResult> {
+    core.set_upstream(&repository_id, &branch, &upstream).await
+}
+
+#[tauri::command]
+async fn branch_merge(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    branch: String,
+) -> ApiResult<MutationResult> {
+    core.merge_branch(&repository_id, &branch).await
+}
+
+#[tauri::command]
+async fn remote_fetch(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    options: FetchOptions,
+) -> ApiResult<MutationResult> {
+    core.fetch(&repository_id, &options, CancellationToken::new())
+        .await
+}
+
+#[tauri::command]
+async fn remote_pull(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    options: PullOptions,
+) -> ApiResult<MutationResult> {
+    core.pull(&repository_id, &options, CancellationToken::new())
+        .await
+}
+
+#[tauri::command]
+async fn remote_push(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    options: PushOptions,
+) -> ApiResult<MutationResult> {
+    core.push(&repository_id, &options, CancellationToken::new())
+        .await
+}
+
+#[tauri::command]
+async fn commit_checkout(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    oid: String,
+) -> ApiResult<MutationResult> {
+    core.checkout_commit(&repository_id, &oid).await
+}
+
+#[tauri::command]
+async fn tag_create(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    name: String,
+    oid: String,
+    message: Option<String>,
+) -> ApiResult<MutationResult> {
+    core.create_tag(&repository_id, &name, &oid, message.as_deref())
+        .await
+}
+
+#[tauri::command]
+async fn commit_cherry_pick(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    oid: String,
+    mainline_parent: Option<u32>,
+) -> ApiResult<MutationResult> {
+    core.cherry_pick(&repository_id, &oid, mainline_parent)
+        .await
+}
+
+#[tauri::command]
+async fn commit_revert(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    oid: String,
+    mainline_parent: Option<u32>,
+) -> ApiResult<MutationResult> {
+    core.revert_commit(&repository_id, &oid, mainline_parent)
+        .await
+}
+
+#[tauri::command]
+async fn commit_reset(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    oid: String,
+    mode: ResetMode,
+    confirmed: bool,
+    expected: ExpectedState,
+) -> ApiResult<MutationResult> {
+    core.reset_to_commit(&repository_id, &oid, mode, confirmed, &expected)
+        .await
+}
+
+#[tauri::command]
+async fn commit_action_availability(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    oid: String,
+) -> ApiResult<Vec<CommitActionAvailability>> {
+    core.commit_action_availability(&repository_id, &oid).await
+}
+
+#[tauri::command]
+async fn operation_continue(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    operation: ContinueOperation,
+) -> ApiResult<MutationResult> {
+    core.continue_operation(&repository_id, operation).await
+}
+
+#[tauri::command]
+async fn operation_abort(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    operation: ContinueOperation,
+) -> ApiResult<MutationResult> {
+    core.abort_operation(&repository_id, operation).await
+}
+
+#[tauri::command]
+async fn stash_list(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+) -> ApiResult<Vec<StashEntry>> {
+    core.stash_list(&repository_id).await
+}
+
+#[tauri::command]
+async fn stash_push(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    message: Option<String>,
+    include_untracked: bool,
+) -> ApiResult<MutationResult> {
+    core.stash_push(&repository_id, message.as_deref(), include_untracked)
+        .await
+}
+
+#[tauri::command]
+async fn stash_apply(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    index: usize,
+    pop: bool,
+) -> ApiResult<MutationResult> {
+    core.stash_apply(&repository_id, index, pop).await
+}
+
+#[tauri::command]
+async fn stash_drop(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    index: usize,
+    confirmed: bool,
+    expected: ExpectedState,
+) -> ApiResult<MutationResult> {
+    core.stash_drop(&repository_id, index, confirmed, &expected)
+        .await
+}
+
+#[tauri::command]
+async fn persisted_state_load(store: State<'_, JsonStateStore>) -> ApiResult<PersistedState> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || store.load())
+        .await
+        .map_err(task_join_error)?
+}
+
+#[tauri::command]
+async fn persisted_state_save(
+    store: State<'_, JsonStateStore>,
+    state: PersistedState,
+) -> ApiResult<()> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || store.save(&state))
+        .await
+        .map_err(task_join_error)?
+}
+
+fn task_join_error(error: impl std::fmt::Display) -> ApiError {
+    ApiError::new(
+        gitcat_contracts::ErrorCode::Internal,
+        "background state task failed",
+    )
+    .with_details(error.to_string())
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            let state_path = app.path().app_data_dir()?.join("state.json");
+            let backend = Arc::new(GitCliBackend::default());
+            app.manage(Arc::new(CoreApi::new(backend)));
+            app.manage(JsonStateStore::new(state_path));
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            git_probe,
+            repository_open,
+            repository_init,
+            repository_clone,
+            repository_close,
+            repository_snapshot,
+            history_page,
+            history_search,
+            commit_details,
+            file_diff,
+            paths_stage,
+            paths_unstage,
+            create_commit,
+            branch_create,
+            branch_checkout,
+            branch_rename,
+            branch_delete,
+            branch_set_upstream,
+            branch_merge,
+            remote_fetch,
+            remote_pull,
+            remote_push,
+            commit_checkout,
+            tag_create,
+            commit_cherry_pick,
+            commit_revert,
+            commit_reset,
+            commit_action_availability,
+            operation_continue,
+            operation_abort,
+            stash_list,
+            stash_push,
+            stash_apply,
+            stash_drop,
+            persisted_state_load,
+            persisted_state_save,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running GitCat");
+}

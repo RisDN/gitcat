@@ -1,0 +1,9 @@
+/target/
+/apps/desktop/node_modules/
+/apps/desktop/dist/
+/apps/desktop/output/
+/apps/desktop/.playwright-cli/
+/.idea/
+/.vscode/
+*.tsbuildinfo
+*.log

@@ -1,0 +1,20 @@
+[package]
+name = "gitcat-git-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+dunce.workspace = true
+gitcat-contracts = { path = "../gitcat-contracts" }
+gitcat-core = { path = "../gitcat-core" }
+tokio.workspace = true
+tokio-util.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

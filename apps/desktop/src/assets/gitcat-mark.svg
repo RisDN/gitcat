@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="GitCat">
+  <path fill="#111318" d="M12 20 20 8l9 9h6l9-9 8 12v22c0 9-9 16-20 16S12 51 12 42Z"/>
+  <path fill="#21bdd8" d="M20 29c5-6 19-6 24 0-3 11-7 17-12 17s-9-6-12-17Z"/>
+  <circle cx="25" cy="31" r="2.5" fill="#111318"/><circle cx="39" cy="31" r="2.5" fill="#111318"/>
+  <path d="m28 39 4 3 4-3" fill="none" stroke="#111318" stroke-linecap="round" stroke-width="2"/>
+</svg>
