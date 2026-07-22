@@ -1,6 +1,7 @@
 import { memo, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type {
+  CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
 } from "react";
@@ -8,11 +9,14 @@ import type {
 import type { CommitSummary } from "../lib/types";
 
 const ROW_HEIGHT = 28;
+const ROW_GAP = 4;
+const ROW_STRIDE = ROW_HEIGHT + ROW_GAP;
 const LANE_WIDTH = 18;
 const GRAPH_PADDING = 24;
 const REF_COLUMN_WIDTH = 140;
 const MIN_GRAPH_WIDTH = 96;
 const LANE_COLOR_COUNT = 8;
+const AVATAR_RADIUS = 11;
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
@@ -51,6 +55,12 @@ interface GraphGeometry {
   height: number;
 }
 
+interface TimeMarker {
+  key: string;
+  label: string;
+  top: number;
+}
+
 interface CommitRowProps {
   commit: CommitSummary;
   index: number;
@@ -70,7 +80,7 @@ function laneX(lane: number): number {
 }
 
 function rowY(index: number): number {
-  return index * ROW_HEIGHT + ROW_HEIGHT / 2;
+  return index * ROW_STRIDE + ROW_HEIGHT / 2;
 }
 
 function laneClass(base: string, lane: number): string {
@@ -111,8 +121,8 @@ function buildGraphGeometry(commits: readonly CommitSummary[]): GraphGeometry {
       const startX = laneX(edge.from_lane);
       const startY = rowY(index);
       const endX = laneX(edge.to_lane);
-      const endY = Math.min(rowY(targetIndex), commits.length * ROW_HEIGHT);
-      const bendY = Math.min(startY + ROW_HEIGHT * 0.55, endY);
+      const endY = Math.min(rowY(targetIndex), commits.length * ROW_STRIDE - ROW_GAP);
+      const bendY = Math.min(startY + ROW_STRIDE * 0.55, endY);
       const data = startX === endX
         ? `M ${startX} ${startY} L ${endX} ${endY}`
         : `M ${startX} ${startY} C ${startX} ${bendY}, ${endX} ${bendY}, ${endX} ${endY}`;
@@ -129,7 +139,7 @@ function buildGraphGeometry(commits: readonly CommitSummary[]): GraphGeometry {
   return {
     paths,
     width: getCommitGraphWidth(commits),
-    height: commits.length * ROW_HEIGHT,
+    height: commits.length * ROW_STRIDE - ROW_GAP,
   };
 }
 
@@ -148,6 +158,49 @@ function dateFromUnixSeconds(seconds: number): Date | null {
 function defaultFormatTimestamp(seconds: number): string {
   const date = dateFromUnixSeconds(seconds);
   return date ? dateFormatter.format(date) : "Unknown date";
+}
+
+function plural(value: number, unit: string): string {
+  return `${value} ${unit}${value === 1 ? "" : "s"} ago`;
+}
+
+function relativeTimeMarkerLabel(seconds: number, nowSeconds: number): string {
+  const elapsedSeconds = Math.max(0, nowSeconds - seconds);
+  const elapsedMinutes = Math.floor(elapsedSeconds / 60);
+  const elapsedHours = Math.floor(elapsedSeconds / 3_600);
+  const elapsedDays = Math.floor(elapsedSeconds / 86_400);
+
+  if (elapsedMinutes < 1) return "just now";
+  if (elapsedHours < 1) return elapsedMinutes === 1 ? "a minute ago" : plural(elapsedMinutes, "minute");
+  if (elapsedDays < 1) return elapsedHours === 1 ? "an hour ago" : plural(elapsedHours, "hour");
+  if (elapsedDays === 1) return "yesterday";
+  if (elapsedDays < 7) return plural(elapsedDays, "day");
+  if (elapsedDays < 14) return "a week ago";
+  if (elapsedDays < 30) return plural(Math.floor(elapsedDays / 7), "week");
+  if (elapsedDays < 60) return "a month ago";
+  if (elapsedDays < 365) return plural(Math.floor(elapsedDays / 30), "month");
+  if (elapsedDays < 730) return "a year ago";
+  return plural(Math.floor(elapsedDays / 365), "year");
+}
+
+function buildTimeMarkers(commits: readonly CommitSummary[], nowSeconds: number): TimeMarker[] {
+  const markers: TimeMarker[] = [];
+  let previousLabel: string | null = null;
+
+  for (let index = 0; index < commits.length; index += 1) {
+    const commit = commits[index];
+    const label = relativeTimeMarkerLabel(commit.authored_at.seconds, nowSeconds);
+    if (index > 0 && label !== previousLabel) {
+      markers.push({
+        key: `${commit.oid}:${label}`,
+        label,
+        top: Math.max(0, index * ROW_STRIDE - ROW_GAP / 2),
+      });
+    }
+    previousLabel = label;
+  }
+
+  return markers;
 }
 
 function RowShaButton({ oid, shortOid, onCopy }: { oid: string; shortOid: string; onCopy: (oid: string) => void }) {
@@ -275,6 +328,18 @@ const CommitRow = memo(function CommitRow({
     timestamp,
     searchMatch ? "search result" : "",
   ].filter(Boolean).join(", ");
+  const branchOrigin = laneX(commit.graph.lane);
+  const branchHoverOrigin = branchOrigin - AVATAR_RADIUS;
+  const branchInteractiveOrigin = branchOrigin + AVATAR_RADIUS;
+  const rowStyle = {
+    "--gc-branch-row-origin": `${REF_COLUMN_WIDTH + branchHoverOrigin}px`,
+    "--gc-row-branch-color": `var(--gc-lane-${commit.graph.lane % LANE_COLOR_COUNT})`,
+  } as CSSProperties;
+  const graphSlotStyle = {
+    width: graphWidth,
+    "--gc-branch-origin": `${branchOrigin}px`,
+    "--gc-branch-interactive-origin": `${branchInteractiveOrigin}px`,
+  } as CSSProperties;
 
   return (
     <div
@@ -288,6 +353,7 @@ const CommitRow = memo(function CommitRow({
       onContextMenu={handleContextMenu}
       onKeyDown={handleKeyDown}
       role="row"
+      style={rowStyle}
       tabIndex={selected || (index === 0 && !selected) ? 0 : -1}
     >
       <span aria-label="References" className="gc-commit-row__decorations" role="cell">
@@ -301,7 +367,12 @@ const CommitRow = memo(function CommitRow({
           </span>
         ))}
       </span>
-      <span aria-label="Graph" className="gc-commit-row__graph-slot" role="cell" style={{ width: graphWidth }}>
+      <span
+        aria-label="Graph"
+        className={laneClass("gc-commit-row__graph-slot", commit.graph.lane)}
+        role="cell"
+        style={graphSlotStyle}
+      >
         <span
           aria-hidden="true"
           className={`gc-commit-row__avatar${selected ? " gc-commit-row__avatar--selected" : ""}`}
@@ -341,6 +412,7 @@ export function CommitGraph({
   formatTimestamp,
 }: CommitGraphProps) {
   const geometry = useMemo(() => buildGraphGeometry(commits), [commits]);
+  const timeMarkers = useMemo(() => buildTimeMarkers(commits, Math.floor(Date.now() / 1_000)), [commits]);
 
   if (commits.length === 0) {
     return (
@@ -403,6 +475,13 @@ export function CommitGraph({
             selected={commit.oid === selectedOid}
             total={commits.length}
           />
+        ))}
+      </div>
+      <div aria-hidden="true" className="gc-commit-time-markers">
+        {timeMarkers.map((marker) => (
+          <span className="gc-commit-time-marker" key={marker.key} style={{ top: marker.top }}>
+            <span>{marker.label}</span>
+          </span>
         ))}
       </div>
     </div>

@@ -27,6 +27,7 @@
   --gc-lane-7: #bd71db;
   --gc-row-hover: color-mix(in srgb, var(--gc-accent) 8%, transparent);
   --gc-row-selected: color-mix(in srgb, var(--gc-accent) 16%, var(--gc-panel));
+  --gc-row-gap: 4px;
   --gc-shadow: 0 18px 50px rgb(0 0 0 / 38%);
 }
 
@@ -471,12 +472,12 @@ kbd,
 .gc-loading-panel { display: flex; height: 160px; align-items: center; justify-content: center; gap: 8px; color: var(--gc-muted); }
 .gc-load-more { display: flex; margin: 12px auto 20px; }
 
-.gc-wip-row { position: relative; display: grid; width: 100%; height: 28px; min-width: 780px; grid-template-columns: 140px var(--gc-graph-column-width, 96px) minmax(180px, 1fr) 86px 116px 64px; align-items: center; padding: 0; border-bottom: 1px solid color-mix(in srgb, var(--gc-border) 72%, transparent); background: color-mix(in srgb, var(--gc-warning) 6%, transparent); color: var(--gc-text); cursor: pointer; text-align: left; }
+.gc-wip-row { position: relative; display: grid; width: 100%; height: 28px; min-width: 780px; grid-template-columns: 140px var(--gc-graph-column-width, 96px) minmax(180px, 1fr) 86px 116px 64px; align-items: center; margin-bottom: var(--gc-row-gap); padding: 0; border-radius: 4px; background: color-mix(in srgb, var(--gc-warning) 6%, transparent); color: var(--gc-text); cursor: pointer; text-align: left; }
 .gc-wip-row:hover { background: color-mix(in srgb, var(--gc-warning) 10%, transparent); }
 .gc-wip-row--selected { background: color-mix(in srgb, var(--gc-warning) 16%, var(--gc-panel)); }
 .gc-wip-row__refs { display: flex; min-width: 0; padding: 0 6px; overflow: hidden; }
 .gc-wip-row__rail { position: relative; width: var(--gc-graph-column-width, 96px); height: 28px; }
-.gc-wip-row__rail::before { position: absolute; top: 14px; bottom: -14px; left: 24px; width: 2px; background: var(--gc-warning); content: ""; }
+.gc-wip-row__rail::before { position: absolute; top: 14px; bottom: calc(-14px - var(--gc-row-gap)); left: 24px; width: 2px; background: var(--gc-warning); content: ""; }
 .gc-wip-row__rail i { position: absolute; z-index: 3; top: 50%; left: 24px; width: 13px; height: 13px; border: 2px dashed var(--gc-warning); border-radius: 50%; background: var(--gc-background); transform: translate(-50%, -50%); }
 .gc-wip-row__message { display: flex; min-width: 0; align-items: baseline; gap: 8px; padding: 0 7px; overflow: hidden; white-space: nowrap; }
 .gc-wip-row__message strong { font-size: 11px; }
@@ -487,9 +488,9 @@ kbd,
 /* Commit DAG */
 .gc-graph-columns { position: sticky; z-index: 8; top: 0; display: grid; height: 24px; min-width: 780px; grid-template-columns: 140px var(--gc-graph-column-width, 96px) minmax(180px, 1fr) 86px 116px 64px; align-items: center; border-bottom: 1px solid var(--gc-border); background: color-mix(in srgb, var(--gc-panel) 94%, black); color: var(--gc-muted); font-size: 8px; font-weight: 750; letter-spacing: 0.08em; text-transform: uppercase; }
 .gc-graph-columns > span { min-width: 0; padding: 0 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gc-commit-graph { position: relative; min-width: 780px; background-image: linear-gradient(to bottom, transparent 27px, color-mix(in srgb, var(--gc-border) 62%, transparent) 28px); background-size: 100% 28px; }
+.gc-commit-graph { position: relative; min-width: 780px; }
 .gc-commit-graph--empty { display: grid; min-width: 0; min-height: 180px; place-items: center; color: var(--gc-muted); }
-.gc-commit-graph__lanes { position: absolute; z-index: 2; top: 0; left: 0; overflow: visible; pointer-events: none; }
+.gc-commit-graph__lanes { position: absolute; z-index: 1; top: 0; left: 0; overflow: visible; pointer-events: none; }
 .gc-commit-graph__edge { stroke: var(--gc-lane-0); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .gc-commit-graph__edge--merge { stroke-width: 2.5; }
 .gc-commit-graph__node { fill: var(--gc-background); stroke: var(--gc-lane-0); stroke-width: 2.4; }
@@ -510,17 +511,32 @@ kbd,
 .gc-commit-graph__node--lane-5.gc-commit-graph__node--selected { fill: var(--gc-lane-5); }
 .gc-commit-graph__node--lane-6.gc-commit-graph__node--selected { fill: var(--gc-lane-6); }
 .gc-commit-graph__node--lane-7.gc-commit-graph__node--selected { fill: var(--gc-lane-7); }
-.gc-commit-graph__rows { position: relative; }
-.gc-commit-row { position: relative; display: grid; height: 28px; min-width: 780px; grid-template-columns: 140px var(--gc-graph-column-width, 96px) minmax(180px, 1fr) 86px 116px 64px; align-items: center; border-bottom: 1px solid transparent; cursor: default; }
-.gc-commit-row:hover { background: var(--gc-row-hover); }
-.gc-commit-row--selected { background: var(--gc-row-selected); }
-.gc-commit-row--selected:hover { background: var(--gc-row-selected); }
+.gc-commit-graph__rows { position: relative; z-index: 2; display: grid; gap: var(--gc-row-gap); }
+.gc-commit-time-markers { position: absolute; z-index: 3; inset: 0; pointer-events: none; }
+.gc-commit-time-marker { position: absolute; right: 8px; left: 0; height: 1px; border-top: 1px solid color-mix(in srgb, var(--gc-border) 54%, transparent); }
+.gc-commit-time-marker > span { position: absolute; top: 0; right: 0; padding: 1px 5px; border-radius: 3px; background: color-mix(in srgb, var(--gc-panel) 78%, var(--gc-background)); color: color-mix(in srgb, var(--gc-muted) 78%, transparent); font-size: 8px; font-weight: 700; line-height: 1.2; transform: translateY(-50%); white-space: nowrap; }
+.gc-commit-row { position: relative; display: grid; height: 28px; min-width: 780px; grid-template-columns: 140px var(--gc-graph-column-width, 96px) minmax(180px, 1fr) 86px 116px 64px; align-items: center; border-radius: 4px; cursor: default; }
+.gc-commit-row::before { position: absolute; z-index: 0; top: 50%; right: 0; left: var(--gc-branch-row-origin, 164px); height: 22px; border-radius: 11px 3px 3px 11px; content: ""; pointer-events: none; transform: translateY(-50%); }
+.gc-commit-row:hover::before { background: color-mix(in srgb, var(--gc-row-branch-color, var(--gc-accent)) 1%, color-mix(in srgb, var(--gc-panel) 74%, #2f4a74)); }
+.gc-commit-row--selected::before,
+.gc-commit-row--selected:hover::before { background: color-mix(in srgb, var(--gc-row-branch-color, var(--gc-accent)) 8%, color-mix(in srgb, var(--gc-panel) 74%, #2f4a74)); }
+.gc-commit-row > * { position: relative; z-index: 1; }
 .gc-commit-row--search-match:not(.gc-commit-row--selected) { background: color-mix(in srgb, var(--gc-warning) 8%, transparent); }
 .gc-commit-row--search-match:not(.gc-commit-row--selected)::after { position: absolute; top: 8px; right: 5px; bottom: 8px; width: 2px; background: var(--gc-warning); content: ""; }
-.gc-commit-row__graph-slot { position: relative; height: 28px; }
-.gc-commit-row__avatar { position: absolute; z-index: 3; top: 50%; display: grid; width: 18px; height: 18px; place-items: center; border: 2px solid var(--gc-accent); border-radius: 50%; background: var(--gc-panel); color: var(--gc-text); font: 700 8px/1 "Segoe UI", sans-serif; transform: translate(-50%, -50%); }
-.gc-commit-row__avatar--selected { box-shadow: 0 0 0 2px color-mix(in srgb, var(--gc-text) 70%, transparent), 0 0 7px color-mix(in srgb, var(--gc-accent) 55%, transparent); }
-.gc-commit-row__subject { min-width: 0; padding: 0 7px; overflow: hidden; color: var(--gc-text); font-size: 11px; font-weight: 570; text-overflow: ellipsis; white-space: nowrap; }
+.gc-commit-row__graph-slot { --gc-graph-slot-color: var(--gc-lane-0); position: relative; height: 22px; overflow: hidden; border-right: 2px solid var(--gc-graph-slot-color); background: linear-gradient(to right, transparent 0 var(--gc-branch-origin, 24px), color-mix(in srgb, var(--gc-graph-slot-color) 18%, transparent) var(--gc-branch-origin, 24px) 100%); }
+.gc-commit-row__graph-slot::after { position: absolute; top: 0; right: 0; bottom: 0; left: var(--gc-branch-interactive-origin, 35px); cursor: pointer; content: ""; }
+.gc-commit-row--selected .gc-commit-row__graph-slot { background: linear-gradient(to right, transparent 0 var(--gc-branch-origin, 24px), color-mix(in srgb, var(--gc-graph-slot-color) 24%, var(--gc-panel)) var(--gc-branch-origin, 24px) 100%); }
+.gc-commit-row__graph-slot--lane-0 { --gc-graph-slot-color: var(--gc-lane-0); }
+.gc-commit-row__graph-slot--lane-1 { --gc-graph-slot-color: var(--gc-lane-1); }
+.gc-commit-row__graph-slot--lane-2 { --gc-graph-slot-color: var(--gc-lane-2); }
+.gc-commit-row__graph-slot--lane-3 { --gc-graph-slot-color: var(--gc-lane-3); }
+.gc-commit-row__graph-slot--lane-4 { --gc-graph-slot-color: var(--gc-lane-4); }
+.gc-commit-row__graph-slot--lane-5 { --gc-graph-slot-color: var(--gc-lane-5); }
+.gc-commit-row__graph-slot--lane-6 { --gc-graph-slot-color: var(--gc-lane-6); }
+.gc-commit-row__graph-slot--lane-7 { --gc-graph-slot-color: var(--gc-lane-7); }
+.gc-commit-row__avatar { position: absolute; z-index: 3; top: 50%; display: grid; width: 22px; height: 22px; place-items: center; border: 2px solid var(--gc-accent); border-radius: 50%; background: var(--gc-panel); color: var(--gc-text); font: 700 8px/1 "Segoe UI", sans-serif; transform: translate(-50%, -50%); }
+.gc-commit-row__avatar--selected { box-shadow: none; }
+.gc-commit-row__subject { min-width: 0; padding: 0 7px; overflow: hidden; color: var(--gc-text); cursor: pointer; font-size: 11px; font-weight: 570; text-overflow: ellipsis; white-space: nowrap; }
 .gc-commit-row__decorations { display: flex; min-width: 0; gap: 3px; padding: 0 6px; overflow: hidden; }
 .gc-ref-label { display: inline-flex; max-width: 125px; align-items: center; padding: 1px 5px; border: 1px solid color-mix(in srgb, var(--gc-accent) 45%, var(--gc-border)); border-radius: 3px; background: color-mix(in srgb, var(--gc-accent) 9%, var(--gc-panel)); color: var(--gc-accent); font-size: 8px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
 .gc-ref-label--remote_branch { border-color: color-mix(in srgb, var(--gc-warning) 45%, var(--gc-border)); color: var(--gc-warning); }
@@ -528,7 +544,7 @@ kbd,
 .gc-ref-label--head { background: color-mix(in srgb, var(--gc-accent) 20%, var(--gc-panel)); box-shadow: inset 2px 0 0 var(--gc-accent); }
 .gc-commit-row__author,
 .gc-commit-row__time,
-.gc-commit-row__oid-wrap { min-width: 0; padding: 0 6px; overflow: hidden; color: var(--gc-muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.gc-commit-row__oid-wrap { min-width: 0; padding: 0 6px; overflow: hidden; color: var(--gc-muted); cursor: pointer; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .gc-commit-row__oid-wrap { overflow: visible; }
 .gc-commit-row__oid { color: color-mix(in srgb, var(--gc-muted) 70%, transparent); }
 
@@ -632,7 +648,8 @@ kbd,
 
 .gc-file-tree { min-width: 0; min-height: 0; overflow: auto; }
 .gc-details__files > .gc-file-tree { flex: 1; padding: 3px 6px 8px; }
-.gc-file-tree__items { min-width: 0; }
+.gc-file-tree__items,
+.gc-file-tree__branch [role="list"] { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
 .gc-file-tree__expand { display: flex; min-height: 29px; align-items: center; padding: 0 8px; background: transparent; color: color-mix(in srgb, var(--gc-text) 83%, var(--gc-muted)); cursor: pointer; font-size: 10px; }
 .gc-file-tree__expand:hover { color: var(--gc-accent); }
 .gc-file-tree__row { display: flex; min-width: 0; align-items: center; border-radius: 3px; }
