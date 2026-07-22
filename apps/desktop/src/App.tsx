@@ -10,6 +10,7 @@ import {
   GitCommitHorizontal,
   GitPullRequestArrow,
   LoaderCircle,
+  Pencil,
   RotateCcw,
   Tag,
   Trash2,
@@ -1908,6 +1909,7 @@ function App() {
                       <span className="gc-wip-row__rail"><i /></span>
                       <span className="gc-wip-row__message">
                         <strong>// WIP</strong>
+                        <Pencil aria-hidden="true" className="gc-wip-row__change-icon" size={11} />
                         <small>{snapshot.status.entries.length} uncommitted change{snapshot.status.entries.length === 1 ? "" : "s"}</small>
                       </span>
                       <span className={activeConflictCount ? "gc-wip-row__conflicts" : "gc-muted"}>

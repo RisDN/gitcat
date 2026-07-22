@@ -484,8 +484,9 @@ kbd,
 .gc-wip-row--selected .gc-wip-row__rail { background: linear-gradient(to right, transparent 0 var(--gc-branch-origin, 24px), color-mix(in srgb, var(--gc-graph-slot-color) 24%, var(--gc-panel)) var(--gc-branch-origin, 24px) 100%); }
 .gc-wip-row__rail::before { position: absolute; top: calc(50% + 12px); bottom: calc(-17px - var(--gc-row-gap)); left: var(--gc-wip-lane-x, 24px); width: 2px; background: var(--gc-graph-slot-color); content: ""; transform: translateX(-50%); }
 .gc-wip-row__rail i { position: absolute; z-index: 3; top: 50%; left: var(--gc-wip-lane-x, 24px); width: 24px; height: 24px; border: 2px dashed var(--gc-graph-slot-color); border-radius: 50%; background: var(--gc-background); transform: translate(-50%, -50%); }
-.gc-wip-row__message { display: flex; min-width: 0; align-items: baseline; gap: 8px; padding: 0 7px; overflow: hidden; white-space: nowrap; }
+.gc-wip-row__message { display: flex; min-width: 0; align-items: center; gap: 6px; padding: 0 7px; overflow: hidden; white-space: nowrap; }
 .gc-wip-row__message strong { font-size: 11px; }
+.gc-wip-row__change-icon { flex: 0 0 auto; color: var(--gc-warning); stroke-width: 2.5; }
 .gc-wip-row small { overflow: hidden; color: var(--gc-muted); font-size: 9px; text-overflow: ellipsis; }
 .gc-wip-row__conflicts { display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; color: var(--gc-danger); font-size: 9px; }
 .gc-wip-row > b { justify-self: center; color: var(--gc-row-branch-color, var(--gc-warning)); font: 700 9px/1 "Cascadia Code", monospace; }
