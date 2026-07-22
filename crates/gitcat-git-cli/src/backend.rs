@@ -2364,18 +2364,39 @@ impl GitBackend for GitCliBackend {
         path: &Path,
         oid: &str,
     ) -> ApiResult<Vec<CommitActionAvailability>> {
-        self.resolve_commit(path, oid).await?;
+        let oid = self.resolve_commit(path, oid).await?;
         let (status_output, operation_state) =
             tokio::try_join!(self.status_output(path), self.operation_state(path))?;
         let parsed_status = parse_status(&status_output.stdout)?;
         let operation_busy = operation_state != RepositoryOperationState::Normal;
         let dirty = !parsed_status.status.clean;
         let reset_unavailable = !matches!(parsed_status.head, HeadState::Branch { .. });
-        let action = |kind, requires_clean, requires_confirmation| {
+        let head_oid = match &parsed_status.head {
+            HeadState::Branch { oid, .. } | HeadState::Detached { oid } => Some(oid.as_str()),
+            HeadState::Unborn { .. } => None,
+        };
+        let target_in_head_history = if let Some(head_oid) = head_oid {
+            Some(self.is_ancestor(path, &oid, head_oid).await?)
+        } else {
+            None
+        };
+        let cherry_pick_unavailable = match target_in_head_history {
+            Some(true) => Some("Commit is already in the current HEAD history"),
+            Some(false) => None,
+            None => Some("Check out a commit before cherry-picking"),
+        };
+        let revert_unavailable = match target_in_head_history {
+            Some(true) => None,
+            Some(false) => Some("Commit is not in the current HEAD history"),
+            None => Some("Check out a commit before reverting"),
+        };
+        let action = |kind, requires_clean, requires_confirmation, unavailable: Option<&str>| {
             let disabled_reason = if operation_busy {
                 Some("Finish or abort the current Git operation first".to_owned())
             } else if kind == CommitActionKind::Reset && reset_unavailable {
                 Some("Check out a local branch before resetting".to_owned())
+            } else if let Some(reason) = unavailable {
+                Some(reason.to_owned())
             } else if requires_clean && dirty {
                 Some("Working tree must be clean for this action".to_owned())
             } else {
@@ -2389,12 +2410,17 @@ impl GitBackend for GitCliBackend {
             }
         };
         Ok(vec![
-            action(CommitActionKind::Checkout, true, false),
-            action(CommitActionKind::CreateBranch, false, false),
-            action(CommitActionKind::CherryPick, true, false),
-            action(CommitActionKind::Revert, true, false),
-            action(CommitActionKind::Reset, false, true),
-            action(CommitActionKind::CreateTag, false, false),
+            action(CommitActionKind::Checkout, true, false, None),
+            action(CommitActionKind::CreateBranch, false, false, None),
+            action(
+                CommitActionKind::CherryPick,
+                true,
+                false,
+                cherry_pick_unavailable,
+            ),
+            action(CommitActionKind::Revert, true, false, revert_unavailable),
+            action(CommitActionKind::Reset, false, true, None),
+            action(CommitActionKind::CreateTag, false, false, None),
             CommitActionAvailability {
                 kind: CommitActionKind::CopySha,
                 enabled: true,
@@ -3825,6 +3851,92 @@ mod tests {
             .await
             .expect_err("detached reset rejected");
         assert_eq!(error.code, ErrorCode::UnsupportedOperation);
+    }
+
+    #[tokio::test]
+    async fn commit_action_availability_matches_current_head_context() {
+        let (directory, backend, base_oid) = committed_repository().await;
+        backend
+            .create_branch(directory.path(), "side", &base_oid, true)
+            .await
+            .expect("create side branch");
+        fs::write(directory.path().join("side.txt"), "side\n").expect("write side file");
+        backend
+            .stage_paths(directory.path(), &["side.txt".into()])
+            .await
+            .expect("stage side file");
+        backend
+            .create_commit(
+                directory.path(),
+                &CommitOptions {
+                    message: "side commit".into(),
+                    amend: false,
+                    signoff: false,
+                },
+            )
+            .await
+            .expect("commit side file");
+        let side_oid = backend
+            .head_oid(directory.path())
+            .await
+            .expect("read side HEAD")
+            .expect("side HEAD exists");
+        backend
+            .checkout_branch(directory.path(), "main")
+            .await
+            .expect("return to main");
+
+        let main_actions = backend
+            .commit_action_availability(directory.path(), &base_oid)
+            .await
+            .expect("main commit actions");
+        fn action(
+            actions: &[CommitActionAvailability],
+            kind: CommitActionKind,
+        ) -> &CommitActionAvailability {
+            actions
+                .iter()
+                .find(|action| action.kind == kind)
+                .expect("action exists")
+        }
+        assert!(action(&main_actions, CommitActionKind::Checkout).enabled);
+        assert!(action(&main_actions, CommitActionKind::CreateBranch).enabled);
+        assert!(action(&main_actions, CommitActionKind::CreateTag).enabled);
+        assert!(action(&main_actions, CommitActionKind::Reset).enabled);
+        assert!(!action(&main_actions, CommitActionKind::CherryPick).enabled);
+        assert!(
+            action(&main_actions, CommitActionKind::CherryPick)
+                .disabled_reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains("already in the current HEAD history"))
+        );
+        assert!(action(&main_actions, CommitActionKind::Revert).enabled);
+
+        let side_actions = backend
+            .commit_action_availability(directory.path(), &side_oid)
+            .await
+            .expect("side commit actions");
+        assert!(action(&side_actions, CommitActionKind::CherryPick).enabled);
+        assert!(!action(&side_actions, CommitActionKind::Revert).enabled);
+        assert!(
+            action(&side_actions, CommitActionKind::Revert)
+                .disabled_reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains("not in the current HEAD history"))
+        );
+
+        fs::write(directory.path().join("dirty.txt"), "dirty\n").expect("write dirty file");
+        let dirty_actions = backend
+            .commit_action_availability(directory.path(), &side_oid)
+            .await
+            .expect("dirty commit actions");
+        assert!(!action(&dirty_actions, CommitActionKind::Checkout).enabled);
+        assert!(!action(&dirty_actions, CommitActionKind::CherryPick).enabled);
+        assert!(!action(&dirty_actions, CommitActionKind::Revert).enabled);
+        assert!(action(&dirty_actions, CommitActionKind::CreateBranch).enabled);
+        assert!(action(&dirty_actions, CommitActionKind::CreateTag).enabled);
+        assert!(action(&dirty_actions, CommitActionKind::Reset).enabled);
+        assert!(action(&dirty_actions, CommitActionKind::CopySha).enabled);
     }
 
     #[test]

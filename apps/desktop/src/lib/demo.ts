@@ -1034,13 +1034,51 @@ class DemoGitCatApi implements GitCatApi {
     this.ensureRepository(repositoryId);
     if (!this.details.has(oid)) fail("invalid_revision", `Unknown demo commit: ${oid}`);
     const dirty = !this.snapshotValue.status.clean;
+    const operationBusy = this.snapshotValue.operation_state !== "normal";
+    const resetUnavailable = this.snapshotValue.head.kind !== "branch";
+    const headOid = this.headOid();
+    const targetIndex = this.commits.findIndex((commit) => commit.oid === oid);
+    const headIndex = headOid ? this.commits.findIndex((commit) => commit.oid === headOid) : -1;
+    const targetInHeadHistory = headIndex >= 0 && targetIndex >= headIndex;
+    const action = (
+      kind: CommitActionAvailability["kind"],
+      requiresClean: boolean,
+      requiresConfirmation: boolean,
+      unavailable: string | null = null,
+    ): CommitActionAvailability => {
+      const disabledReason = operationBusy
+        ? "Finish or abort the current Git operation first"
+        : kind === "reset" && resetUnavailable
+          ? "Check out a local branch before resetting"
+          : unavailable
+            ? unavailable
+            : requiresClean && dirty
+              ? "Working tree must be clean for this action"
+              : null;
+      return {
+        kind,
+        enabled: disabledReason === null,
+        disabled_reason: disabledReason,
+        requires_confirmation: requiresConfirmation,
+      };
+    };
+    const cherryPickUnavailable = !headOid
+      ? "Check out a commit before cherry-picking"
+      : targetInHeadHistory
+        ? "Commit is already in the current HEAD history"
+        : null;
+    const revertUnavailable = !headOid
+      ? "Check out a commit before reverting"
+      : targetInHeadHistory
+        ? null
+        : "Commit is not in the current HEAD history";
     return [
-      { kind: "checkout", enabled: !dirty, disabled_reason: dirty ? "Working tree has changes" : null, requires_confirmation: false },
-      { kind: "create_branch", enabled: true, disabled_reason: null, requires_confirmation: false },
-      { kind: "cherry_pick", enabled: true, disabled_reason: null, requires_confirmation: false },
-      { kind: "revert", enabled: true, disabled_reason: null, requires_confirmation: true },
-      { kind: "reset", enabled: true, disabled_reason: null, requires_confirmation: true },
-      { kind: "create_tag", enabled: true, disabled_reason: null, requires_confirmation: false },
+      action("checkout", true, false),
+      action("create_branch", false, false),
+      action("cherry_pick", true, false, cherryPickUnavailable),
+      action("revert", true, true, revertUnavailable),
+      action("reset", false, true),
+      action("create_tag", false, false),
       { kind: "copy_sha", enabled: true, disabled_reason: null, requires_confirmation: false },
     ];
   }
