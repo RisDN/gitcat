@@ -1726,7 +1726,14 @@ function App() {
                     status={snapshot.status}
                   />
                 ) : details ? (
-                  <CommitDetails details={details} onCopySha={() => void copySha(details.oid)} onSelectFile={openCommitFile} selectedPath={selectedPath} />
+                  <CommitDetails
+                    busy={busy || overviewLoading}
+                    details={details}
+                    onCopySha={() => void copySha(details.oid)}
+                    onReword={snapshot ? (message) => runMutation("Commit message updated", (repository) => gitcatApi.rewordCommit(repository.repository_id, details.oid, message, expectedState(snapshot))) : undefined}
+                    onSelectFile={openCommitFile}
+                    selectedPath={selectedPath}
+                  />
                 ) : (
                   <aside className="gc-details gc-details--loading"><Spinner label="Loading commit details" /> Select a commit</aside>
                 )}

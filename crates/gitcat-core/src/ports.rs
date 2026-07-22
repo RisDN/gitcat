@@ -64,6 +64,12 @@ pub trait GitBackend: Send + Sync {
         path: &Path,
         options: &CommitOptions,
     ) -> ApiResult<MutationResult>;
+    async fn reword_commit(
+        &self,
+        path: &Path,
+        oid: &str,
+        message: &str,
+    ) -> ApiResult<MutationResult>;
 
     async fn create_branch(
         &self,

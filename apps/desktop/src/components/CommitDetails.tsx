@@ -1,16 +1,24 @@
-import { CalendarClock, Check, GitCommitHorizontal } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { CalendarClock, Check, GitCommitHorizontal, Pencil } from "lucide-react";
+import { useEffect, useId, useMemo, useState } from "react";
 
 import type { ChangedFile, CommitDetails as CommitDetailsType } from "../lib/types";
-import { Badge } from "./Primitives";
+import { Badge, Button } from "./Primitives";
 import { FileTree, FileTreeControls } from "./FileTree";
 import type { FileTreeItem, FileViewMode } from "./FileTree";
 
 interface CommitDetailsProps {
   details: CommitDetailsType;
   selectedPath?: string;
+  busy?: boolean;
   onSelectFile: (file: ChangedFile) => void;
   onCopySha: () => void;
+  onReword?: (message: string) => Promise<boolean>;
+}
+
+function composeMessage(subject: string, body: string): string {
+  const trimmedBody = body.trim();
+  const trimmedSubject = subject.trim();
+  return trimmedBody ? `${trimmedSubject}\n\n${trimmedBody}` : trimmedSubject;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -23,9 +31,29 @@ const STATUS_LABEL: Record<string, string> = {
   unmerged: "U",
 };
 
-export function CommitDetails({ details, selectedPath, onSelectFile, onCopySha }: CommitDetailsProps) {
+export function CommitDetails({ details, selectedPath, busy = false, onSelectFile, onCopySha, onReword }: CommitDetailsProps) {
   const [fileViewMode, setFileViewMode] = useState<FileViewMode>("path");
+  const [editing, setEditing] = useState(false);
+  const [subject, setSubject] = useState(details.subject);
+  const [body, setBody] = useState(details.body);
   const shaTooltipId = useId();
+
+  // Reset the editor whenever a different commit loads or the message changes
+  // underneath (e.g. after a successful reword reloads details).
+  useEffect(() => {
+    setEditing(false);
+    setSubject(details.subject);
+    setBody(details.body);
+  }, [details.oid, details.subject, details.body]);
+
+  const dirty = subject.trim() !== details.subject.trim() || body.trim() !== details.body.trim();
+  const canSave = Boolean(onReword) && subject.trim().length > 0 && dirty && !busy;
+
+  const submitReword = async () => {
+    if (!canSave || !onReword) return;
+    const ok = await onReword(composeMessage(subject, body));
+    if (ok) setEditing(false);
+  };
   const authored = new Date(details.authored_at.seconds * 1000);
   const initials = details.author.name
     .split(/\s+/)
@@ -63,10 +91,75 @@ export function CommitDetails({ details, selectedPath, onSelectFile, onCopySha }
           </span>
         </span>
       </div>
-      <div className="gc-details__message">
-        <h2>{details.subject}</h2>
-        {details.body ? <p>{details.body}</p> : <span className="gc-details__no-body">No description</span>}
-      </div>
+      {editing ? (
+        <form
+          className="gc-details__message gc-details__message--editing"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setEditing(false);
+              setSubject(details.subject);
+              setBody(details.body);
+            }
+          }}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submitReword();
+          }}
+        >
+          <div className="gc-details__edit-subject-row">
+            <input
+              aria-label="Commit summary"
+              autoFocus
+              className="gc-details__edit-subject"
+              disabled={busy}
+              onChange={(event) => setSubject(event.target.value)}
+              placeholder="Summary"
+              value={subject}
+            />
+            <span className="gc-details__edit-count">{subject.length}</span>
+          </div>
+          <textarea
+            aria-label="Commit description"
+            className="gc-details__edit-body"
+            disabled={busy}
+            onChange={(event) => setBody(event.target.value)}
+            placeholder="Description"
+            rows={4}
+            value={body}
+          />
+          <div className="gc-details__edit-actions">
+            <Button compact disabled={!canSave} tone="accent" type="submit">Update Message</Button>
+            <Button
+              compact
+              disabled={busy}
+              onClick={() => {
+                setEditing(false);
+                setSubject(details.subject);
+                setBody(details.body);
+              }}
+              type="button"
+            >
+              Cancel
+            </Button>
+          </div>
+        </form>
+      ) : onReword ? (
+        <button
+          className="gc-details__message gc-details__message--editable"
+          onClick={() => setEditing(true)}
+          title="Click to edit commit message"
+          type="button"
+        >
+          <h2>{details.subject}<Pencil aria-hidden="true" className="gc-details__edit-hint" size={13} /></h2>
+          {details.body ? <p>{details.body}</p> : <span className="gc-details__no-body">No description</span>}
+        </button>
+      ) : (
+        <div className="gc-details__message">
+          <h2>{details.subject}</h2>
+          {details.body ? <p>{details.body}</p> : <span className="gc-details__no-body">No description</span>}
+        </div>
+      )}
       <div className="gc-details__identity">
         <span className="gc-avatar">{initials || "?"}</span>
         <div>

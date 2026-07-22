@@ -132,6 +132,9 @@ pub(crate) struct GitRunOptions {
     pub timeout: Option<Duration>,
     pub allow_failure: bool,
     pub allow_stdout_truncation: bool,
+    /// Extra process environment applied after the sanitized baseline. Used to
+    /// preserve authorship (`GIT_AUTHOR_*`) when rebuilding commit objects.
+    pub extra_env: Vec<(OsString, OsString)>,
 }
 
 impl GitRunOptions {
@@ -142,6 +145,7 @@ impl GitRunOptions {
             timeout: Some(Duration::from_secs(30)),
             allow_failure: false,
             allow_stdout_truncation: false,
+            extra_env: Vec::new(),
         }
     }
 
@@ -152,6 +156,7 @@ impl GitRunOptions {
             timeout: Some(Duration::from_secs(120)),
             allow_failure: false,
             allow_stdout_truncation: false,
+            extra_env: Vec::new(),
         }
     }
 
@@ -162,6 +167,7 @@ impl GitRunOptions {
             timeout: None,
             allow_failure: false,
             allow_stdout_truncation: false,
+            extra_env: Vec::new(),
         }
     }
 }
@@ -264,6 +270,13 @@ impl GitRunner {
             // Reject external remote helpers, including URLs rewritten through
             // url.<base>.insteadOf. These are the transports GitCat supports.
             .env("GIT_ALLOW_PROTOCOL", "file:git:http:https:ssh");
+
+        // Caller-supplied environment (e.g. preserved authorship) is applied
+        // last so it wins over the sanitized baseline. Keys collide only with
+        // GIT_AUTHOR_* / GIT_COMMITTER_* which the sanitizer never touches.
+        for (key, value) in &options.extra_env {
+            command.env(key, value);
+        }
 
         #[cfg(windows)]
         {

@@ -73,6 +73,12 @@ export interface GitCatCommands {
   ): Promise<MutationResult>;
   autoResolveConflicts(repositoryId: RepositoryId): Promise<MutationResult>;
   createCommit(repositoryId: RepositoryId, options: CommitOptions): Promise<MutationResult>;
+  rewordCommit(
+    repositoryId: RepositoryId,
+    oid: string,
+    message: string,
+    expected: ExpectedState,
+  ): Promise<MutationResult>;
   createBranch(
     repositoryId: RepositoryId,
     name: string,
@@ -235,6 +241,8 @@ export function createTauriGitCatApi(): GitCatApi {
       invokeTauri("conflicts_auto_resolve", { repositoryId }),
     createCommit: (repositoryId, options) =>
       invokeTauri("create_commit", { repositoryId, options }),
+    rewordCommit: (repositoryId, oid, message, expected) =>
+      invokeTauri("commit_reword", { repositoryId, oid, message, expected }),
     createBranch: (repositoryId, name, startOid, checkout) =>
       invokeTauri("branch_create", { repositoryId, name, startOid, checkout }),
     checkoutBranch: (repositoryId, name) =>

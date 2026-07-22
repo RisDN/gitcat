@@ -293,6 +293,19 @@ impl CoreApi {
         self.commit(repository_id, options).await
     }
 
+    pub async fn reword_commit(
+        &self,
+        repository_id: &RepositoryId,
+        oid: &str,
+        message: &str,
+        expected: &ExpectedState,
+    ) -> ApiResult<MutationResult> {
+        self.mutate_expected(repository_id, expected, |backend, path| async move {
+            backend.reword_commit(&path, oid, message).await
+        })
+        .await
+    }
+
     pub async fn create_branch(
         &self,
         repository_id: &RepositoryId,
@@ -1031,6 +1044,15 @@ mod tests {
             _options: &CommitOptions,
         ) -> ApiResult<MutationResult> {
             self.mutation("create_commit", path).await
+        }
+
+        async fn reword_commit(
+            &self,
+            path: &Path,
+            _oid: &str,
+            _message: &str,
+        ) -> ApiResult<MutationResult> {
+            self.mutation("reword_commit", path).await
         }
 
         async fn create_branch(

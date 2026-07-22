@@ -45,6 +45,23 @@ struct InspectedConflictResult {
     identity: ConflictWorktreeIdentity,
 }
 
+#[derive(Debug, Clone)]
+struct CommitAuthor {
+    name: String,
+    email: String,
+    date: String,
+}
+
+impl CommitAuthor {
+    fn into_env(self) -> Vec<(OsString, OsString)> {
+        vec![
+            ("GIT_AUTHOR_NAME".into(), self.name.into()),
+            ("GIT_AUTHOR_EMAIL".into(), self.email.into()),
+            ("GIT_AUTHOR_DATE".into(), self.date.into()),
+        ]
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct GitCliBackend {
     runner: GitRunner,
@@ -292,6 +309,123 @@ impl GitCliBackend {
             .split_whitespace()
             .map(str::to_owned)
             .collect())
+    }
+
+    async fn is_ancestor(&self, path: &Path, ancestor: &str, descendant: &str) -> ApiResult<bool> {
+        let output = self
+            .read_allow_failure(
+                Some(path),
+                vec![
+                    "merge-base".into(),
+                    "--is-ancestor".into(),
+                    ancestor.into(),
+                    descendant.into(),
+                ],
+            )
+            .await?;
+        Ok(output.success())
+    }
+
+    async fn range_has_merge(&self, path: &Path, base: &str, head: &str) -> ApiResult<bool> {
+        // Merges strictly after `base` would be linearized by a plain rebase,
+        // so callers reject rewording when any exist.
+        let output = self
+            .read(
+                Some(path),
+                vec![
+                    "rev-list".into(),
+                    "--merges".into(),
+                    "--max-count=1".into(),
+                    format!("{base}..{head}").into(),
+                    "--".into(),
+                ],
+            )
+            .await?;
+        Ok(!output.stdout_lossy().trim().is_empty())
+    }
+
+    async fn read_commit_author(&self, path: &Path, oid: &str) -> ApiResult<CommitAuthor> {
+        let output = self
+            .read(
+                Some(path),
+                vec![
+                    "show".into(),
+                    "-s".into(),
+                    "--date=raw".into(),
+                    "--format=%an%x00%ae%x00%ad".into(),
+                    oid.into(),
+                    "--".into(),
+                ],
+            )
+            .await?;
+        let raw = output.stdout_lossy();
+        let mut parts = raw.trim_end_matches(['\n', '\r']).splitn(3, '\0');
+        Ok(CommitAuthor {
+            name: parts.next().unwrap_or_default().to_owned(),
+            email: parts.next().unwrap_or_default().to_owned(),
+            date: parts.next().unwrap_or_default().to_owned(),
+        })
+    }
+
+    /// Rebuilds `oid` with `message`, preserving its tree, parents and
+    /// authorship, and returns the new (dangling) commit object id.
+    async fn rebuild_commit_message(
+        &self,
+        path: &Path,
+        oid: &str,
+        message: &str,
+    ) -> ApiResult<String> {
+        let tree = self
+            .read(
+                Some(path),
+                vec![
+                    "rev-parse".into(),
+                    "--verify".into(),
+                    "--end-of-options".into(),
+                    format!("{oid}^{{tree}}").into(),
+                ],
+            )
+            .await?
+            .stdout_lossy()
+            .trim()
+            .to_owned();
+        if !is_full_oid(&tree) {
+            return Err(ApiError::new(
+                ErrorCode::GitCommandFailed,
+                "Git did not resolve the commit tree",
+            ));
+        }
+        let parents = self.commit_parent_oids(path, oid).await?;
+        let author = self.read_commit_author(path, oid).await?;
+
+        let mut args: Vec<OsString> = vec!["commit-tree".into(), tree.into()];
+        for parent in parents {
+            args.push("-p".into());
+            args.push(parent.into());
+        }
+        args.push("-F".into());
+        args.push("-".into());
+
+        let mut options = GitRunOptions::mutation(READ_OUTPUT_CAP);
+        options.extra_env = author.into_env();
+        let output = self
+            .runner
+            .run(
+                Some(path),
+                &args,
+                Some(message.as_bytes()),
+                CancellationToken::new(),
+                options,
+            )
+            .await?;
+        let new_oid = output.stdout_lossy().trim().to_owned();
+        if !is_full_oid(&new_oid) {
+            return Err(ApiError::new(
+                ErrorCode::GitCommandFailed,
+                "Git did not return a rewritten commit object",
+            ));
+        }
+        Ok(new_oid)
     }
 
     async fn validate_branch_name(&self, name: &str) -> ApiResult<()> {
@@ -1663,6 +1797,68 @@ impl GitBackend for GitCliBackend {
             false,
         )
         .await
+    }
+
+    async fn reword_commit(
+        &self,
+        path: &Path,
+        oid: &str,
+        message: &str,
+    ) -> ApiResult<MutationResult> {
+        validate_message(message)?;
+        let target = self.resolve_commit(path, oid).await?;
+
+        // Rewriting is only defined while no merge/rebase/cherry-pick is in flight.
+        if self.operation_state(path).await? != RepositoryOperationState::Normal {
+            return Err(ApiError::new(
+                ErrorCode::OperationInProgress,
+                "Finish the in-progress Git operation before editing a commit message",
+            ));
+        }
+
+        let head = self.head_oid(path).await?.ok_or_else(|| {
+            ApiError::new(
+                ErrorCode::InvalidRequest,
+                "The repository has no commit to edit",
+            )
+        })?;
+
+        // Amending HEAD needs no replay and never touches the working tree.
+        if target == head {
+            return self
+                .mutate(
+                    path,
+                    os_args(&["commit", "--amend", "--only", "-F", "-"]),
+                    Some(message.as_bytes()),
+                    CancellationToken::new(),
+                    false,
+                )
+                .await;
+        }
+
+        // Older commits are reworded by rebuilding the commit object and
+        // replaying its descendants onto it. The tree is byte-identical, so the
+        // replay never conflicts; these guards keep it from silently losing
+        // history it cannot faithfully reproduce.
+        if !self.is_ancestor(path, &target, &head).await? {
+            return Err(ApiError::new(
+                ErrorCode::UnsupportedOperation,
+                "Only commits reachable from the current branch can be edited",
+            ));
+        }
+        if self.range_has_merge(path, &target, &head).await? {
+            return Err(ApiError::new(
+                ErrorCode::UnsupportedOperation,
+                "Cannot edit this message because a later commit is a merge",
+            ));
+        }
+
+        let rebuilt = self.rebuild_commit_message(path, &target, message).await?;
+        let mut args = os_args(&["rebase", "--autostash", "--onto"]);
+        args.push(rebuilt.into());
+        args.push(target.into());
+        self.mutate(path, args, None, CancellationToken::new(), false)
+            .await
     }
 
     async fn create_branch(
@@ -3048,6 +3244,109 @@ mod tests {
             .await
             .expect("read conflict details")
             .expected_state
+    }
+
+    #[tokio::test]
+    async fn reword_head_updates_message_without_folding_staged_changes() {
+        let (directory, backend, _oid) = committed_repository().await;
+        // A staged change on a different path must stay out of the amended commit.
+        fs::write(directory.path().join("staged.txt"), "staged\n").expect("write staged");
+        backend
+            .stage_paths(directory.path(), &["staged.txt".into()])
+            .await
+            .expect("stage extra file");
+
+        backend
+            .reword_commit(directory.path(), "HEAD", "reworded head\n\nnew body")
+            .await
+            .expect("reword head");
+
+        assert_eq!(
+            git_stdout(directory.path(), &["log", "-1", "--format=%B"]).trim(),
+            "reworded head\n\nnew body"
+        );
+        assert_eq!(
+            git_stdout(directory.path(), &["ls-tree", "--name-only", "HEAD"]),
+            "hello.txt"
+        );
+        assert_eq!(
+            git_stdout(directory.path(), &["diff", "--cached", "--name-only"]),
+            "staged.txt"
+        );
+    }
+
+    #[tokio::test]
+    async fn reword_older_commit_preserves_author_and_replays_descendants() {
+        let (directory, backend, base_oid) = committed_repository().await;
+        let author_before = git_stdout(directory.path(), &["show", "-s", "--format=%an <%ae> %aI", &base_oid]);
+        fs::write(directory.path().join("hello.txt"), "first\nsecond\n").expect("write second");
+        backend
+            .stage_paths(directory.path(), &["hello.txt".into()])
+            .await
+            .expect("stage second");
+        backend
+            .create_commit(
+                directory.path(),
+                &CommitOptions { message: "child commit".into(), amend: false, signoff: false },
+            )
+            .await
+            .expect("commit child");
+
+        backend
+            .reword_commit(directory.path(), &base_oid, "reworded base")
+            .await
+            .expect("reword base commit");
+
+        let subjects = git_stdout(directory.path(), &["log", "--reverse", "--format=%s"]);
+        assert_eq!(subjects, "reworded base\nchild commit");
+        // Authorship (including the author date) survives the rewrite.
+        let root_oid = git_stdout(directory.path(), &["rev-list", "--max-parents=0", "HEAD"]);
+        assert_eq!(
+            git_stdout(directory.path(), &["show", "-s", "--format=%an <%ae> %aI", &root_oid]),
+            author_before
+        );
+        // The working tree is unchanged by the replay (ignore platform CRLF).
+        let worktree = fs::read_to_string(directory.path().join("hello.txt"))
+            .expect("read worktree")
+            .replace("\r\n", "\n");
+        assert_eq!(worktree, "first\nsecond\n");
+    }
+
+    #[tokio::test]
+    async fn reword_rejects_commit_off_the_current_branch() {
+        let (directory, backend, base_oid) = committed_repository().await;
+        // A commit that only lives on another branch is not reachable from HEAD.
+        backend
+            .create_branch(directory.path(), "side", &base_oid, true)
+            .await
+            .expect("create side branch");
+        fs::write(directory.path().join("side.txt"), "side\n").expect("write side");
+        backend
+            .stage_paths(directory.path(), &["side.txt".into()])
+            .await
+            .expect("stage side");
+        backend
+            .create_commit(
+                directory.path(),
+                &CommitOptions { message: "side only".into(), amend: false, signoff: false },
+            )
+            .await
+            .expect("commit side");
+        let side_oid = backend
+            .head_oid(directory.path())
+            .await
+            .expect("read side HEAD")
+            .expect("side HEAD exists");
+        backend
+            .checkout_branch(directory.path(), "main")
+            .await
+            .expect("return to main");
+
+        let error = backend
+            .reword_commit(directory.path(), &side_oid, "nope")
+            .await
+            .expect_err("reword off-branch commit is rejected");
+        assert_eq!(error.code, ErrorCode::UnsupportedOperation);
     }
 
     #[tokio::test]

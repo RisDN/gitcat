@@ -949,6 +949,30 @@ class DemoGitCatApi implements GitCatApi {
     return this.mutation(before, oid);
   }
 
+  async rewordCommit(
+    repositoryId: RepositoryId,
+    oid: string,
+    message: string,
+    expected: ExpectedState,
+  ): Promise<MutationResult> {
+    await delay();
+    this.ensureRepository(repositoryId);
+    this.verifyExpected(expected);
+    if (!message.trim()) fail("invalid_settings", "Commit message is empty");
+    const detail = this.details.get(oid);
+    if (!detail) fail("invalid_revision", `Unknown demo commit: ${oid}`);
+    const before = this.headOid();
+    const [subject, ...bodyLines] = message.split("\n");
+    detail.subject = subject;
+    detail.body = bodyLines.join("\n").trim();
+    const summary = this.commits.find((candidate) => candidate.oid === oid);
+    if (summary) {
+      summary.subject = subject;
+      summary.body_preview = bodyLines.join(" ").trim();
+    }
+    return this.mutation(before, before);
+  }
+
   async commitActionAvailability(
     repositoryId: RepositoryId,
     oid: string,

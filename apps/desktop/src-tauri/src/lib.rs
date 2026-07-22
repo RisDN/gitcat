@@ -203,6 +203,18 @@ async fn create_commit(
 }
 
 #[tauri::command]
+async fn commit_reword(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    oid: String,
+    message: String,
+    expected: ExpectedState,
+) -> ApiResult<MutationResult> {
+    core.reword_commit(&repository_id, &oid, &message, &expected)
+        .await
+}
+
+#[tauri::command]
 async fn branch_create(
     core: State<'_, Arc<CoreApi>>,
     repository_id: RepositoryId,
@@ -478,6 +490,7 @@ pub fn run() {
             conflict_save_edited,
             conflicts_auto_resolve,
             create_commit,
+            commit_reword,
             branch_create,
             branch_checkout,
             branch_rename,
