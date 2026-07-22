@@ -177,6 +177,24 @@ impl CoreApi {
         self.backend.diff(&path, request).await
     }
 
+    pub async fn conflict_preflight(
+        &self,
+        repository_id: &RepositoryId,
+        target: &str,
+    ) -> ApiResult<ConflictPreflightResult> {
+        let path = self.repository_path(repository_id).await?;
+        self.backend.conflict_preflight(&path, target).await
+    }
+
+    pub async fn conflict_details(
+        &self,
+        repository_id: &RepositoryId,
+        path: &str,
+    ) -> ApiResult<ConflictFileDetails> {
+        let repository_path = self.repository_path(repository_id).await?;
+        self.backend.conflict_details(&repository_path, path).await
+    }
+
     pub async fn stage(
         &self,
         repository_id: &RepositoryId,
@@ -213,6 +231,47 @@ impl CoreApi {
         paths: &[String],
     ) -> ApiResult<MutationResult> {
         self.unstage(repository_id, paths).await
+    }
+
+    pub async fn resolve_conflict(
+        &self,
+        repository_id: &RepositoryId,
+        path: &str,
+        resolution: ConflictResolution,
+        expected_state: &ConflictExpectedState,
+    ) -> ApiResult<MutationResult> {
+        self.mutate(repository_id, |backend, repository_path| async move {
+            backend
+                .resolve_conflict(&repository_path, path, resolution, expected_state)
+                .await
+        })
+        .await
+    }
+
+    pub async fn save_conflict_result(
+        &self,
+        repository_id: &RepositoryId,
+        path: &str,
+        text: &str,
+        line_ending: ConflictLineEndingPolicy,
+        expected_state: &ConflictExpectedState,
+    ) -> ApiResult<MutationResult> {
+        self.mutate(repository_id, |backend, repository_path| async move {
+            backend
+                .save_conflict_result(&repository_path, path, text, line_ending, expected_state)
+                .await
+        })
+        .await
+    }
+
+    pub async fn auto_resolve_conflicts(
+        &self,
+        repository_id: &RepositoryId,
+    ) -> ApiResult<MutationResult> {
+        self.mutate(repository_id, |backend, path| async move {
+            backend.auto_resolve_conflicts(&path).await
+        })
+        .await
     }
 
     pub async fn commit(
@@ -886,12 +945,84 @@ mod tests {
             })
         }
 
+        async fn conflict_preflight(
+            &self,
+            path: &Path,
+            target: &str,
+        ) -> ApiResult<ConflictPreflightResult> {
+            self.record("conflict_preflight", path);
+            Ok(ConflictPreflightResult {
+                target: target.to_owned(),
+                target_oid: "1111111111111111111111111111111111111111".into(),
+                state: ConflictPreflightState::Clean,
+                conflicting_paths: Vec::new(),
+                unavailable_reason: None,
+            })
+        }
+
+        async fn conflict_details(
+            &self,
+            path: &Path,
+            conflict_path: &str,
+        ) -> ApiResult<ConflictFileDetails> {
+            self.record("conflict_details", path);
+            Ok(ConflictFileDetails {
+                path: conflict_path.to_owned(),
+                expected_state: ConflictExpectedState {
+                    base: None,
+                    ours: None,
+                    theirs: None,
+                    result: ConflictWorktreeIdentity {
+                        kind: ConflictWorktreeKind::Missing,
+                        size: None,
+                        sha256: None,
+                        line_ending: None,
+                        mode: None,
+                    },
+                },
+                base: None,
+                ours: None,
+                theirs: None,
+                result: ConflictFileContent {
+                    kind: ConflictContentKind::Missing,
+                    size: None,
+                    text: None,
+                    line_ending: None,
+                },
+            })
+        }
+
         async fn stage_paths(&self, path: &Path, _paths: &[String]) -> ApiResult<MutationResult> {
             self.mutation("stage_paths", path).await
         }
 
         async fn unstage_paths(&self, path: &Path, _paths: &[String]) -> ApiResult<MutationResult> {
             self.mutation("unstage_paths", path).await
+        }
+
+        async fn resolve_conflict(
+            &self,
+            path: &Path,
+            _conflict_path: &str,
+            _resolution: ConflictResolution,
+            _expected_state: &ConflictExpectedState,
+        ) -> ApiResult<MutationResult> {
+            self.mutation("resolve_conflict", path).await
+        }
+
+        async fn save_conflict_result(
+            &self,
+            path: &Path,
+            _conflict_path: &str,
+            _text: &str,
+            _line_ending: ConflictLineEndingPolicy,
+            _expected_state: &ConflictExpectedState,
+        ) -> ApiResult<MutationResult> {
+            self.mutation("save_conflict_result", path).await
+        }
+
+        async fn auto_resolve_conflicts(&self, path: &Path) -> ApiResult<MutationResult> {
+            self.mutation("auto_resolve_conflicts", path).await
         }
 
         async fn create_commit(
@@ -1269,6 +1400,7 @@ mod tests {
             status: WorktreeStatus::default(),
             local_branches: Vec::new(),
             remote_branches: Vec::new(),
+            default_conflict_target: None,
             tags: Vec::new(),
             remotes: Vec::new(),
             capabilities: RepositoryCapabilities::default(),

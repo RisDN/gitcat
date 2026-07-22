@@ -1120,6 +1120,7 @@ dependencies = [
  "dunce",
  "gitcat-contracts",
  "gitcat-core",
+ "sha2",
  "tempfile",
  "tokio",
  "tokio-util",

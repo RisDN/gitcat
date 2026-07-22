@@ -30,9 +30,35 @@ pub trait GitBackend: Send + Sync {
         parent_index: usize,
     ) -> ApiResult<CommitDetails>;
     async fn diff(&self, path: &Path, request: &DiffRequest) -> ApiResult<FileDiff>;
+    async fn conflict_preflight(
+        &self,
+        path: &Path,
+        target: &str,
+    ) -> ApiResult<ConflictPreflightResult>;
+    async fn conflict_details(
+        &self,
+        path: &Path,
+        conflict_path: &str,
+    ) -> ApiResult<ConflictFileDetails>;
 
     async fn stage_paths(&self, path: &Path, paths: &[String]) -> ApiResult<MutationResult>;
     async fn unstage_paths(&self, path: &Path, paths: &[String]) -> ApiResult<MutationResult>;
+    async fn resolve_conflict(
+        &self,
+        path: &Path,
+        conflict_path: &str,
+        resolution: ConflictResolution,
+        expected_state: &ConflictExpectedState,
+    ) -> ApiResult<MutationResult>;
+    async fn save_conflict_result(
+        &self,
+        path: &Path,
+        conflict_path: &str,
+        text: &str,
+        line_ending: ConflictLineEndingPolicy,
+        expected_state: &ConflictExpectedState,
+    ) -> ApiResult<MutationResult>;
+    async fn auto_resolve_conflicts(&self, path: &Path) -> ApiResult<MutationResult>;
     async fn create_commit(
         &self,
         path: &Path,

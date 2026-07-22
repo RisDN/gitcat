@@ -96,6 +96,8 @@ pub struct RepositorySnapshot {
     pub status: WorktreeStatus,
     pub local_branches: Vec<BranchInfo>,
     pub remote_branches: Vec<BranchInfo>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_conflict_target: Option<String>,
     pub tags: Vec<RefLabel>,
     pub remotes: Vec<RemoteInfo>,
     pub capabilities: RepositoryCapabilities,
@@ -417,6 +419,133 @@ pub enum ContinueOperation {
     Rebase,
     CherryPick,
     Revert,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictResolution {
+    Ours,
+    Theirs,
+    MarkResolved,
+    Delete,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictContentKind {
+    Text,
+    Binary,
+    TooLarge,
+    Missing,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictLineEnding {
+    None,
+    Lf,
+    CrLf,
+    Mixed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictLineEndingPolicy {
+    Preserve,
+    Lf,
+    CrLf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConflictFileContent {
+    pub kind: ConflictContentKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line_ending: Option<ConflictLineEnding>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConflictIndexVersion {
+    pub oid: String,
+    pub mode: String,
+    pub content: ConflictFileContent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConflictStageIdentity {
+    pub oid: String,
+    pub mode: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictWorktreeKind {
+    Missing,
+    Regular,
+    Symlink,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConflictWorktreeIdentity {
+    pub kind: ConflictWorktreeKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line_ending: Option<ConflictLineEnding>,
+    /// Unix permission bits observed when the editor snapshot was created.
+    /// `None` on platforms where Git does not track executable mode this way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConflictExpectedState {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base: Option<ConflictStageIdentity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ours: Option<ConflictStageIdentity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theirs: Option<ConflictStageIdentity>,
+    pub result: ConflictWorktreeIdentity,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConflictFileDetails {
+    pub path: String,
+    pub expected_state: ConflictExpectedState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base: Option<ConflictIndexVersion>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ours: Option<ConflictIndexVersion>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theirs: Option<ConflictIndexVersion>,
+    pub result: ConflictFileContent,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictPreflightState {
+    Clean,
+    Conflicting,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConflictPreflightResult {
+    /// Revision exactly as requested by the caller.
+    pub target: String,
+    /// Full commit ID resolved before running the preflight.
+    pub target_oid: String,
+    pub state: ConflictPreflightState,
+    #[serde(default)]
+    pub conflicting_paths: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

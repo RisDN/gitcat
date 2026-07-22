@@ -27,7 +27,7 @@ pub(crate) struct ParsedRef {
     pub oid: String,
     pub branch: Option<BranchInfo>,
     pub label: RefLabel,
-    pub symbolic: bool,
+    pub symbolic_target: Option<String>,
 }
 
 #[derive(Debug)]
@@ -245,7 +245,7 @@ pub(crate) fn parse_refs(output: &[u8]) -> ApiResult<Vec<ParsedRef>> {
         let is_head = fields[4] == b"*";
         let upstream = nonempty(fields[5]);
         let (ahead, behind) = parse_track(fields[6]);
-        let symbolic = !fields[7].is_empty();
+        let symbolic_target = nonempty(fields[7]);
         let kind = if full_name.starts_with("refs/heads/") {
             RefKind::LocalBranch
         } else if full_name.starts_with("refs/remotes/") {
@@ -278,7 +278,7 @@ pub(crate) fn parse_refs(output: &[u8]) -> ApiResult<Vec<ParsedRef>> {
             oid,
             branch,
             label,
-            symbolic,
+            symbolic_target,
         });
     }
     Ok(refs)

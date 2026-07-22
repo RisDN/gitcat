@@ -99,6 +99,11 @@ const InlineHunk = memo(function InlineHunk({ hunk, index }: { hunk: DiffHunk; i
         <code>{hunk.header}</code>
       </h3>
       <table className="gc-diff-table gc-diff-table--inline">
+        <colgroup>
+          <col className="gc-diff-table__line-column" />
+          <col className="gc-diff-table__line-column" />
+          <col className="gc-diff-table__content-column" />
+        </colgroup>
         <caption className="gc-sr-only">
           Unified diff hunk: old lines {hunk.old_start}–{hunk.old_start + Math.max(0, hunk.old_count - 1)}, new lines {hunk.new_start}–{hunk.new_start + Math.max(0, hunk.new_count - 1)}
         </caption>

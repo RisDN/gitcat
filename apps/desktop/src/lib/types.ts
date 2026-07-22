@@ -113,6 +113,7 @@ export interface RepositorySnapshot {
   status: WorktreeStatus;
   local_branches: BranchInfo[];
   remote_branches: BranchInfo[];
+  default_conflict_target?: string;
   tags: RefLabel[];
   remotes: RemoteInfo[];
   capabilities: RepositoryCapabilities;
@@ -419,7 +420,110 @@ export interface AppSettings {
   history_page_size: number;
   diff_context_lines: number;
   diff_max_bytes: number;
+  keybinds: KeybindSettings;
   theme: ThemeColors;
+}
+
+export interface KeybindSettings {
+  next_repository: string;
+  previous_repository: string;
+  repository_1: string;
+  repository_2: string;
+  repository_3: string;
+  repository_4: string;
+  repository_5: string;
+  repository_6: string;
+  repository_7: string;
+  repository_8: string;
+  repository_9: string;
+  new_repository_tab: string;
+  close_repository: string;
+  open_repository: string;
+  search_commits: string;
+  open_settings: string;
+  refresh_repository: string;
+  toggle_left_panel: string;
+  toggle_right_panel: string;
+  fetch: string;
+  pull: string;
+  push: string;
+  create_branch: string;
+  stash: string;
+  show_worktree: string;
+  show_graph: string;
+  diff_inline: string;
+  diff_split: string;
+  copy_selected_sha: string;
+  continue_operation: string;
+  abort_operation: string;
+  stage_all: string;
+  unstage_all: string;
+  focus_commit_message: string;
+  auto_resolve_conflicts: string;
+  commit: string;
+}
+
+export type ConflictResolution = "ours" | "theirs" | "mark_resolved" | "delete";
+
+export type ConflictContentKind = "text" | "binary" | "too_large" | "missing";
+export type ConflictLineEnding = "none" | "lf" | "cr_lf" | "mixed";
+export type ConflictLineEndingPolicy = "preserve" | "lf" | "cr_lf";
+
+export interface ConflictFileContent {
+  kind: ConflictContentKind;
+  size?: number;
+  text?: string;
+  line_ending?: ConflictLineEnding;
+}
+
+export interface ConflictIndexVersion {
+  oid: string;
+  mode: string;
+  content: ConflictFileContent;
+}
+
+export interface ConflictStageIdentity {
+  oid: string;
+  mode: string;
+}
+
+export interface ConflictExpectedState {
+  base?: ConflictStageIdentity;
+  ours?: ConflictStageIdentity;
+  theirs?: ConflictStageIdentity;
+  result: ConflictWorktreeIdentity;
+}
+
+export interface ConflictWorktreeIdentity {
+  kind: "missing" | "regular" | "symlink";
+  size?: number;
+  sha256?: string;
+  line_ending?: ConflictLineEnding;
+  mode?: number;
+}
+
+export interface ConflictFileDetails {
+  path: string;
+  expected_state: ConflictExpectedState;
+  base?: ConflictIndexVersion;
+  ours?: ConflictIndexVersion;
+  theirs?: ConflictIndexVersion;
+  result: ConflictFileContent;
+}
+
+export type ConflictPreflightState = "clean" | "conflicting" | "unavailable";
+
+export interface ConflictPreflightResult {
+  target: string;
+  target_oid: string;
+  state: ConflictPreflightState;
+  conflicting_paths: string[];
+  unavailable_reason?: string;
+}
+
+export interface AppMetadata {
+  version: string;
+  commit: string;
 }
 
 export interface RepositoryTab {
@@ -427,6 +531,8 @@ export interface RepositoryTab {
   repository_path: string;
   display_name: string;
   order: number;
+  conflict_target?: string | null;
+  conflict_target_disabled?: boolean;
 }
 
 export interface RepositoryGroup {
@@ -439,6 +545,7 @@ export interface RepositoryGroup {
 
 export interface WorkspaceState {
   version: number;
+  ungrouped_tabs: RepositoryTab[];
   groups: RepositoryGroup[];
   active_tab_id: string | null;
 }

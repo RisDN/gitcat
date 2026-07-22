@@ -1,6 +1,7 @@
 import { createDemoGitCatApi } from "./demo";
 import { getGitCatRuntime, invokeTauri } from "./platform";
 import type {
+  AppMetadata,
   ApiError,
   CloneOptions,
   CommitActionAvailability,
@@ -9,6 +10,11 @@ import type {
   CommitPanelData,
   CommitSearchQuery,
   CommitSearchResult,
+  ConflictExpectedState,
+  ConflictFileDetails,
+  ConflictLineEndingPolicy,
+  ConflictPreflightResult,
+  ConflictResolution,
   ContinueOperation,
   DiffRequest,
   ExpectedState,
@@ -30,6 +36,7 @@ import type {
 } from "./types";
 
 export interface GitCatCommands {
+  appMetadata(): Promise<AppMetadata>;
   probe(): Promise<GitVersion>;
   openRepository(path: string): Promise<OpenedRepository>;
   initRepository(path: string, defaultBranch: string): Promise<OpenedRepository>;
@@ -47,8 +54,24 @@ export interface GitCatCommands {
     parentIndex?: number,
   ): Promise<CommitDetails>;
   diff(repositoryId: RepositoryId, request: DiffRequest): Promise<FileDiff>;
+  conflictPreflight(repositoryId: RepositoryId, target: string): Promise<ConflictPreflightResult>;
+  conflictDetails(repositoryId: RepositoryId, path: string): Promise<ConflictFileDetails>;
   stagePaths(repositoryId: RepositoryId, paths: string[]): Promise<MutationResult>;
   unstagePaths(repositoryId: RepositoryId, paths: string[]): Promise<MutationResult>;
+  resolveConflict(
+    repositoryId: RepositoryId,
+    path: string,
+    resolution: ConflictResolution,
+    expectedState: ConflictExpectedState,
+  ): Promise<MutationResult>;
+  saveConflictResult(
+    repositoryId: RepositoryId,
+    path: string,
+    text: string,
+    lineEnding: ConflictLineEndingPolicy,
+    expectedState: ConflictExpectedState,
+  ): Promise<MutationResult>;
+  autoResolveConflicts(repositoryId: RepositoryId): Promise<MutationResult>;
   createCommit(repositoryId: RepositoryId, options: CommitOptions): Promise<MutationResult>;
   createBranch(
     repositoryId: RepositoryId,
@@ -178,6 +201,7 @@ export async function loadCommitPanel(
 
 export function createTauriGitCatApi(): GitCatApi {
   const commands: GitCatCommands = {
+    appMetadata: () => invokeTauri("app_metadata"),
     probe: () => invokeTauri("git_probe"),
     openRepository: (path) => invokeTauri("repository_open", { path }),
     initRepository: (path, defaultBranch) =>
@@ -195,10 +219,20 @@ export function createTauriGitCatApi(): GitCatApi {
       invokeTauri("commit_details", { repositoryId, oid, parentIndex }),
     diff: (repositoryId, request) =>
       invokeTauri("file_diff", { repositoryId, request }),
+    conflictPreflight: (repositoryId, target) =>
+      invokeTauri("conflicts_preflight", { repositoryId, target }),
+    conflictDetails: (repositoryId, path) =>
+      invokeTauri("conflict_details", { repositoryId, path }),
     stagePaths: (repositoryId, paths) =>
       invokeTauri("paths_stage", { repositoryId, paths }),
     unstagePaths: (repositoryId, paths) =>
       invokeTauri("paths_unstage", { repositoryId, paths }),
+    resolveConflict: (repositoryId, path, resolution, expectedState) =>
+      invokeTauri("conflict_resolve", { repositoryId, path, resolution, expectedState }),
+    saveConflictResult: (repositoryId, path, text, lineEnding, expectedState) =>
+      invokeTauri("conflict_save_edited", { repositoryId, path, text, lineEnding, expectedState }),
+    autoResolveConflicts: (repositoryId) =>
+      invokeTauri("conflicts_auto_resolve", { repositoryId }),
     createCommit: (repositoryId, options) =>
       invokeTauri("create_commit", { repositoryId, options }),
     createBranch: (repositoryId, name, startOid, checkout) =>

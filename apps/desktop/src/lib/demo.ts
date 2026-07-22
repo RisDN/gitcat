@@ -1,5 +1,8 @@
 import type { GitCatApi } from "./api";
+import packageMetadata from "../../package.json";
+import { DEFAULT_KEYBINDS } from "./keybinds";
 import type {
+  AppMetadata,
   ApiError,
   BranchInfo,
   ChangedFile,
@@ -11,6 +14,11 @@ import type {
   CommitSearchQuery,
   CommitSearchResult,
   CommitSummary,
+  ConflictExpectedState,
+  ConflictFileDetails,
+  ConflictLineEndingPolicy,
+  ConflictPreflightResult,
+  ConflictResolution,
   ContinueOperation,
   DiffRequest,
   ExpectedState,
@@ -315,6 +323,7 @@ const defaultState = (): PersistedState => ({
     history_page_size: 200,
     diff_context_lines: 3,
     diff_max_bytes: 8 * 1024 * 1024,
+    keybinds: { ...DEFAULT_KEYBINDS },
     theme: {
       background: "#17191f",
       surface: "#1d2027",
@@ -332,7 +341,8 @@ const defaultState = (): PersistedState => ({
     },
   },
   workspace: {
-    version: 1,
+    version: 2,
+    ungrouped_tabs: [],
     groups: [
       {
         id: "group-work",
@@ -345,6 +355,8 @@ const defaultState = (): PersistedState => ({
             repository_path: "C:\\Projects\\GitCat",
             display_name: "GitCat",
             order: 0,
+            conflict_target: "origin/main",
+            conflict_target_disabled: false,
           },
         ],
       },
@@ -473,6 +485,7 @@ class DemoGitCatApi implements GitCatApi {
         is_head: false,
       },
     ],
+    default_conflict_target: "origin/main",
     tags: [tagLabel("v0.1.0-preview")],
     remotes: [
       {
@@ -488,6 +501,11 @@ class DemoGitCatApi implements GitCatApi {
       worktree: false,
     },
   };
+
+  async appMetadata(): Promise<AppMetadata> {
+    await delay();
+    return { version: packageMetadata.version, commit: "browser-demo" };
+  }
 
   async probe(): Promise<GitVersion> {
     await delay();
@@ -600,6 +618,23 @@ class DemoGitCatApi implements GitCatApi {
     return result;
   }
 
+  async conflictPreflight(
+    repositoryId: RepositoryId,
+    target: string,
+  ): Promise<ConflictPreflightResult> {
+    await delay();
+    this.ensureRepository(repositoryId);
+    const targetBranch = [...this.snapshotValue.local_branches, ...this.snapshotValue.remote_branches]
+      .find((branch) => branch.name === target);
+    if (!targetBranch) fail("invalid_revision", `Unknown demo conflict target: ${target}`);
+    return {
+      target,
+      target_oid: targetBranch.oid,
+      state: "clean",
+      conflicting_paths: [],
+    };
+  }
+
   async stagePaths(repositoryId: RepositoryId, paths: string[]): Promise<MutationResult> {
     await delay();
     this.ensureRepository(repositoryId);
@@ -623,6 +658,70 @@ class DemoGitCatApi implements GitCatApi {
         delete entry.index;
       }
     }
+    return this.mutation();
+  }
+
+  async resolveConflict(
+    repositoryId: RepositoryId,
+    path: string,
+    resolution: ConflictResolution,
+    _expectedState: ConflictExpectedState,
+  ): Promise<MutationResult> {
+    await delay();
+    this.ensureRepository(repositoryId);
+    const entry = this.snapshotValue.status.entries.find((candidate) => candidate.path === path);
+    if (!entry?.conflicted) fail("invalid_request", "Selected file is not conflicted");
+    if (resolution === "delete") {
+      this.snapshotValue.status.entries = this.snapshotValue.status.entries.filter((candidate) => candidate.path !== path);
+    } else {
+      entry.conflicted = false;
+      entry.index = "modified";
+      delete entry.worktree;
+    }
+    return this.mutation();
+  }
+
+  async conflictDetails(repositoryId: RepositoryId, path: string): Promise<ConflictFileDetails> {
+    await delay();
+    this.ensureRepository(repositoryId);
+    const entry = this.snapshotValue.status.entries.find((candidate) => candidate.path === path);
+    if (!entry?.conflicted) fail("invalid_request", "Selected file is not conflicted");
+    const base = { oid: oids[7], mode: "100644" };
+    const ours = { oid: oids[8], mode: "100644" };
+    const theirs = { oid: oids[9], mode: "100644" };
+    return {
+      path,
+      expected_state: {
+        base,
+        ours,
+        theirs,
+        result: { kind: "regular", size: 78, sha256: "0".repeat(64), line_ending: "lf", mode: 0o644 },
+      },
+      base: { ...base, content: { kind: "text", size: 13, text: "shared base\n", line_ending: "lf" } },
+      ours: { ...ours, content: { kind: "text", size: 16, text: "current version\n", line_ending: "lf" } },
+      theirs: { ...theirs, content: { kind: "text", size: 17, text: "incoming version\n", line_ending: "lf" } },
+      result: {
+        kind: "text",
+        size: 78,
+        text: "<<<<<<< current\ncurrent version\n=======\nincoming version\n>>>>>>> incoming\n",
+        line_ending: "lf",
+      },
+    };
+  }
+
+  async saveConflictResult(
+    repositoryId: RepositoryId,
+    path: string,
+    _text: string,
+    _lineEnding: ConflictLineEndingPolicy,
+    expectedState: ConflictExpectedState,
+  ): Promise<MutationResult> {
+    return this.resolveConflict(repositoryId, path, "mark_resolved", expectedState);
+  }
+
+  async autoResolveConflicts(repositoryId: RepositoryId): Promise<MutationResult> {
+    await delay();
+    this.ensureRepository(repositoryId);
     return this.mutation();
   }
 
@@ -1071,7 +1170,8 @@ class DemoGitCatApi implements GitCatApi {
       after_oid: after,
       generation: this.snapshotValue.generation,
       conflicts: this.snapshotValue.status.entries.filter(({ conflicted }) => conflicted),
-      needs_user_action: this.snapshotValue.operation_state !== "normal",
+      needs_user_action: this.snapshotValue.operation_state !== "normal"
+        || this.snapshotValue.status.entries.some(({ conflicted }) => conflicted),
     };
   }
 

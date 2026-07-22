@@ -1,21 +1,18 @@
-import { memo, useMemo } from "react";
+import { memo, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type {
-  CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
 } from "react";
 
 import type { CommitSummary } from "../lib/types";
 
-const ROW_HEIGHT = 44;
+const ROW_HEIGHT = 28;
 const LANE_WIDTH = 18;
-const GRAPH_PADDING = 12;
+const GRAPH_PADDING = 24;
+const REF_COLUMN_WIDTH = 140;
+const MIN_GRAPH_WIDTH = 96;
 const LANE_COLOR_COUNT = 8;
-
-const ROW_RENDER_STYLE: CSSProperties = {
-  contentVisibility: "auto",
-  containIntrinsicSize: `${ROW_HEIGHT}px`,
-};
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
@@ -32,8 +29,10 @@ export interface CommitGraphProps {
   commits: readonly CommitSummary[];
   selectedOid: string | null;
   searchMatchOids?: ReadonlySet<string>;
+  hideHeadDecoration?: boolean;
   onSelect: (commit: CommitSummary) => void;
   onCommitContextMenu?: (request: CommitContextMenuRequest) => void;
+  onCopySha?: (oid: string) => void;
   className?: string;
   emptyLabel?: string;
   formatTimestamp?: (seconds: number, offsetMinutes: number) => string;
@@ -58,9 +57,11 @@ interface CommitRowProps {
   total: number;
   selected: boolean;
   searchMatch: boolean;
+  hideHeadDecoration: boolean;
   graphWidth: number;
   onSelect: (commit: CommitSummary) => void;
   onCommitContextMenu?: (request: CommitContextMenuRequest) => void;
+  onCopySha?: (oid: string) => void;
   formatTimestamp?: (seconds: number, offsetMinutes: number) => string;
 }
 
@@ -76,18 +77,25 @@ function laneClass(base: string, lane: number): string {
   return `${base} ${base}--lane-${lane % LANE_COLOR_COUNT}`;
 }
 
+export function getCommitGraphWidth(commits: readonly CommitSummary[]): number {
+  let maxLane = 0;
+
+  for (const commit of commits) {
+    maxLane = Math.max(maxLane, commit.graph.lane);
+    for (const edge of commit.graph.edges) {
+      maxLane = Math.max(maxLane, edge.from_lane, edge.to_lane);
+    }
+  }
+
+  return Math.max(MIN_GRAPH_WIDTH, GRAPH_PADDING * 2 + maxLane * LANE_WIDTH + LANE_WIDTH);
+}
+
 function buildGraphGeometry(commits: readonly CommitSummary[]): GraphGeometry {
   const commitIndex = new Map<string, number>();
-  let maxLane = 0;
 
   for (let index = 0; index < commits.length; index += 1) {
     const commit = commits[index];
     commitIndex.set(commit.oid, index);
-    maxLane = Math.max(maxLane, commit.graph.lane);
-
-    for (const edge of commit.graph.edges) {
-      maxLane = Math.max(maxLane, edge.from_lane, edge.to_lane);
-    }
   }
 
   const paths: GraphPath[] = [];
@@ -120,7 +128,7 @@ function buildGraphGeometry(commits: readonly CommitSummary[]): GraphGeometry {
 
   return {
     paths,
-    width: GRAPH_PADDING * 2 + maxLane * LANE_WIDTH + LANE_WIDTH,
+    width: getCommitGraphWidth(commits),
     height: commits.length * ROW_HEIGHT,
   };
 }
@@ -142,15 +150,58 @@ function defaultFormatTimestamp(seconds: number): string {
   return date ? dateFormatter.format(date) : "Unknown date";
 }
 
+function RowShaButton({ oid, shortOid, onCopy }: { oid: string; shortOid: string; onCopy: (oid: string) => void }) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [tooltipPosition, setTooltipPosition] = useState<{ left: number; top: number } | null>(null);
+  const showTooltip = () => {
+    const bounds = buttonRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    const width = Math.min(340, window.innerWidth - 16);
+    const left = Math.max(8, Math.min(bounds.right - width, window.innerWidth - width - 8));
+    const top = bounds.bottom + 58 <= window.innerHeight ? bounds.bottom + 7 : Math.max(8, bounds.top - 55);
+    setTooltipPosition({ left, top });
+  };
+
+  return (
+    <>
+      <button
+        aria-label={`Copy full commit SHA ${oid}`}
+        className="gc-sha-copy gc-sha-copy--row"
+        onBlur={() => setTooltipPosition(null)}
+        onClick={(event) => {
+          event.stopPropagation();
+          onCopy(oid);
+        }}
+        onFocus={showTooltip}
+        onMouseEnter={showTooltip}
+        onMouseLeave={() => setTooltipPosition(null)}
+        ref={buttonRef}
+        type="button"
+      >
+        {shortOid}
+      </button>
+      {tooltipPosition ? createPortal(
+        <span className="gc-sha-row-tooltip" role="tooltip" style={tooltipPosition}>
+          <code>{oid}</code>
+          <small>Click to copy</small>
+        </span>,
+        document.body,
+      ) : null}
+    </>
+  );
+}
+
 const CommitRow = memo(function CommitRow({
   commit,
   index,
   total,
   selected,
   searchMatch,
+  hideHeadDecoration,
   graphWidth,
   onSelect,
   onCommitContextMenu,
+  onCopySha,
   formatTimestamp,
 }: CommitRowProps) {
   const openContextMenu = (clientX: number, clientY: number) => {
@@ -166,6 +217,7 @@ const CommitRow = memo(function CommitRow({
   };
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) return;
     switch (event.key) {
       case "ArrowDown":
         event.preventDefault();
@@ -205,6 +257,12 @@ const CommitRow = memo(function CommitRow({
     ? formatTimestamp(commit.authored_at.seconds, commit.authored_at.offset_minutes)
     : defaultFormatTimestamp(commit.authored_at.seconds);
   const authoredDate = dateFromUnixSeconds(commit.authored_at.seconds);
+  const initials = commit.author.name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
   const stateClasses = [
     "gc-commit-row",
     selected ? "gc-commit-row--selected" : "",
@@ -221,55 +279,50 @@ const CommitRow = memo(function CommitRow({
   return (
     <div
       aria-label={accessibleLabel}
-      aria-posinset={index + 1}
+      aria-rowindex={index + 1}
       aria-selected={selected}
-      aria-setsize={total}
       className={stateClasses}
       data-commit-index={index}
       data-oid={commit.oid}
       onClick={() => onSelect(commit)}
       onContextMenu={handleContextMenu}
       onKeyDown={handleKeyDown}
-      role="option"
-      style={ROW_RENDER_STYLE}
+      role="row"
       tabIndex={selected || (index === 0 && !selected) ? 0 : -1}
     >
-      <span
-        aria-hidden="true"
-        className="gc-commit-row__graph-slot"
-        style={{ width: graphWidth }}
-      />
-      <span className="gc-commit-row__content">
-        <span className="gc-commit-row__subject" title={commit.subject}>
-          {commit.subject || "(no commit message)"}
+      <span aria-label="References" className="gc-commit-row__decorations" role="cell">
+        {commit.decorations.filter((decoration) => !hideHeadDecoration || !decoration.is_head).map((decoration) => (
+          <span
+            className={`gc-ref-label gc-ref-label--${decoration.kind}${decoration.is_head ? " gc-ref-label--head" : ""}`}
+            key={decoration.full_name}
+            title={decoration.full_name}
+          >
+            {decoration.name}
+          </span>
+        ))}
+      </span>
+      <span aria-label="Graph" className="gc-commit-row__graph-slot" role="cell" style={{ width: graphWidth }}>
+        <span
+          aria-hidden="true"
+          className={`gc-commit-row__avatar${selected ? " gc-commit-row__avatar--selected" : ""}`}
+          style={{ left: laneX(commit.graph.lane) }}
+        >
+          {initials.slice(0, 1) || "?"}
         </span>
-        {commit.decorations.length > 0 ? (
-          <span aria-label="References" className="gc-commit-row__decorations">
-            {commit.decorations.map((decoration) => (
-              <span
-                className={`gc-ref-label gc-ref-label--${decoration.kind}${decoration.is_head ? " gc-ref-label--head" : ""}`}
-                key={decoration.full_name}
-                title={decoration.full_name}
-              >
-                {decoration.name}
-              </span>
-            ))}
-          </span>
-        ) : null}
-        <span className="gc-commit-row__metadata">
-          <span className="gc-commit-row__author" title={commit.author.email}>
-            {commit.author.name}
-          </span>
-          <time className="gc-commit-row__time" dateTime={authoredDate?.toISOString()}>
-            {timestamp}
-          </time>
-          <span className="gc-commit-row__oid">{commit.short_oid}</span>
-        </span>
-        {commit.body_preview ? (
-          <span className="gc-commit-row__body-preview" title={commit.body_preview}>
-            {commit.body_preview}
-          </span>
-        ) : null}
+      </span>
+      <span className="gc-commit-row__subject" role="cell" title={commit.body_preview || commit.subject}>
+        {commit.subject || "(no commit message)"}
+      </span>
+      <span className="gc-commit-row__author" role="cell" title={commit.author.email}>
+        {commit.author.name}
+      </span>
+      <time className="gc-commit-row__time" dateTime={authoredDate?.toISOString()} role="cell" title={timestamp}>
+        {timestamp}
+      </time>
+      <span className="gc-commit-row__oid-wrap" role="cell">
+        {onCopySha ? (
+          <RowShaButton oid={commit.oid} onCopy={onCopySha} shortOid={commit.short_oid} />
+        ) : <span className="gc-commit-row__oid">{commit.short_oid}</span>}
       </span>
     </div>
   );
@@ -279,8 +332,10 @@ export function CommitGraph({
   commits,
   selectedOid,
   searchMatchOids,
+  hideHeadDecoration = false,
   onSelect,
   onCommitContextMenu,
+  onCopySha,
   className,
   emptyLabel = "No commits to display.",
   formatTimestamp,
@@ -298,15 +353,17 @@ export function CommitGraph({
   return (
     <div
       aria-label="Commit history"
+      aria-rowcount={commits.length}
       className={`gc-commit-graph${className ? ` ${className}` : ""}`}
       data-commit-list
-      role="listbox"
+      role="grid"
     >
       <svg
         aria-hidden="true"
         className="gc-commit-graph__lanes"
         focusable="false"
         height={geometry.height}
+        style={{ left: REF_COLUMN_WIDTH }}
         viewBox={`0 0 ${geometry.width} ${geometry.height}`}
         width={geometry.width}
       >
@@ -336,9 +393,11 @@ export function CommitGraph({
             commit={commit}
             formatTimestamp={formatTimestamp}
             graphWidth={geometry.width}
+            hideHeadDecoration={hideHeadDecoration}
             index={index}
             key={commit.oid}
             onCommitContextMenu={onCommitContextMenu}
+            onCopySha={onCopySha}
             onSelect={onSelect}
             searchMatch={searchMatchOids?.has(commit.oid) ?? false}
             selected={commit.oid === selectedOid}

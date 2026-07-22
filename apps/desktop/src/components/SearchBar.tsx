@@ -8,6 +8,7 @@ interface SearchBarProps {
   count: number;
   activeIndex: number;
   busy: boolean;
+  focusToken: number;
   onChange: (value: string) => void;
   onPrevious: () => void;
   onNext: () => void;
@@ -19,13 +20,17 @@ export function SearchBar({
   count,
   activeIndex,
   busy,
+  focusToken,
   onChange,
   onPrevious,
   onNext,
   onClose,
 }: SearchBarProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => inputRef.current?.focus(), []);
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [focusToken]);
 
   return (
     <div className="gc-search" role="search">

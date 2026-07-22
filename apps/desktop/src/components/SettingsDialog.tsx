@@ -1,7 +1,15 @@
-import { RotateCcw } from "lucide-react";
-import { useState } from "react";
+import { Keyboard, RotateCcw } from "lucide-react";
+import { useMemo, useState } from "react";
 
 import type { AppSettings, PullMode, ThemeColors } from "../lib/types";
+import {
+  DEFAULT_KEYBINDS,
+  duplicateKeybinds,
+  keybindFromEvent,
+  keybindValidationError,
+  KEYBIND_DEFINITIONS,
+  type KeybindAction,
+} from "../lib/keybinds";
 import { Button, Modal } from "./Primitives";
 
 const COLOR_FIELDS: Array<[keyof ThemeColors, string]> = [
@@ -28,19 +36,22 @@ interface SettingsDialogProps {
 
 export function SettingsDialog({ settings, defaults, onSave, onClose }: SettingsDialogProps) {
   const [draft, setDraft] = useState<AppSettings>(() => structuredClone(settings));
+  const [recording, setRecording] = useState<KeybindAction | null>(null);
+  const [captureError, setCaptureError] = useState<{ action: KeybindAction; message: string } | null>(null);
+  const duplicateActions = useMemo(() => duplicateKeybinds(draft.keybinds), [draft.keybinds]);
   const updateColor = (field: keyof ThemeColors, value: string) => {
     setDraft((current) => ({ ...current, theme: { ...current.theme, [field]: value } }));
   };
 
   return (
     <Modal
-      description="Git behavior, performance limits, and semantic interface colors."
+      description="Git behavior, interface colors, and keyboard shortcuts."
       footer={
         <>
           <Button icon={<RotateCcw size={15} />} onClick={() => setDraft(structuredClone(defaults))}>Reset defaults</Button>
           <span className="gc-modal__spacer" />
           <Button onClick={onClose}>Cancel</Button>
-          <Button onClick={() => onSave(draft)} tone="accent">Save changes</Button>
+          <Button disabled={duplicateActions.size > 0} onClick={() => onSave(draft)} tone="accent">Save changes</Button>
         </>
       }
       onClose={onClose}
@@ -132,6 +143,83 @@ export function SettingsDialog({ settings, defaults, onSave, onClose }: Settings
                 value={color}
               />
             ))}
+          </div>
+        </section>
+        <section className="gc-settings-keybinds">
+          <h3><Keyboard size={14} /> Keybinds</h3>
+          <p>Click a shortcut, then press the new key combination. Backspace/Delete clears it. Duplicate and reserved shortcuts are rejected.</p>
+          <div className="gc-keybind-list">
+            {KEYBIND_DEFINITIONS.map((definition) => {
+              const duplicate = duplicateActions.has(definition.action);
+              return (
+                <div className={`gc-keybind-row${duplicate ? " gc-keybind-row--duplicate" : ""}`} key={definition.action}>
+                  <div>
+                    <strong>{definition.label}</strong>
+                    <span>{definition.description}</span>
+                    <small>{definition.scope}</small>
+                  </div>
+                  <button
+                    aria-label={`Change ${definition.label} shortcut`}
+                    className={recording === definition.action ? "gc-keybind-capture gc-keybind-capture--recording" : "gc-keybind-capture"}
+                    onBlur={() => setRecording((current) => current === definition.action ? null : current)}
+                    onClick={() => {
+                      setCaptureError(null);
+                      setRecording(definition.action);
+                    }}
+                    onKeyDown={(event) => {
+                      if (recording !== definition.action) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      if (event.key === "Escape") {
+                        setRecording(null);
+                        return;
+                      }
+                      if (event.key === "Backspace" || event.key === "Delete") {
+                        setDraft((current) => ({
+                          ...current,
+                          keybinds: { ...current.keybinds, [definition.action]: "" },
+                        }));
+                        setCaptureError(null);
+                        setRecording(null);
+                        return;
+                      }
+                      const binding = keybindFromEvent(event.nativeEvent);
+                      if (!binding) return;
+                      const validationError = keybindValidationError(binding);
+                      if (validationError) {
+                        setCaptureError({ action: definition.action, message: validationError });
+                        setRecording(null);
+                        return;
+                      }
+                      setDraft((current) => ({
+                        ...current,
+                        keybinds: { ...current.keybinds, [definition.action]: binding },
+                      }));
+                      setCaptureError(null);
+                      setRecording(null);
+                    }}
+                    type="button"
+                  >
+                    <kbd>{recording === definition.action ? "Press keys…" : draft.keybinds[definition.action] || "Unassigned"}</kbd>
+                  </button>
+                  <button
+                    aria-label={`Reset ${definition.label} shortcut`}
+                    className="gc-keybind-reset"
+                    disabled={draft.keybinds[definition.action] === DEFAULT_KEYBINDS[definition.action]}
+                    onClick={() => setDraft((current) => ({
+                      ...current,
+                      keybinds: { ...current.keybinds, [definition.action]: DEFAULT_KEYBINDS[definition.action] },
+                    }))}
+                    title="Reset shortcut"
+                    type="button"
+                  >
+                    <RotateCcw size={13} />
+                  </button>
+                  {duplicate ? <span className="gc-keybind-error">Duplicate</span> : null}
+                  {captureError?.action === definition.action ? <span className="gc-keybind-error">{captureError.message}</span> : null}
+                </div>
+              );
+            })}
           </div>
         </section>
       </div>

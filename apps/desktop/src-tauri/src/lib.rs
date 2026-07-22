@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use gitcat_contracts::{
-    ApiError, ApiResult, CloneOptions, CommitActionAvailability, CommitDetails, CommitOptions,
-    CommitSearchQuery, CommitSearchResult, ContinueOperation, DiffRequest, ExpectedState,
-    FetchOptions, FileDiff, GitVersion, HistoryPage, HistoryQuery, MutationResult, PersistedState,
-    PullOptions, PushOptions, RepositoryId, RepositoryInfo, RepositorySnapshot, ResetMode,
-    StashEntry,
+    ApiError, ApiResult, AppMetadata, CloneOptions, CommitActionAvailability, CommitDetails,
+    CommitOptions, CommitSearchQuery, CommitSearchResult, ConflictExpectedState,
+    ConflictFileDetails, ConflictLineEndingPolicy, ConflictPreflightResult, ConflictResolution,
+    ContinueOperation, DiffRequest, ExpectedState, FetchOptions, FileDiff, GitVersion, HistoryPage,
+    HistoryQuery, MutationResult, PersistedState, PullOptions, PushOptions, RepositoryId,
+    RepositoryInfo, RepositorySnapshot, ResetMode, StashEntry,
 };
 use gitcat_core::{CoreApi, JsonStateStore};
 use gitcat_git_cli::GitCliBackend;
@@ -25,6 +26,16 @@ impl From<(RepositoryId, RepositoryInfo)> for OpenedRepository {
             repository_id,
             info,
         }
+    }
+}
+
+#[tauri::command]
+fn app_metadata() -> AppMetadata {
+    AppMetadata {
+        version: env!("CARGO_PKG_VERSION").to_owned(),
+        commit: option_env!("GITCAT_BUILD_COMMIT")
+            .unwrap_or("unknown")
+            .to_owned(),
     }
 }
 
@@ -114,6 +125,24 @@ async fn file_diff(
 }
 
 #[tauri::command]
+async fn conflicts_preflight(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    target: String,
+) -> ApiResult<ConflictPreflightResult> {
+    core.conflict_preflight(&repository_id, &target).await
+}
+
+#[tauri::command]
+async fn conflict_details(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    path: String,
+) -> ApiResult<ConflictFileDetails> {
+    core.conflict_details(&repository_id, &path).await
+}
+
+#[tauri::command]
 async fn paths_stage(
     core: State<'_, Arc<CoreApi>>,
     repository_id: RepositoryId,
@@ -129,6 +158,39 @@ async fn paths_unstage(
     paths: Vec<String>,
 ) -> ApiResult<MutationResult> {
     core.unstage(&repository_id, &paths).await
+}
+
+#[tauri::command]
+async fn conflict_resolve(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    path: String,
+    resolution: ConflictResolution,
+    expected_state: ConflictExpectedState,
+) -> ApiResult<MutationResult> {
+    core.resolve_conflict(&repository_id, &path, resolution, &expected_state)
+        .await
+}
+
+#[tauri::command]
+async fn conflict_save_edited(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    path: String,
+    text: String,
+    line_ending: ConflictLineEndingPolicy,
+    expected_state: ConflictExpectedState,
+) -> ApiResult<MutationResult> {
+    core.save_conflict_result(&repository_id, &path, &text, line_ending, &expected_state)
+        .await
+}
+
+#[tauri::command]
+async fn conflicts_auto_resolve(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+) -> ApiResult<MutationResult> {
+    core.auto_resolve_conflicts(&repository_id).await
 }
 
 #[tauri::command]
@@ -397,6 +459,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            app_metadata,
             git_probe,
             repository_open,
             repository_init,
@@ -407,8 +470,13 @@ pub fn run() {
             history_search,
             commit_details,
             file_diff,
+            conflicts_preflight,
+            conflict_details,
             paths_stage,
             paths_unstage,
+            conflict_resolve,
+            conflict_save_edited,
+            conflicts_auto_resolve,
             create_commit,
             branch_create,
             branch_checkout,

@@ -2,7 +2,7 @@ import { FolderGit2, GitBranch, SearchCode } from "lucide-react";
 
 import { Button } from "./Primitives";
 
-export function WelcomeView({ onOpen }: { onOpen: () => void }) {
+export function WelcomeView({ onOpen, openKeybind }: { onOpen: () => void; openKeybind: string }) {
   return (
     <main className="gc-welcome">
       <div className="gc-welcome__rail" aria-hidden="true">
@@ -22,7 +22,7 @@ export function WelcomeView({ onOpen }: { onOpen: () => void }) {
           <span><SearchCode size={15} /> Subject + description search</span>
         </div>
       </section>
-      <kbd>Ctrl O</kbd>
+      <kbd>{openKeybind || "Unassigned"}</kbd>
     </main>
   );
 }

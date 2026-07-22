@@ -6,25 +6,35 @@ Lightweight, Windows-first desktop Git client. Tauri v2 + React UI, Rust core, a
 
 ## Key features
 
-- Repository tabs in groups: drag and drop, collapse, rename, close, and automatic restoration.
+- Repository tabs in folders or ungrouped: drag and drop, app-owned context actions, aliases, browser-style switching, and automatic restoration.
 - LOCAL, REMOTE, and TAGS sidebar with filtering, branch creation, checkout, rename, and safe deletion.
-- Paginated commit DAG with colored lanes, keyboard navigation, and loading of older commits.
+- Compact, column-aligned commit DAG with colored lanes, WIP pseudo-node, initials avatars, keyboard navigation, and loading of older commits.
 - `Ctrl+F` search across commit subjects and full description/body text.
-- Commit details: SHA, author, timestamp, parents, statistics, and changed files.
-- GitKraken-style structured diff: inline/split view, line numbers, and rename/mode/binary/truncation states.
-- Working tree: staged/unstaged lists, per-file or bulk stage/unstage, commit, amend, and sign-off.
+- Commit details: click-to-copy SHA with full-object tooltip, author, timestamp, parents, statistics, and Path/Tree changed files.
+- GitKraken-style structured diff: aligned inline/split views, line numbers, and rename/mode/binary/truncation states.
+- WIP/working tree: separate collapsible staged/unstaged trees, per-file or bulk actions, commit, amend, and sign-off.
 - Fetch, push, stash push, and explicit pull modes: merge, fast-forward only, or rebase.
 - Commit context menu: detached checkout, branch/tag creation, cherry-pick, revert, reset, and full SHA copy.
 - Continue or abort an in-progress merge/rebase/cherry-pick/revert.
+- Read-only merge-conflict preflight plus an operation-aware Base/Ours/Theirs/result editor, guarded side selection, delete/stage actions, and conservative Git `rerere` reuse.
 - Resizable panels and customizable semantic UI, diff, and graph-lane colors.
+- Hideable side panels, window-centered repository actions, configurable command keybinds, and persistent footer build identity.
 
 Keyboard shortcuts:
 
-- `Ctrl+O`: open repository
+- `Ctrl+Tab` / `Ctrl+Shift+Tab`: next / previous repository
+- `Ctrl+1` … `Ctrl+9`: select repository by visual order
+- `Ctrl+T` / `Ctrl+W`: open a new repository tab / close active repository
+- `Ctrl+Shift+O`: open repository
 - `Ctrl+F`: search commits
 - `Ctrl+,`: settings
 - `F5`: refresh repository
+- `Ctrl+J` / `Ctrl+K`: toggle left / right panel
+- `Ctrl+Shift+S` / `Ctrl+Shift+U`: stage all / unstage all
+- `Ctrl+Enter`: commit from the working-tree panel
 - With the graph focused: `↑`, `↓`, `Home`, `End`, `Enter`, `Shift+F10`
+
+All registered shortcuts, including network, branch, stash, diff, conflict, and operation commands, can be changed or cleared under Preferences → Keybinds. See [UX implementation notes](docs/UX_IMPLEMENTATION.md) for the complete default table.
 
 ## Architecture
 
@@ -124,6 +134,7 @@ The web build is written to `apps/desktop/dist`; native artifacts are written un
 - The UI passes a path only when opening a repository. Subsequent calls use a registered, UUID-based repository ID.
 - Ref names are validated by Git; revisions are resolved to full object IDs before mutations.
 - Pathspec arguments are passed literally after `--`.
+- Conflict-editor writes reject stale index stages or externally changed worktree content, preserve line endings, and atomically replace files before staging.
 - External diff tools and textconv are disabled for read-only diffs.
 - Allowed remote protocols: `file`, `git`, `http`, `https`, `ssh`; custom remote helpers are disabled.
 - Credential prompts are disabled. A preconfigured Git Credential Manager or SSH agent is required.
@@ -139,5 +150,6 @@ The web build is written to `apps/desktop/dist`; native artifacts are written un
 - Network operations have no progress or cancel UI; the Tauri adapter currently creates its own cancellation token for each call.
 - Diffs use a text, line-level view; syntax highlighting and word-level diffs are not yet available.
 - There is no built-in credential dialog or terminal.
+- Hosted provider profile pictures are not fetched without provider authentication; initials are used as the avatar fallback.
 
-Detailed contracts: [Core API](docs/CORE_API.md), [Tauri integration](docs/TAURI_INTEGRATION.md).
+Detailed contracts: [Core API](docs/CORE_API.md), [Tauri integration](docs/TAURI_INTEGRATION.md), [GitKraken UX research](docs/GITKRAKEN_UX_RESEARCH.md), and [UX implementation notes](docs/UX_IMPLEMENTATION.md).

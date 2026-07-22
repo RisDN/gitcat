@@ -1,7 +1,9 @@
 use std::{
     collections::{HashMap, hash_map::DefaultHasher},
     ffi::OsString,
+    fs,
     hash::{Hash, Hasher},
+    io::{Read, Write},
     path::{Component, Path, PathBuf},
     time::Duration,
 };
@@ -9,6 +11,8 @@ use std::{
 use async_trait::async_trait;
 use gitcat_contracts::*;
 use gitcat_core::{GitBackend, layout_commits};
+use sha2::{Digest, Sha256};
+use tempfile::NamedTempFile;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -26,6 +30,20 @@ const MAX_HISTORY_PAGE: usize = 500;
 const MAX_SEARCH_RESULTS: usize = 10_000;
 const MAX_DIFF_BYTES: usize = 128 * 1024 * 1024;
 const MAX_COMMIT_MESSAGE_BYTES: usize = 1024 * 1024;
+const MAX_CONFLICT_TEXT_BYTES: usize = 1024 * 1024;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct UnmergedIndexEntry {
+    mode: String,
+    oid: String,
+    stage: u8,
+}
+
+#[derive(Debug)]
+struct InspectedConflictResult {
+    content: ConflictFileContent,
+    identity: ConflictWorktreeIdentity,
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct GitCliBackend {
@@ -453,6 +471,386 @@ impl GitCliBackend {
         }
     }
 
+    async fn ensure_conflicted_path(&self, path: &Path, conflict_path: &str) -> ApiResult<()> {
+        validate_relative_path(conflict_path)?;
+        let output = self.status_output(path).await?;
+        let status = parse_status(&output.stdout)?.status;
+        if status
+            .entries
+            .iter()
+            .any(|entry| entry.conflicted && entry.path == conflict_path)
+        {
+            Ok(())
+        } else {
+            Err(ApiError::new(
+                ErrorCode::InvalidRequest,
+                "Selected path is not currently conflicted",
+            )
+            .with_details(conflict_path.to_owned()))
+        }
+    }
+
+    async fn unmerged_index_entries(
+        &self,
+        path: &Path,
+        conflict_path: &str,
+    ) -> ApiResult<Vec<UnmergedIndexEntry>> {
+        validate_relative_path(conflict_path)?;
+        let mut args = os_args(&[
+            "--literal-pathspecs",
+            "ls-files",
+            "--unmerged",
+            "--stage",
+            "-z",
+            "--",
+        ]);
+        args.push(conflict_path.into());
+        let output = self.read(Some(path), args).await?;
+        parse_unmerged_index_entries(&output.stdout, conflict_path)
+    }
+
+    async fn ensure_expected_conflict(
+        &self,
+        path: &Path,
+        conflict_path: &str,
+        expected_state: &ConflictExpectedState,
+    ) -> ApiResult<Vec<UnmergedIndexEntry>> {
+        if let Err(error) = self.ensure_conflicted_path(path, conflict_path).await {
+            let had_expected_stages = expected_state.base.is_some()
+                || expected_state.ours.is_some()
+                || expected_state.theirs.is_some();
+            if error.code == ErrorCode::InvalidRequest && had_expected_stages {
+                return Err(ApiError::new(
+                    ErrorCode::StaleSnapshot,
+                    "Conflict changed after the editor was opened",
+                )
+                .with_details(conflict_path.to_owned()));
+            }
+            return Err(error);
+        }
+        let entries = self.unmerged_index_entries(path, conflict_path).await?;
+        let worktree = self
+            .inspect_conflict_result_async(path, conflict_path)
+            .await?;
+        let actual = conflict_expected_state(&entries, worktree.identity);
+        if actual != *expected_state {
+            return Err(ApiError::new(
+                ErrorCode::StaleSnapshot,
+                "Conflict changed after the editor was opened",
+            )
+            .with_details(conflict_path.to_owned()));
+        }
+        Ok(entries)
+    }
+
+    async fn conflict_blob_content(
+        &self,
+        path: &Path,
+        oid: &str,
+        mode: &str,
+    ) -> ApiResult<ConflictFileContent> {
+        if !is_full_oid(oid) {
+            return Err(ApiError::new(
+                ErrorCode::GitCommandFailed,
+                "Conflict index contains an invalid object ID",
+            ));
+        }
+        let size_output = self
+            .read(Some(path), vec!["cat-file".into(), "-s".into(), oid.into()])
+            .await?;
+        let size = size_output
+            .stdout_lossy()
+            .trim()
+            .parse::<u64>()
+            .map_err(|error| {
+                ApiError::new(
+                    ErrorCode::GitCommandFailed,
+                    "Git returned an invalid conflict blob size",
+                )
+                .with_details(error.to_string())
+            })?;
+        if !matches!(mode, "100644" | "100755") {
+            return Ok(ConflictFileContent {
+                kind: ConflictContentKind::Binary,
+                size: Some(size),
+                text: None,
+                line_ending: None,
+            });
+        }
+        if size > MAX_CONFLICT_TEXT_BYTES as u64 {
+            return Ok(ConflictFileContent {
+                kind: ConflictContentKind::TooLarge,
+                size: Some(size),
+                text: None,
+                line_ending: None,
+            });
+        }
+
+        let content = self
+            .read(
+                Some(path),
+                vec!["cat-file".into(), "blob".into(), oid.into()],
+            )
+            .await?
+            .stdout;
+        Ok(classify_conflict_content(content, size))
+    }
+
+    async fn conflict_index_version(
+        &self,
+        path: &Path,
+        entry: &UnmergedIndexEntry,
+    ) -> ApiResult<ConflictIndexVersion> {
+        Ok(ConflictIndexVersion {
+            oid: entry.oid.clone(),
+            mode: entry.mode.clone(),
+            content: self
+                .conflict_blob_content(path, &entry.oid, &entry.mode)
+                .await?,
+        })
+    }
+
+    fn inspect_conflict_result(
+        &self,
+        path: &Path,
+        conflict_path: &str,
+    ) -> ApiResult<InspectedConflictResult> {
+        let target = checked_worktree_target(path, conflict_path, false)?;
+        let metadata = match fs::symlink_metadata(&target) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(InspectedConflictResult {
+                    content: ConflictFileContent {
+                        kind: ConflictContentKind::Missing,
+                        size: None,
+                        text: None,
+                        line_ending: None,
+                    },
+                    identity: missing_worktree_identity(),
+                });
+            }
+            Err(error) => {
+                return Err(ApiError::new(
+                    ErrorCode::Io,
+                    "Conflict result metadata could not be read",
+                )
+                .with_details(error.to_string()));
+            }
+        };
+        if metadata.file_type().is_symlink() {
+            let link = fs::read_link(&target).map_err(|error| {
+                ApiError::new(ErrorCode::Io, "Conflict symlink target could not be read")
+                    .with_details(error.to_string())
+            })?;
+            let link_bytes = os_string_bytes(link.as_os_str());
+            let size = link_bytes.len() as u64;
+            return Ok(InspectedConflictResult {
+                content: ConflictFileContent {
+                    kind: ConflictContentKind::Binary,
+                    size: Some(size),
+                    text: None,
+                    line_ending: None,
+                },
+                identity: ConflictWorktreeIdentity {
+                    kind: ConflictWorktreeKind::Symlink,
+                    size: Some(size),
+                    sha256: Some(sha256_hex(&link_bytes)),
+                    line_ending: None,
+                    mode: None,
+                },
+            });
+        }
+        if !metadata.is_file() {
+            return Err(ApiError::new(
+                ErrorCode::InvalidPath,
+                "Conflict result path is not a regular file or symbolic link",
+            ));
+        }
+        let mut file = fs::File::open(&target).map_err(|error| {
+            ApiError::new(ErrorCode::Io, "Conflict result could not be opened")
+                .with_details(error.to_string())
+        })?;
+        let mut hasher = Sha256::new();
+        let mut preview = Vec::with_capacity(MAX_CONFLICT_TEXT_BYTES + 1);
+        let mut buffer = [0_u8; 64 * 1024];
+        let mut size = 0_u64;
+        loop {
+            let read = file.read(&mut buffer).map_err(|error| {
+                ApiError::new(ErrorCode::Io, "Conflict result could not be read")
+                    .with_details(error.to_string())
+            })?;
+            if read == 0 {
+                break;
+            }
+            size = size.checked_add(read as u64).ok_or_else(|| {
+                ApiError::new(ErrorCode::OutputTooLarge, "Conflict result size overflowed")
+            })?;
+            hasher.update(&buffer[..read]);
+            if preview.len() <= MAX_CONFLICT_TEXT_BYTES {
+                let remaining = MAX_CONFLICT_TEXT_BYTES + 1 - preview.len();
+                preview.extend_from_slice(&buffer[..read.min(remaining)]);
+            }
+        }
+        let content = if size > MAX_CONFLICT_TEXT_BYTES as u64 {
+            ConflictFileContent {
+                kind: ConflictContentKind::TooLarge,
+                size: Some(size),
+                text: None,
+                line_ending: None,
+            }
+        } else {
+            classify_conflict_content(preview, size)
+        };
+        Ok(InspectedConflictResult {
+            identity: ConflictWorktreeIdentity {
+                kind: ConflictWorktreeKind::Regular,
+                size: Some(size),
+                sha256: Some(format!("{:x}", hasher.finalize())),
+                line_ending: content.line_ending,
+                mode: conflict_file_mode(&metadata),
+            },
+            content,
+        })
+    }
+
+    async fn inspect_conflict_result_async(
+        &self,
+        path: &Path,
+        conflict_path: &str,
+    ) -> ApiResult<InspectedConflictResult> {
+        let backend = self.clone();
+        let path = path.to_path_buf();
+        let conflict_path = conflict_path.to_owned();
+        tokio::task::spawn_blocking(move || backend.inspect_conflict_result(&path, &conflict_path))
+            .await
+            .map_err(blocking_conflict_task_error)?
+    }
+
+    fn write_conflict_result(
+        &self,
+        path: &Path,
+        conflict_path: &str,
+        text: &str,
+        line_ending: ConflictLineEndingPolicy,
+        expected_result: &ConflictWorktreeIdentity,
+        desired_mode: &str,
+    ) -> ApiResult<()> {
+        let current = self.inspect_conflict_result(path, conflict_path)?;
+        if current.identity != *expected_result {
+            return Err(ApiError::new(
+                ErrorCode::StaleSnapshot,
+                "Conflict result changed after the editor was opened",
+            )
+            .with_details(conflict_path.to_owned()));
+        }
+        let bytes = encode_edited_conflict_text(text, line_ending, &current.content)?;
+        if bytes.len() > MAX_CONFLICT_TEXT_BYTES {
+            return Err(ApiError::new(
+                ErrorCode::OutputTooLarge,
+                "Edited conflict result exceeds the safe editor limit",
+            )
+            .with_details(format!(
+                "maximum={} bytes, actual={} bytes",
+                MAX_CONFLICT_TEXT_BYTES,
+                bytes.len()
+            )));
+        }
+        let target = checked_worktree_target(path, conflict_path, true)?;
+        let parent = target.parent().ok_or_else(|| {
+            ApiError::new(ErrorCode::InvalidPath, "Conflict result parent is missing")
+        })?;
+        let original_permissions = fs::symlink_metadata(&target)
+            .ok()
+            .filter(|metadata| metadata.is_file())
+            .map(|metadata| metadata.permissions());
+        let mut temporary = new_conflict_temporary(
+            parent,
+            original_permissions.is_none().then_some(desired_mode),
+        )?;
+        if let Some(permissions) = original_permissions {
+            temporary
+                .as_file()
+                .set_permissions(permissions)
+                .map_err(|error| {
+                    ApiError::new(
+                        ErrorCode::Io,
+                        "Conflict result permissions could not be preserved",
+                    )
+                    .with_details(error.to_string())
+                })?;
+        }
+        temporary.write_all(&bytes).map_err(|error| {
+            ApiError::new(ErrorCode::Io, "Edited conflict result could not be written")
+                .with_details(error.to_string())
+        })?;
+        temporary.flush().map_err(|error| {
+            ApiError::new(ErrorCode::Io, "Edited conflict result could not be flushed")
+                .with_details(error.to_string())
+        })?;
+        temporary.as_file().sync_all().map_err(|error| {
+            ApiError::new(ErrorCode::Io, "Edited conflict result could not be synced")
+                .with_details(error.to_string())
+        })?;
+
+        checked_worktree_target(path, conflict_path, true)?;
+        let immediately_before_replace = self.inspect_conflict_result(path, conflict_path)?;
+        if immediately_before_replace.identity != *expected_result {
+            return Err(ApiError::new(
+                ErrorCode::StaleSnapshot,
+                "Conflict result changed while the edited result was being saved",
+            )
+            .with_details(conflict_path.to_owned()));
+        }
+        temporary.persist(&target).map_err(|error| {
+            ApiError::new(
+                ErrorCode::Io,
+                "Edited conflict result could not atomically replace the working file",
+            )
+            .with_details(error.error.to_string())
+        })?;
+        Ok(())
+    }
+
+    async fn write_conflict_result_async(
+        &self,
+        path: &Path,
+        conflict_path: &str,
+        text: &str,
+        line_ending: ConflictLineEndingPolicy,
+        expected_result: &ConflictWorktreeIdentity,
+        desired_mode: &str,
+    ) -> ApiResult<()> {
+        let backend = self.clone();
+        let path = path.to_path_buf();
+        let conflict_path = conflict_path.to_owned();
+        let text = text.to_owned();
+        let expected_result = expected_result.clone();
+        let desired_mode = desired_mode.to_owned();
+        tokio::task::spawn_blocking(move || {
+            backend.write_conflict_result(
+                &path,
+                &conflict_path,
+                &text,
+                line_ending,
+                &expected_result,
+                &desired_mode,
+            )
+        })
+        .await
+        .map_err(blocking_conflict_task_error)?
+    }
+
+    async fn stage_conflict_path(
+        &self,
+        path: &Path,
+        conflict_path: &str,
+    ) -> ApiResult<MutationResult> {
+        let mut args = os_args(&["--literal-pathspecs", "add", "--"]);
+        args.push(conflict_path.into());
+        self.mutate(path, args, None, CancellationToken::new(), false)
+            .await
+    }
+
     async fn changed_files_for_commit(
         &self,
         path: &Path,
@@ -636,6 +1034,7 @@ impl GitBackend for GitCliBackend {
         let refs = parse_refs(&refs_output)?;
         let mut local_branches = Vec::new();
         let mut remote_branches = Vec::new();
+        let mut symbolic_remote_targets = Vec::new();
         let mut tags = Vec::new();
         for parsed_ref in refs {
             match parsed_ref.label.kind {
@@ -644,18 +1043,46 @@ impl GitBackend for GitCliBackend {
                         local_branches.push(branch);
                     }
                 }
-                RefKind::RemoteBranch if !parsed_ref.symbolic => {
+                RefKind::RemoteBranch if parsed_ref.symbolic_target.is_none() => {
                     if let Some(branch) = parsed_ref.branch {
                         remote_branches.push(branch);
                     }
                 }
                 RefKind::Tag => tags.push(parsed_ref.label),
-                RefKind::RemoteBranch => {}
+                RefKind::RemoteBranch => {
+                    if let Some(target) = parsed_ref.symbolic_target {
+                        symbolic_remote_targets.push((parsed_ref.label.full_name, target));
+                    }
+                }
             }
         }
         local_branches.sort_by(|left, right| left.name.cmp(&right.name));
         remote_branches.sort_by(|left, right| left.name.cmp(&right.name));
         tags.sort_by(|left, right| left.name.cmp(&right.name));
+        symbolic_remote_targets.sort_by(|left, right| left.0.cmp(&right.0));
+        let remote_exists = |name: &str| remote_branches.iter().any(|branch| branch.name == name);
+        let default_conflict_target = local_branches
+            .iter()
+            .find(|branch| branch.is_head)
+            .and_then(|branch| branch.upstream.clone())
+            .filter(|upstream| remote_exists(upstream))
+            .or_else(|| {
+                let resolve_target = |target: &str| {
+                    target
+                        .strip_prefix("refs/remotes/")
+                        .filter(|target| remote_exists(target))
+                        .map(str::to_owned)
+                };
+                let origin_default = symbolic_remote_targets
+                    .iter()
+                    .find(|(symbolic, _)| symbolic == "refs/remotes/origin/HEAD")
+                    .and_then(|(_, target)| resolve_target(target));
+                origin_default.or_else(|| {
+                    symbolic_remote_targets
+                        .iter()
+                        .find_map(|(_, target)| resolve_target(target))
+                })
+            });
 
         let info = self.inspect_repository(path).await?;
         let shallow = self
@@ -692,6 +1119,7 @@ impl GitBackend for GitCliBackend {
             status: parsed_status.status,
             local_branches,
             remote_branches,
+            default_conflict_target,
             tags,
             remotes,
             capabilities: RepositoryCapabilities {
@@ -967,6 +1395,113 @@ impl GitBackend for GitCliBackend {
         parse_file_diff(&output.stdout, &request.path, output.stdout_truncated)
     }
 
+    async fn conflict_preflight(
+        &self,
+        path: &Path,
+        target: &str,
+    ) -> ApiResult<ConflictPreflightResult> {
+        // Resolve caller input before feature detection or merge simulation. The
+        // merge-tree command receives only full object IDs, never an option-like ref.
+        let target_oid = self.resolve_commit(path, target).await?;
+        let version = self.probe().await?;
+        if !supports_merge_tree_preflight(&version) {
+            return Ok(ConflictPreflightResult {
+                target: target.to_owned(),
+                target_oid,
+                state: ConflictPreflightState::Unavailable,
+                conflicting_paths: Vec::new(),
+                unavailable_reason: Some(
+                    "Conflict preflight requires Git 2.38 or newer".to_owned(),
+                ),
+            });
+        }
+
+        let head_oid = self.resolve_commit(path, "HEAD").await?;
+        let output = self
+            .read_allow_failure(
+                Some(path),
+                vec![
+                    "merge-tree".into(),
+                    "--write-tree".into(),
+                    "--name-only".into(),
+                    "-z".into(),
+                    "--no-messages".into(),
+                    head_oid.into(),
+                    target_oid.as_str().into(),
+                ],
+            )
+            .await?;
+
+        let exit_code = output.status.code();
+        if !matches!(exit_code, Some(0 | 1)) {
+            if merge_tree_preflight_unavailable(&output) {
+                return Ok(ConflictPreflightResult {
+                    target: target.to_owned(),
+                    target_oid,
+                    state: ConflictPreflightState::Unavailable,
+                    conflicting_paths: Vec::new(),
+                    unavailable_reason: Some(
+                        "This Git build does not support conflict preflight".to_owned(),
+                    ),
+                });
+            }
+            return Err(self.runner.failure_error(&output));
+        }
+
+        let conflicting_paths = parse_merge_tree_paths(&output.stdout)?;
+        let state = match exit_code {
+            Some(0) if conflicting_paths.is_empty() => ConflictPreflightState::Clean,
+            Some(1) if !conflicting_paths.is_empty() => ConflictPreflightState::Conflicting,
+            _ => {
+                return Err(ApiError::new(
+                    ErrorCode::GitCommandFailed,
+                    "Git conflict preflight returned an inconsistent result",
+                ));
+            }
+        };
+
+        Ok(ConflictPreflightResult {
+            target: target.to_owned(),
+            target_oid,
+            state,
+            conflicting_paths,
+            unavailable_reason: None,
+        })
+    }
+
+    async fn conflict_details(
+        &self,
+        path: &Path,
+        conflict_path: &str,
+    ) -> ApiResult<ConflictFileDetails> {
+        self.ensure_conflicted_path(path, conflict_path).await?;
+        let entries = self.unmerged_index_entries(path, conflict_path).await?;
+        let base = match entry_at_stage(&entries, 1) {
+            Some(entry) => Some(self.conflict_index_version(path, entry).await?),
+            None => None,
+        };
+        let ours = match entry_at_stage(&entries, 2) {
+            Some(entry) => Some(self.conflict_index_version(path, entry).await?),
+            None => None,
+        };
+        let theirs = match entry_at_stage(&entries, 3) {
+            Some(entry) => Some(self.conflict_index_version(path, entry).await?),
+            None => None,
+        };
+        let worktree = self
+            .inspect_conflict_result_async(path, conflict_path)
+            .await?;
+
+        Ok(ConflictFileDetails {
+            path: conflict_path.to_owned(),
+            expected_state: conflict_expected_state(&entries, worktree.identity),
+            base,
+            ours,
+            theirs,
+            result: worktree.content,
+        })
+    }
+
     async fn stage_paths(&self, path: &Path, paths: &[String]) -> ApiResult<MutationResult> {
         if paths.is_empty() {
             return self.mutation_result(path, self.head_oid(path).await?).await;
@@ -991,6 +1526,120 @@ impl GitBackend for GitCliBackend {
         args.extend(paths.iter().map(OsString::from));
         self.mutate(path, args, None, CancellationToken::new(), false)
             .await
+    }
+
+    async fn resolve_conflict(
+        &self,
+        path: &Path,
+        conflict_path: &str,
+        resolution: ConflictResolution,
+        expected_state: &ConflictExpectedState,
+    ) -> ApiResult<MutationResult> {
+        let entries = self
+            .ensure_expected_conflict(path, conflict_path, expected_state)
+            .await?;
+
+        let checkout_side = match resolution {
+            ConflictResolution::Ours => Some(("--ours", 2, "ours")),
+            ConflictResolution::Theirs => Some(("--theirs", 3, "theirs")),
+            ConflictResolution::MarkResolved | ConflictResolution::Delete => None,
+        };
+
+        if let Some((checkout_flag, stage, side_name)) = checkout_side {
+            if entry_at_stage(&entries, stage).is_none() {
+                return Err(ApiError::new(
+                    ErrorCode::UnsupportedOperation,
+                    format!("The {side_name} side has no file content for this conflict"),
+                )
+                .with_details(format!(
+                    "{conflict_path}: the selected index stage is absent; use the explicit delete resolution if deletion is intended."
+                )));
+            }
+
+            let mut args = os_args(&["--literal-pathspecs", "checkout", checkout_flag, "--"]);
+            args.push(conflict_path.into());
+            self.mutate(path, args, None, CancellationToken::new(), false)
+                .await?;
+        }
+
+        if resolution == ConflictResolution::Delete {
+            let mut args = os_args(&[
+                "--literal-pathspecs",
+                "rm",
+                "--force",
+                "--ignore-unmatch",
+                "--",
+            ]);
+            args.push(conflict_path.into());
+            return self
+                .mutate(path, args, None, CancellationToken::new(), false)
+                .await;
+        }
+
+        self.stage_conflict_path(path, conflict_path).await
+    }
+
+    async fn save_conflict_result(
+        &self,
+        path: &Path,
+        conflict_path: &str,
+        text: &str,
+        line_ending: ConflictLineEndingPolicy,
+        expected_state: &ConflictExpectedState,
+    ) -> ApiResult<MutationResult> {
+        let entries = self
+            .ensure_expected_conflict(path, conflict_path, expected_state)
+            .await?;
+        let desired_mode = [2, 3, 1]
+            .into_iter()
+            .filter_map(|stage| entry_at_stage(&entries, stage))
+            .find(|entry| matches!(entry.mode.as_str(), "100644" | "100755"))
+            .map(|entry| entry.mode.as_str())
+            .ok_or_else(|| {
+                ApiError::new(
+                    ErrorCode::UnsupportedOperation,
+                    "Edited text cannot resolve a non-regular-file conflict",
+                )
+            })?;
+        if !matches!(
+            expected_state.result.kind,
+            ConflictWorktreeKind::Regular | ConflictWorktreeKind::Missing
+        ) {
+            return Err(ApiError::new(
+                ErrorCode::UnsupportedOperation,
+                "Edited text cannot resolve a non-regular-file conflict",
+            ));
+        }
+        self.write_conflict_result_async(
+            path,
+            conflict_path,
+            text,
+            line_ending,
+            &expected_state.result,
+            desired_mode,
+        )
+        .await?;
+        self.stage_conflict_path(path, conflict_path).await
+    }
+
+    async fn auto_resolve_conflicts(&self, path: &Path) -> ApiResult<MutationResult> {
+        // `rerere` only reuses a repository-local resolution recorded for the
+        // exact conflict preimage. It never chooses current or incoming content.
+        self.mutate(
+            path,
+            os_args(&[
+                "-c",
+                "rerere.enabled=true",
+                "-c",
+                "rerere.autoupdate=true",
+                "rerere",
+                "--rerere-autoupdate",
+            ]),
+            None,
+            CancellationToken::new(),
+            false,
+        )
+        .await
     }
 
     async fn create_commit(
@@ -1518,6 +2167,383 @@ impl GitBackend for GitCliBackend {
     }
 }
 
+fn blocking_conflict_task_error(error: tokio::task::JoinError) -> ApiError {
+    ApiError::new(
+        ErrorCode::Internal,
+        "Conflict file worker task failed unexpectedly",
+    )
+    .with_details(error.to_string())
+}
+
+fn parse_unmerged_index_entries(
+    stdout: &[u8],
+    expected_path: &str,
+) -> ApiResult<Vec<UnmergedIndexEntry>> {
+    let mut entries = Vec::new();
+    for record in stdout
+        .split(|byte| *byte == 0)
+        .filter(|record| !record.is_empty())
+    {
+        let tab = record
+            .iter()
+            .position(|byte| *byte == b'\t')
+            .ok_or_else(|| {
+                ApiError::new(
+                    ErrorCode::GitCommandFailed,
+                    "Git returned malformed unmerged index data",
+                )
+            })?;
+        if &record[tab + 1..] != expected_path.as_bytes() {
+            return Err(ApiError::new(
+                ErrorCode::GitCommandFailed,
+                "Git returned an unexpected unmerged path",
+            ));
+        }
+        let header = std::str::from_utf8(&record[..tab]).map_err(|error| {
+            ApiError::new(
+                ErrorCode::GitCommandFailed,
+                "Git returned non-UTF-8 unmerged index metadata",
+            )
+            .with_details(error.to_string())
+        })?;
+        let mut fields = header.split_ascii_whitespace();
+        let mode = fields.next().unwrap_or_default();
+        let oid = fields.next().unwrap_or_default();
+        let stage = fields
+            .next()
+            .unwrap_or_default()
+            .parse::<u8>()
+            .map_err(|error| {
+                ApiError::new(
+                    ErrorCode::GitCommandFailed,
+                    "Git returned an invalid conflict stage",
+                )
+                .with_details(error.to_string())
+            })?;
+        if fields.next().is_some()
+            || !matches!(stage, 1..=3)
+            || mode.len() != 6
+            || !mode.bytes().all(|byte| byte.is_ascii_digit())
+            || !is_full_oid(oid)
+            || entries
+                .iter()
+                .any(|entry: &UnmergedIndexEntry| entry.stage == stage)
+        {
+            return Err(ApiError::new(
+                ErrorCode::GitCommandFailed,
+                "Git returned inconsistent unmerged index metadata",
+            ));
+        }
+        entries.push(UnmergedIndexEntry {
+            mode: mode.to_owned(),
+            oid: oid.to_owned(),
+            stage,
+        });
+    }
+    if entries.is_empty() {
+        return Err(ApiError::new(
+            ErrorCode::StaleSnapshot,
+            "Conflict index entries no longer exist",
+        )
+        .with_details(expected_path.to_owned()));
+    }
+    entries.sort_unstable_by_key(|entry| entry.stage);
+    Ok(entries)
+}
+
+fn entry_at_stage(entries: &[UnmergedIndexEntry], stage: u8) -> Option<&UnmergedIndexEntry> {
+    entries.iter().find(|entry| entry.stage == stage)
+}
+
+fn conflict_expected_state(
+    entries: &[UnmergedIndexEntry],
+    result: ConflictWorktreeIdentity,
+) -> ConflictExpectedState {
+    let identity = |stage| {
+        entry_at_stage(entries, stage).map(|entry| ConflictStageIdentity {
+            oid: entry.oid.clone(),
+            mode: entry.mode.clone(),
+        })
+    };
+    ConflictExpectedState {
+        base: identity(1),
+        ours: identity(2),
+        theirs: identity(3),
+        result,
+    }
+}
+
+fn classify_conflict_content(bytes: Vec<u8>, reported_size: u64) -> ConflictFileContent {
+    if bytes.len() > MAX_CONFLICT_TEXT_BYTES {
+        return ConflictFileContent {
+            kind: ConflictContentKind::TooLarge,
+            size: Some(bytes.len() as u64),
+            text: None,
+            line_ending: None,
+        };
+    }
+    if bytes.contains(&0) {
+        return ConflictFileContent {
+            kind: ConflictContentKind::Binary,
+            size: Some(reported_size),
+            text: None,
+            line_ending: None,
+        };
+    }
+    match String::from_utf8(bytes) {
+        Ok(text) => {
+            let line_ending = detect_line_ending(&text);
+            ConflictFileContent {
+                kind: ConflictContentKind::Text,
+                size: Some(reported_size),
+                text: Some(text),
+                line_ending: Some(line_ending),
+            }
+        }
+        Err(_) => ConflictFileContent {
+            kind: ConflictContentKind::Binary,
+            size: Some(reported_size),
+            text: None,
+            line_ending: None,
+        },
+    }
+}
+
+fn missing_worktree_identity() -> ConflictWorktreeIdentity {
+    ConflictWorktreeIdentity {
+        kind: ConflictWorktreeKind::Missing,
+        size: None,
+        sha256: None,
+        line_ending: None,
+        mode: None,
+    }
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+#[cfg(unix)]
+fn os_string_bytes(value: &std::ffi::OsStr) -> Vec<u8> {
+    use std::os::unix::ffi::OsStrExt;
+    value.as_bytes().to_vec()
+}
+
+#[cfg(windows)]
+fn os_string_bytes(value: &std::ffi::OsStr) -> Vec<u8> {
+    use std::os::windows::ffi::OsStrExt;
+    value
+        .encode_wide()
+        .flat_map(u16::to_le_bytes)
+        .collect::<Vec<_>>()
+}
+
+#[cfg(not(any(unix, windows)))]
+fn os_string_bytes(value: &std::ffi::OsStr) -> Vec<u8> {
+    value.to_string_lossy().as_bytes().to_vec()
+}
+
+fn detect_line_ending(text: &str) -> ConflictLineEnding {
+    let bytes = text.as_bytes();
+    let mut saw_lf = false;
+    let mut saw_crlf = false;
+    let mut saw_bare_cr = false;
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\r' if bytes.get(index + 1) == Some(&b'\n') => {
+                saw_crlf = true;
+                index += 2;
+            }
+            b'\r' => {
+                saw_bare_cr = true;
+                index += 1;
+            }
+            b'\n' => {
+                saw_lf = true;
+                index += 1;
+            }
+            _ => index += 1,
+        }
+    }
+    match (saw_lf, saw_crlf, saw_bare_cr) {
+        (false, false, false) => ConflictLineEnding::None,
+        (true, false, false) => ConflictLineEnding::Lf,
+        (false, true, false) => ConflictLineEnding::CrLf,
+        _ => ConflictLineEnding::Mixed,
+    }
+}
+
+fn normalize_line_endings(text: &str) -> String {
+    text.replace("\r\n", "\n").replace('\r', "\n")
+}
+
+fn encode_edited_conflict_text(
+    text: &str,
+    policy: ConflictLineEndingPolicy,
+    current: &ConflictFileContent,
+) -> ApiResult<Vec<u8>> {
+    match current.kind {
+        ConflictContentKind::Missing | ConflictContentKind::Text => {
+            let normalized = normalize_line_endings(text);
+            match policy {
+                ConflictLineEndingPolicy::Lf => Ok(normalized.into_bytes()),
+                ConflictLineEndingPolicy::CrLf => Ok(normalized.replace('\n', "\r\n").into_bytes()),
+                ConflictLineEndingPolicy::Preserve => {
+                    match current.line_ending.unwrap_or(ConflictLineEnding::None) {
+                        ConflictLineEnding::CrLf => {
+                            Ok(normalized.replace('\n', "\r\n").into_bytes())
+                        }
+                        ConflictLineEnding::Lf | ConflictLineEnding::None => {
+                            Ok(normalized.into_bytes())
+                        }
+                        ConflictLineEnding::Mixed => {
+                            let original = current.text.as_deref().unwrap_or_default();
+                            if normalize_line_endings(original) == normalized {
+                                Ok(original.as_bytes().to_vec())
+                            } else {
+                                Err(ApiError::new(
+                                    ErrorCode::InvalidRequest,
+                                    "Edited mixed line endings require an explicit LF or CRLF policy",
+                                ))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        ConflictContentKind::Binary | ConflictContentKind::TooLarge => Err(ApiError::new(
+            ErrorCode::UnsupportedOperation,
+            "Built-in text editor cannot save binary or oversized conflict content",
+        )),
+    }
+}
+
+fn new_conflict_temporary(parent: &Path, desired_mode: Option<&str>) -> ApiResult<NamedTempFile> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut builder = tempfile::Builder::new();
+        if let Some(desired_mode) = desired_mode {
+            // Passing creation permissions lets the operating system apply the
+            // process umask. A later chmod to 0644/0755 would bypass it.
+            let mode = if desired_mode == "100755" {
+                0o777
+            } else {
+                0o666
+            };
+            builder.permissions(fs::Permissions::from_mode(mode));
+        }
+        return builder
+            .tempfile_in(parent)
+            .map_err(conflict_temporary_error);
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = desired_mode;
+        NamedTempFile::new_in(parent).map_err(conflict_temporary_error)
+    }
+}
+
+fn conflict_temporary_error(error: std::io::Error) -> ApiError {
+    ApiError::new(
+        ErrorCode::Io,
+        "Temporary conflict result could not be created",
+    )
+    .with_details(error.to_string())
+}
+
+#[cfg(unix)]
+fn conflict_file_mode(metadata: &fs::Metadata) -> Option<u32> {
+    use std::os::unix::fs::PermissionsExt;
+
+    Some(metadata.permissions().mode() & 0o7777)
+}
+
+#[cfg(not(unix))]
+fn conflict_file_mode(_metadata: &fs::Metadata) -> Option<u32> {
+    None
+}
+
+fn checked_worktree_target(
+    repository: &Path,
+    relative_path: &str,
+    reject_target_symlink: bool,
+) -> ApiResult<PathBuf> {
+    validate_relative_path(relative_path)?;
+    let root = dunce::canonicalize(repository).map_err(|error| {
+        ApiError::new(
+            ErrorCode::InvalidRepository,
+            "Repository root could not be resolved",
+        )
+        .with_details(error.to_string())
+    })?;
+    let lexical_target = root.join(relative_path);
+    let parent = lexical_target.parent().ok_or_else(|| {
+        ApiError::new(
+            ErrorCode::InvalidPath,
+            "Conflict result has no repository-relative parent",
+        )
+    })?;
+    let canonical_parent = dunce::canonicalize(parent).map_err(|error| {
+        ApiError::new(
+            ErrorCode::InvalidPath,
+            "Conflict result parent could not be resolved",
+        )
+        .with_details(error.to_string())
+    })?;
+    if !canonical_parent.starts_with(&root) {
+        return Err(ApiError::new(
+            ErrorCode::ProtectedOperation,
+            "Conflict result path escapes the repository through a symlink",
+        ));
+    }
+    let file_name = lexical_target.file_name().ok_or_else(|| {
+        ApiError::new(ErrorCode::InvalidPath, "Conflict result path is malformed")
+    })?;
+    let target = canonical_parent.join(file_name);
+    match fs::symlink_metadata(&target) {
+        Ok(metadata) => {
+            if reject_target_symlink && metadata.file_type().is_symlink() {
+                return Err(ApiError::new(
+                    ErrorCode::ProtectedOperation,
+                    "Edited conflict result cannot replace a symbolic link",
+                ));
+            }
+            if !metadata.file_type().is_symlink() {
+                let canonical_target = dunce::canonicalize(&target).map_err(|error| {
+                    ApiError::new(
+                        ErrorCode::InvalidPath,
+                        "Conflict result could not be resolved",
+                    )
+                    .with_details(error.to_string())
+                })?;
+                if !canonical_target.starts_with(&root) {
+                    return Err(ApiError::new(
+                        ErrorCode::ProtectedOperation,
+                        "Conflict result path escapes the repository",
+                    ));
+                }
+                if !metadata.is_file() {
+                    return Err(ApiError::new(
+                        ErrorCode::InvalidPath,
+                        "Conflict result path is not a regular file",
+                    ));
+                }
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(
+                ApiError::new(ErrorCode::Io, "Conflict result metadata could not be read")
+                    .with_details(error.to_string()),
+            );
+        }
+    }
+    Ok(target)
+}
+
 fn canonical_or_absolute(base: &Path, value: &str) -> ApiResult<PathBuf> {
     let path = PathBuf::from(value);
     let path = if path.is_absolute() {
@@ -1635,6 +2661,46 @@ fn is_full_oid(value: &str) -> bool {
     matches!(value.len(), 40 | 64) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
+fn supports_merge_tree_preflight(version: &GitVersion) -> bool {
+    version.major > 2 || (version.major == 2 && version.minor >= 38)
+}
+
+fn merge_tree_preflight_unavailable(output: &GitCommandOutput) -> bool {
+    let diagnostic = format!(
+        "{}\n{}",
+        output.stderr_lossy_redacted(),
+        output.stdout_lossy()
+    )
+    .to_ascii_lowercase();
+    output.status.code() == Some(129)
+        || diagnostic.contains("unknown option")
+        || diagnostic.contains("unrecognized option")
+        || diagnostic.contains("unknown switch")
+}
+
+fn parse_merge_tree_paths(stdout: &[u8]) -> ApiResult<Vec<String>> {
+    let mut fields = stdout.split(|byte| *byte == 0);
+    let tree_oid = fields
+        .next()
+        .map(String::from_utf8_lossy)
+        .map(|value| value.trim().to_owned())
+        .unwrap_or_default();
+    if !is_full_oid(&tree_oid) {
+        return Err(ApiError::new(
+            ErrorCode::GitCommandFailed,
+            "Git conflict preflight did not return a valid tree object ID",
+        ));
+    }
+
+    let mut paths: Vec<String> = fields
+        .filter(|field| !field.is_empty())
+        .map(|field| String::from_utf8_lossy(field).into_owned())
+        .collect();
+    paths.sort_unstable();
+    paths.dedup();
+    Ok(paths)
+}
+
 fn invalid_ref() -> ApiError {
     ApiError::new(ErrorCode::InvalidRefName, "Git reference name is invalid")
 }
@@ -1700,6 +2766,24 @@ mod tests {
         );
     }
 
+    fn git_stdout(path: &Path, args: &[&str]) -> String {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(path)
+            .args(args)
+            .output()
+            .expect("run fixture git command");
+        assert!(
+            output.status.success(),
+            "fixture git failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout)
+            .expect("fixture git output is UTF-8")
+            .trim()
+            .to_owned()
+    }
+
     async fn committed_repository() -> (tempfile::TempDir, GitCliBackend, String) {
         let directory = tempdir().expect("temp repository");
         let backend = GitCliBackend::default();
@@ -1735,6 +2819,306 @@ mod tests {
             .expect("read HEAD")
             .expect("HEAD exists");
         (directory, backend, oid)
+    }
+
+    async fn preflight_conflict_repository() -> (tempfile::TempDir, GitCliBackend, String, String) {
+        let (directory, backend, base_oid) = committed_repository().await;
+        backend
+            .create_branch(directory.path(), "conflicting", &base_oid, true)
+            .await
+            .expect("create preflight target branch");
+        fs::write(directory.path().join("hello.txt"), "target version\n")
+            .expect("write target version");
+        backend
+            .stage_paths(directory.path(), &["hello.txt".into()])
+            .await
+            .expect("stage target version");
+        backend
+            .create_commit(
+                directory.path(),
+                &CommitOptions {
+                    message: "target change".into(),
+                    amend: false,
+                    signoff: false,
+                },
+            )
+            .await
+            .expect("commit target version");
+        let target_oid = backend
+            .head_oid(directory.path())
+            .await
+            .expect("read target HEAD")
+            .expect("target HEAD exists");
+
+        backend
+            .checkout_branch(directory.path(), "main")
+            .await
+            .expect("return to main for preflight");
+        fs::write(directory.path().join("hello.txt"), "current version\n")
+            .expect("write current version");
+        backend
+            .stage_paths(directory.path(), &["hello.txt".into()])
+            .await
+            .expect("stage current version");
+        backend
+            .create_commit(
+                directory.path(),
+                &CommitOptions {
+                    message: "current change".into(),
+                    amend: false,
+                    signoff: false,
+                },
+            )
+            .await
+            .expect("commit current version");
+        let head_oid = backend
+            .head_oid(directory.path())
+            .await
+            .expect("read current HEAD")
+            .expect("current HEAD exists");
+
+        (directory, backend, target_oid, head_oid)
+    }
+
+    fn preflight_observable_state(path: &Path) -> (String, String, String, Vec<u8>) {
+        (
+            git_stdout(path, &["rev-parse", "HEAD"]),
+            git_stdout(path, &["status", "--porcelain=v2"]),
+            git_stdout(path, &["diff", "--cached", "--binary"]),
+            fs::read(path.join("hello.txt")).expect("read working copy"),
+        )
+    }
+
+    async fn conflicted_repository() -> (tempfile::TempDir, GitCliBackend) {
+        let (directory, backend, base_oid) = committed_repository().await;
+        backend
+            .create_branch(directory.path(), "conflicting", &base_oid, true)
+            .await
+            .expect("create conflicting branch");
+        fs::write(directory.path().join("hello.txt"), "branch version\n")
+            .expect("write branch version");
+        backend
+            .stage_paths(directory.path(), &["hello.txt".into()])
+            .await
+            .expect("stage branch version");
+        backend
+            .create_commit(
+                directory.path(),
+                &CommitOptions {
+                    message: "branch change".into(),
+                    amend: false,
+                    signoff: false,
+                },
+            )
+            .await
+            .expect("commit branch version");
+
+        backend
+            .checkout_branch(directory.path(), "main")
+            .await
+            .expect("return to main");
+        fs::write(directory.path().join("hello.txt"), "main version\n")
+            .expect("write main version");
+        backend
+            .stage_paths(directory.path(), &["hello.txt".into()])
+            .await
+            .expect("stage main version");
+        backend
+            .create_commit(
+                directory.path(),
+                &CommitOptions {
+                    message: "main change".into(),
+                    amend: false,
+                    signoff: false,
+                },
+            )
+            .await
+            .expect("commit main version");
+
+        let result = backend
+            .merge_branch(directory.path(), "conflicting")
+            .await
+            .expect("conflict is returned as resumable state");
+        assert!(result.needs_user_action);
+        assert_eq!(result.conflicts.len(), 1);
+        (directory, backend)
+    }
+
+    async fn modify_delete_conflicted_repository() -> (tempfile::TempDir, GitCliBackend) {
+        let (directory, backend, base_oid) = committed_repository().await;
+        backend
+            .create_branch(directory.path(), "deleting", &base_oid, true)
+            .await
+            .expect("create deleting branch");
+        git(directory.path(), &["rm", "--", "hello.txt"]);
+        backend
+            .create_commit(
+                directory.path(),
+                &CommitOptions {
+                    message: "delete hello".into(),
+                    amend: false,
+                    signoff: false,
+                },
+            )
+            .await
+            .expect("commit deletion");
+
+        backend
+            .checkout_branch(directory.path(), "main")
+            .await
+            .expect("return to main");
+        fs::write(directory.path().join("hello.txt"), "main version\n")
+            .expect("write main version");
+        backend
+            .stage_paths(directory.path(), &["hello.txt".into()])
+            .await
+            .expect("stage main version");
+        backend
+            .create_commit(
+                directory.path(),
+                &CommitOptions {
+                    message: "modify hello".into(),
+                    amend: false,
+                    signoff: false,
+                },
+            )
+            .await
+            .expect("commit modification");
+        backend
+            .merge_branch(directory.path(), "deleting")
+            .await
+            .expect("modify/delete conflict is resumable");
+        (directory, backend)
+    }
+
+    async fn delete_modify_conflicted_repository() -> (tempfile::TempDir, GitCliBackend) {
+        let (directory, backend, base_oid) = committed_repository().await;
+        backend
+            .create_branch(directory.path(), "modifying", &base_oid, true)
+            .await
+            .expect("create modifying branch");
+        fs::write(directory.path().join("hello.txt"), "branch version\n")
+            .expect("write branch version");
+        backend
+            .stage_paths(directory.path(), &["hello.txt".into()])
+            .await
+            .expect("stage branch version");
+        backend
+            .create_commit(
+                directory.path(),
+                &CommitOptions {
+                    message: "modify hello".into(),
+                    amend: false,
+                    signoff: false,
+                },
+            )
+            .await
+            .expect("commit modification");
+
+        backend
+            .checkout_branch(directory.path(), "main")
+            .await
+            .expect("return to main");
+        git(directory.path(), &["rm", "--", "hello.txt"]);
+        backend
+            .create_commit(
+                directory.path(),
+                &CommitOptions {
+                    message: "delete hello".into(),
+                    amend: false,
+                    signoff: false,
+                },
+            )
+            .await
+            .expect("commit deletion");
+        backend
+            .merge_branch(directory.path(), "modifying")
+            .await
+            .expect("delete/modify conflict is resumable");
+        (directory, backend)
+    }
+
+    async fn conflict_expected(
+        backend: &GitCliBackend,
+        path: &Path,
+        conflict_path: &str,
+    ) -> ConflictExpectedState {
+        backend
+            .conflict_details(path, conflict_path)
+            .await
+            .expect("read conflict details")
+            .expected_state
+    }
+
+    #[tokio::test]
+    async fn conflict_preflight_reports_clean_without_touching_repository_state() {
+        let (directory, backend, head_oid) = committed_repository().await;
+        git(directory.path(), &["branch", "clean-target"]);
+        let before = preflight_observable_state(directory.path());
+
+        let result = backend
+            .conflict_preflight(directory.path(), "clean-target")
+            .await
+            .expect("run clean conflict preflight");
+
+        assert_eq!(result.target, "clean-target");
+        assert_eq!(result.target_oid, head_oid);
+        assert_eq!(result.state, ConflictPreflightState::Clean);
+        assert!(result.conflicting_paths.is_empty());
+        assert_eq!(result.unavailable_reason, None);
+        assert_eq!(preflight_observable_state(directory.path()), before);
+    }
+
+    #[tokio::test]
+    async fn conflict_preflight_reports_paths_without_touching_repository_state() {
+        let (directory, backend, target_oid, head_oid) = preflight_conflict_repository().await;
+        let before = preflight_observable_state(directory.path());
+
+        let result = backend
+            .conflict_preflight(directory.path(), "conflicting")
+            .await
+            .expect("run conflicting preflight");
+
+        assert_eq!(result.target, "conflicting");
+        assert_eq!(result.target_oid, target_oid);
+        assert_eq!(result.state, ConflictPreflightState::Conflicting);
+        assert_eq!(result.conflicting_paths, vec!["hello.txt"]);
+        assert_eq!(result.unavailable_reason, None);
+        assert_eq!(
+            git_stdout(directory.path(), &["rev-parse", "HEAD"]),
+            head_oid
+        );
+        assert_eq!(preflight_observable_state(directory.path()), before);
+
+        let snapshot = backend
+            .snapshot(directory.path())
+            .await
+            .expect("snapshot after conflict preflight");
+        assert_eq!(snapshot.operation_state, RepositoryOperationState::Normal);
+        assert!(snapshot.status.clean);
+    }
+
+    #[tokio::test]
+    async fn conflict_preflight_rejects_unresolvable_target() {
+        let (directory, backend, _) = committed_repository().await;
+        let error = backend
+            .conflict_preflight(directory.path(), "missing-target")
+            .await
+            .expect_err("target must resolve before preflight");
+        assert_eq!(error.code, ErrorCode::InvalidRevision);
+    }
+
+    #[test]
+    fn conflict_preflight_version_gate_is_stable() {
+        let version = |major, minor| GitVersion {
+            major,
+            minor,
+            patch: 0,
+            raw: format!("git version {major}.{minor}.0"),
+        };
+        assert!(!supports_merge_tree_preflight(&version(2, 37)));
+        assert!(supports_merge_tree_preflight(&version(2, 38)));
+        assert!(supports_merge_tree_preflight(&version(3, 0)));
     }
 
     #[tokio::test]
@@ -2135,6 +3519,27 @@ mod tests {
                 .iter()
                 .any(|branch| branch.name == "origin/main")
         );
+        assert_eq!(
+            snapshot.default_conflict_target.as_deref(),
+            Some("origin/main")
+        );
+        git(directory.path(), &["branch", "--unset-upstream"]);
+        git(directory.path(), &["remote", "set-head", "origin", "main"]);
+        let symbolic_default = backend
+            .snapshot(directory.path())
+            .await
+            .expect("snapshot with symbolic remote HEAD");
+        assert_eq!(
+            symbolic_default.default_conflict_target.as_deref(),
+            Some("origin/main")
+        );
+        assert!(
+            symbolic_default
+                .remote_branches
+                .iter()
+                .all(|branch| branch.name != "origin/HEAD"),
+            "symbolic remote HEAD must not render as a normal branch"
+        );
 
         let updater_parent = tempdir().expect("updater parent");
         git(
@@ -2182,58 +3587,637 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn merge_conflict_is_a_successful_transition_requiring_user_action() {
-        let (directory, backend, base_oid) = committed_repository().await;
-        backend
-            .create_branch(directory.path(), "conflicting", &base_oid, true)
+    async fn conflict_details_exposes_three_index_versions_and_worktree_result() {
+        let (directory, backend) = conflicted_repository().await;
+        let details = backend
+            .conflict_details(directory.path(), "hello.txt")
             .await
-            .expect("create conflicting branch");
-        fs::write(directory.path().join("hello.txt"), "branch version\n")
-            .expect("write branch version");
-        backend
-            .stage_paths(directory.path(), &["hello.txt".into()])
+            .expect("read three-way conflict");
+
+        let base = details.base.as_ref().expect("base stage");
+        let ours = details.ours.as_ref().expect("ours stage");
+        let theirs = details.theirs.as_ref().expect("theirs stage");
+        assert_eq!(base.content.kind, ConflictContentKind::Text);
+        assert_eq!(base.content.text.as_deref(), Some("first\n"));
+        assert_eq!(ours.content.text.as_deref(), Some("main version\n"));
+        assert_eq!(theirs.content.text.as_deref(), Some("branch version\n"));
+        assert_eq!(details.result.kind, ConflictContentKind::Text);
+        assert!(
+            details
+                .result
+                .text
+                .as_deref()
+                .is_some_and(|text| text.contains("<<<<<<<") && text.contains(">>>>>>>"))
+        );
+        assert_eq!(
+            details.expected_state.ours.as_ref().map(|stage| &stage.oid),
+            Some(&ours.oid)
+        );
+        assert_eq!(
+            details
+                .expected_state
+                .theirs
+                .as_ref()
+                .map(|stage| &stage.mode),
+            Some(&theirs.mode)
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn oversized_conflict_result_is_hashed_off_executor_and_not_loaded_as_text() {
+        let (directory, backend) = conflicted_repository().await;
+        let oversized = vec![b'x'; MAX_CONFLICT_TEXT_BYTES + 64 * 1024];
+        fs::write(directory.path().join("hello.txt"), &oversized)
+            .expect("write oversized conflict result");
+
+        let details = backend
+            .conflict_details(directory.path(), "hello.txt")
             .await
-            .expect("stage branch version");
-        backend
-            .create_commit(
+            .expect("inspect oversized conflict result");
+        assert_eq!(details.result.kind, ConflictContentKind::TooLarge);
+        assert!(details.result.text.is_none());
+        assert_eq!(
+            details.expected_state.result.size,
+            Some(oversized.len() as u64)
+        );
+        assert_eq!(
+            details
+                .expected_state
+                .result
+                .sha256
+                .as_deref()
+                .map(str::len),
+            Some(64)
+        );
+    }
+
+    #[tokio::test]
+    async fn saves_and_stages_edited_conflict_result() {
+        let (directory, backend) = conflicted_repository().await;
+        let expected = conflict_expected(&backend, directory.path(), "hello.txt").await;
+        let result = backend
+            .save_conflict_result(
                 directory.path(),
-                &CommitOptions {
-                    message: "branch change".into(),
-                    amend: false,
-                    signoff: false,
-                },
+                "hello.txt",
+                "reviewed combined result\n",
+                ConflictLineEndingPolicy::Preserve,
+                &expected,
             )
             .await
-            .expect("commit branch version");
+            .expect("save edited conflict result");
+
+        assert!(result.conflicts.is_empty());
+        assert_eq!(
+            fs::read_to_string(directory.path().join("hello.txt"))
+                .expect("read edited working result")
+                .replace("\r\n", "\n"),
+            "reviewed combined result\n"
+        );
+        assert_eq!(
+            git_stdout(directory.path(), &["show", ":hello.txt"]),
+            "reviewed combined result"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn atomic_edited_save_preserves_existing_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (directory, backend) = conflicted_repository().await;
+        let target = directory.path().join("hello.txt");
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o755))
+            .expect("make conflict result executable");
+        let details = backend
+            .conflict_details(directory.path(), "hello.txt")
+            .await
+            .expect("read executable conflict result");
 
         backend
-            .checkout_branch(directory.path(), "main")
-            .await
-            .expect("return to main");
-        fs::write(directory.path().join("hello.txt"), "main version\n")
-            .expect("write main version");
-        backend
-            .stage_paths(directory.path(), &["hello.txt".into()])
-            .await
-            .expect("stage main version");
-        backend
-            .create_commit(
+            .save_conflict_result(
                 directory.path(),
-                &CommitOptions {
-                    message: "main change".into(),
-                    amend: false,
-                    signoff: false,
-                },
+                "hello.txt",
+                "resolved executable\n",
+                ConflictLineEndingPolicy::Preserve,
+                &details.expected_state,
             )
             .await
-            .expect("commit main version");
+            .expect("atomically save executable conflict result");
+        assert_eq!(
+            fs::metadata(target)
+                .expect("read saved permissions")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o755
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn edited_save_rejects_mode_changes_after_editor_snapshot() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (directory, backend) = conflicted_repository().await;
+        let target = directory.path().join("hello.txt");
+        let details = backend
+            .conflict_details(directory.path(), "hello.txt")
+            .await
+            .expect("read conflict before external chmod");
+        let original_mode = fs::metadata(&target)
+            .expect("read original conflict permissions")
+            .permissions()
+            .mode()
+            & 0o7777;
+        let changed_mode = if original_mode & 0o100 == 0 {
+            original_mode | 0o100
+        } else {
+            original_mode & !0o100
+        };
+        fs::set_permissions(&target, fs::Permissions::from_mode(changed_mode))
+            .expect("change executable bit outside the editor");
+
+        let error = backend
+            .save_conflict_result(
+                directory.path(),
+                "hello.txt",
+                "must not overwrite chmod\n",
+                ConflictLineEndingPolicy::Preserve,
+                &details.expected_state,
+            )
+            .await
+            .expect_err("external chmod must make the editor snapshot stale");
+        assert_eq!(error.code, ErrorCode::StaleSnapshot);
+        assert_eq!(
+            fs::metadata(&target)
+                .expect("read unchanged external permissions")
+                .permissions()
+                .mode()
+                & 0o7777,
+            changed_mode
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn new_edited_result_creation_respects_process_umask() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (directory, backend) = conflicted_repository().await;
+        let mut probe_builder = tempfile::Builder::new();
+        probe_builder.permissions(fs::Permissions::from_mode(0o777));
+        let probe = probe_builder
+            .tempfile_in(directory.path())
+            .expect("create umask permission probe");
+        let permissions_allowed_by_umask = probe
+            .as_file()
+            .metadata()
+            .expect("read umask permission probe")
+            .permissions()
+            .mode()
+            & 0o777;
+
+        let target = directory.path().join("hello.txt");
+        fs::remove_file(&target).expect("remove worktree conflict result");
+        let details = backend
+            .conflict_details(directory.path(), "hello.txt")
+            .await
+            .expect("read missing conflict result");
+        assert_eq!(
+            details.expected_state.result.kind,
+            ConflictWorktreeKind::Missing
+        );
+        let desired_mode = details
+            .ours
+            .as_ref()
+            .or(details.theirs.as_ref())
+            .or(details.base.as_ref())
+            .expect("regular conflict stage")
+            .mode
+            .as_str();
+        let requested_permissions = if desired_mode == "100755" {
+            0o777
+        } else {
+            0o666
+        };
+
+        backend
+            .save_conflict_result(
+                directory.path(),
+                "hello.txt",
+                "recreated result\n",
+                ConflictLineEndingPolicy::Preserve,
+                &details.expected_state,
+            )
+            .await
+            .expect("save recreated conflict result");
+        assert_eq!(
+            fs::metadata(target)
+                .expect("read recreated result permissions")
+                .permissions()
+                .mode()
+                & 0o777,
+            requested_permissions & permissions_allowed_by_umask
+        );
+    }
+
+    #[tokio::test]
+    async fn crlf_result_survives_textarea_lf_normalization() {
+        let (directory, backend) = conflicted_repository().await;
+        git(directory.path(), &["config", "core.autocrlf", "true"]);
+        fs::write(
+            directory.path().join("hello.txt"),
+            b"first line\r\nsecond line\r\n",
+        )
+        .expect("write CRLF conflict result");
+        let details = backend
+            .conflict_details(directory.path(), "hello.txt")
+            .await
+            .expect("read CRLF conflict result");
+        assert_eq!(details.result.line_ending, Some(ConflictLineEnding::CrLf));
+
+        backend
+            .save_conflict_result(
+                directory.path(),
+                "hello.txt",
+                "first line\nsecond line\n",
+                ConflictLineEndingPolicy::Preserve,
+                &details.expected_state,
+            )
+            .await
+            .expect("save browser-normalized CRLF result");
+        assert_eq!(
+            fs::read(directory.path().join("hello.txt")).expect("read CRLF roundtrip"),
+            b"first line\r\nsecond line\r\n"
+        );
+        let staged = Command::new("git")
+            .arg("-C")
+            .arg(directory.path())
+            .args(["show", ":hello.txt"])
+            .output()
+            .expect("read staged CRLF result");
+        assert!(staged.status.success());
+        assert_eq!(
+            staged.stdout, b"first line\nsecond line\n",
+            "Git clean conversion may normalize CRLF in the index; working file must stay CRLF"
+        );
+    }
+
+    #[tokio::test]
+    async fn unstaged_external_edit_makes_all_overwriting_resolutions_stale() {
+        let (directory, backend) = conflicted_repository().await;
+        let details = backend
+            .conflict_details(directory.path(), "hello.txt")
+            .await
+            .expect("open conflict editor");
+        fs::write(
+            directory.path().join("hello.txt"),
+            "external unstaged resolution\n",
+        )
+        .expect("external worktree edit");
+
+        for resolution in [
+            ConflictResolution::Ours,
+            ConflictResolution::Theirs,
+            ConflictResolution::MarkResolved,
+            ConflictResolution::Delete,
+        ] {
+            let error = backend
+                .resolve_conflict(
+                    directory.path(),
+                    "hello.txt",
+                    resolution,
+                    &details.expected_state,
+                )
+                .await
+                .expect_err("stale resolution must fail");
+            assert_eq!(error.code, ErrorCode::StaleSnapshot);
+            assert_eq!(
+                fs::read_to_string(directory.path().join("hello.txt"))
+                    .expect("external edit remains intact"),
+                "external unstaged resolution\n"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn stale_conflict_editor_state_cannot_overwrite_external_resolution() {
+        let (directory, backend) = conflicted_repository().await;
+        let expected = conflict_expected(&backend, directory.path(), "hello.txt").await;
+        git(directory.path(), &["checkout", "--ours", "--", "hello.txt"]);
+        git(directory.path(), &["add", "--", "hello.txt"]);
+
+        let error = backend
+            .save_conflict_result(
+                directory.path(),
+                "hello.txt",
+                "stale overwrite\n",
+                ConflictLineEndingPolicy::Preserve,
+                &expected,
+            )
+            .await
+            .expect_err("stale editor save must fail");
+        assert_eq!(error.code, ErrorCode::StaleSnapshot);
+        assert_eq!(
+            fs::read_to_string(directory.path().join("hello.txt"))
+                .expect("read externally resolved file")
+                .replace("\r\n", "\n"),
+            "main version\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn explicit_delete_resolves_modify_delete_in_both_directions() {
+        let (ours_directory, ours_backend) = modify_delete_conflicted_repository().await;
+        let ours_details = ours_backend
+            .conflict_details(ours_directory.path(), "hello.txt")
+            .await
+            .expect("read modified-by-ours conflict");
+        assert!(ours_details.ours.is_some());
+        assert!(ours_details.theirs.is_none());
+        let ours_result = ours_backend
+            .resolve_conflict(
+                ours_directory.path(),
+                "hello.txt",
+                ConflictResolution::Delete,
+                &ours_details.expected_state,
+            )
+            .await
+            .expect("choose deletion when theirs deleted");
+        assert!(ours_result.conflicts.is_empty());
+        assert!(!ours_directory.path().join("hello.txt").exists());
+
+        let (theirs_directory, theirs_backend) = delete_modify_conflicted_repository().await;
+        let theirs_details = theirs_backend
+            .conflict_details(theirs_directory.path(), "hello.txt")
+            .await
+            .expect("read modified-by-theirs conflict");
+        assert!(theirs_details.ours.is_none());
+        assert!(theirs_details.theirs.is_some());
+        let theirs_result = theirs_backend
+            .resolve_conflict(
+                theirs_directory.path(),
+                "hello.txt",
+                ConflictResolution::Delete,
+                &theirs_details.expected_state,
+            )
+            .await
+            .expect("choose deletion when ours deleted");
+        assert!(theirs_result.conflicts.is_empty());
+        assert!(!theirs_directory.path().join("hello.txt").exists());
+    }
+
+    #[test]
+    fn conflict_content_classification_blocks_binary_and_oversized_text() {
+        let binary = classify_conflict_content(vec![b'a', 0, b'b'], 3);
+        assert_eq!(binary.kind, ConflictContentKind::Binary);
+        assert!(binary.text.is_none());
+
+        let too_large = classify_conflict_content(
+            vec![b'a'; MAX_CONFLICT_TEXT_BYTES + 1],
+            (MAX_CONFLICT_TEXT_BYTES + 1) as u64,
+        );
+        assert_eq!(too_large.kind, ConflictContentKind::TooLarge);
+        assert!(too_large.text.is_none());
+
+        let mixed = classify_conflict_content(b"one\r\ntwo\n".to_vec(), 9);
+        assert_eq!(mixed.line_ending, Some(ConflictLineEnding::Mixed));
+        assert_eq!(
+            encode_edited_conflict_text("one\ntwo\n", ConflictLineEndingPolicy::Preserve, &mixed,)
+                .expect("logical no-op preserves exact mixed endings"),
+            b"one\r\ntwo\n"
+        );
+        assert_eq!(
+            encode_edited_conflict_text(
+                "one\nchanged\n",
+                ConflictLineEndingPolicy::Preserve,
+                &mixed,
+            )
+            .expect_err("mixed edit needs explicit policy")
+            .code,
+            ErrorCode::InvalidRequest
+        );
+        assert_eq!(
+            encode_edited_conflict_text("one\nchanged\n", ConflictLineEndingPolicy::Lf, &mixed,)
+                .expect("normalize mixed to LF"),
+            b"one\nchanged\n"
+        );
+        assert_eq!(
+            encode_edited_conflict_text("one\nchanged\n", ConflictLineEndingPolicy::CrLf, &mixed,)
+                .expect("normalize mixed to CRLF"),
+            b"one\r\nchanged\r\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn resolves_both_modified_conflict_with_selected_index_side() {
+        let (current_directory, current_backend) = conflicted_repository().await;
+        let current_expected =
+            conflict_expected(&current_backend, current_directory.path(), "hello.txt").await;
+        let current_result = current_backend
+            .resolve_conflict(
+                current_directory.path(),
+                "hello.txt",
+                ConflictResolution::Ours,
+                &current_expected,
+            )
+            .await
+            .expect("resolve with current side");
+        assert!(current_result.conflicts.is_empty());
+        assert!(
+            current_result.needs_user_action,
+            "merge still needs completion"
+        );
+        assert_eq!(
+            fs::read_to_string(current_directory.path().join("hello.txt"))
+                .expect("read current resolution")
+                .replace("\r\n", "\n"),
+            "main version\n"
+        );
+        assert_eq!(
+            git_stdout(current_directory.path(), &["show", ":hello.txt"]),
+            "main version"
+        );
+        current_backend
+            .abort_operation(current_directory.path(), ContinueOperation::Merge)
+            .await
+            .expect("abort current-side fixture merge");
+
+        let (incoming_directory, incoming_backend) = conflicted_repository().await;
+        let incoming_expected =
+            conflict_expected(&incoming_backend, incoming_directory.path(), "hello.txt").await;
+        let incoming_result = incoming_backend
+            .resolve_conflict(
+                incoming_directory.path(),
+                "hello.txt",
+                ConflictResolution::Theirs,
+                &incoming_expected,
+            )
+            .await
+            .expect("resolve with incoming side");
+        assert!(incoming_result.conflicts.is_empty());
+        assert_eq!(
+            fs::read_to_string(incoming_directory.path().join("hello.txt"))
+                .expect("read incoming resolution")
+                .replace("\r\n", "\n"),
+            "branch version\n"
+        );
+        assert_eq!(
+            git_stdout(incoming_directory.path(), &["show", ":hello.txt"]),
+            "branch version"
+        );
+        incoming_backend
+            .abort_operation(incoming_directory.path(), ContinueOperation::Merge)
+            .await
+            .expect("abort incoming-side fixture merge");
+    }
+
+    #[tokio::test]
+    async fn mark_resolved_stages_exact_current_worktree_content() {
+        let (directory, backend) = conflicted_repository().await;
+        fs::write(directory.path().join("hello.txt"), "manual resolution\n")
+            .expect("write manual resolution");
+        let expected = conflict_expected(&backend, directory.path(), "hello.txt").await;
 
         let result = backend
+            .resolve_conflict(
+                directory.path(),
+                "hello.txt",
+                ConflictResolution::MarkResolved,
+                &expected,
+            )
+            .await
+            .expect("mark manual resolution resolved");
+
+        assert!(result.conflicts.is_empty());
+        assert_eq!(
+            fs::read_to_string(directory.path().join("hello.txt")).expect("read manual resolution"),
+            "manual resolution\n"
+        );
+        assert_eq!(
+            git_stdout(directory.path(), &["show", ":hello.txt"]),
+            "manual resolution"
+        );
+        backend
+            .abort_operation(directory.path(), ContinueOperation::Merge)
+            .await
+            .expect("abort manual fixture merge");
+    }
+
+    #[tokio::test]
+    async fn conflict_resolution_rejects_clean_path_and_absent_index_side() {
+        let (clean_directory, clean_backend, _) = committed_repository().await;
+        let empty_expected = ConflictExpectedState {
+            base: None,
+            ours: None,
+            theirs: None,
+            result: missing_worktree_identity(),
+        };
+        let clean_error = clean_backend
+            .resolve_conflict(
+                clean_directory.path(),
+                "hello.txt",
+                ConflictResolution::Ours,
+                &empty_expected,
+            )
+            .await
+            .expect_err("clean path must not resolve as conflict");
+        assert_eq!(clean_error.code, ErrorCode::InvalidRequest);
+
+        let (directory, backend) = modify_delete_conflicted_repository().await;
+        let expected = conflict_expected(&backend, directory.path(), "hello.txt").await;
+        let error = backend
+            .resolve_conflict(
+                directory.path(),
+                "hello.txt",
+                ConflictResolution::Theirs,
+                &expected,
+            )
+            .await
+            .expect_err("missing incoming side must not imply deletion");
+        assert_eq!(error.code, ErrorCode::UnsupportedOperation);
+        assert!(error.message.contains("theirs side"));
+        assert!(
+            error
+                .details
+                .as_deref()
+                .is_some_and(|details| details.contains("explicit delete"))
+        );
+        assert_eq!(
+            fs::read_to_string(directory.path().join("hello.txt"))
+                .expect("missing-side resolution leaves file untouched"),
+            "main version\n"
+        );
+        assert!(
+            backend
+                .snapshot(directory.path())
+                .await
+                .expect("read unresolved modify/delete snapshot")
+                .status
+                .entries
+                .iter()
+                .any(|entry| entry.path == "hello.txt" && entry.conflicted)
+        );
+        backend
+            .abort_operation(directory.path(), ContinueOperation::Merge)
+            .await
+            .expect("abort modify/delete fixture merge");
+    }
+
+    #[tokio::test]
+    async fn auto_resolve_reuses_only_recorded_rerere_resolution_and_stages_it() {
+        let (directory, backend) = conflicted_repository().await;
+        git(directory.path(), &["-c", "rerere.enabled=true", "rerere"]);
+        fs::write(
+            directory.path().join("hello.txt"),
+            "remembered resolution\n",
+        )
+        .expect("write remembered resolution");
+        git(directory.path(), &["add", "--", "hello.txt"]);
+        git(directory.path(), &["-c", "rerere.enabled=true", "rerere"]);
+        backend
+            .abort_operation(directory.path(), ContinueOperation::Merge)
+            .await
+            .expect("abort trained rerere merge");
+        git(
+            directory.path(),
+            &["config", "--local", "rerere.enabled", "false"],
+        );
+
+        let second_conflict = backend
             .merge_branch(directory.path(), "conflicting")
             .await
-            .expect("conflict is returned as resumable state");
-        assert!(result.needs_user_action);
-        assert!(!result.conflicts.is_empty());
+            .expect("recreate recorded conflict");
+        assert_eq!(second_conflict.conflicts.len(), 1);
+        assert!(
+            fs::read_to_string(directory.path().join("hello.txt"))
+                .expect("read unresolved second conflict")
+                .contains("<<<<<<<")
+        );
+
+        let resolved = backend
+            .auto_resolve_conflicts(directory.path())
+            .await
+            .expect("reuse recorded rerere resolution");
+        assert!(resolved.conflicts.is_empty());
+        assert!(resolved.needs_user_action, "merge still needs completion");
+        assert_eq!(
+            fs::read_to_string(directory.path().join("hello.txt")).expect("read reused resolution"),
+            "remembered resolution\n"
+        );
+        assert_eq!(
+            git_stdout(directory.path(), &["show", ":hello.txt"]),
+            "remembered resolution"
+        );
+        backend
+            .abort_operation(directory.path(), ContinueOperation::Merge)
+            .await
+            .expect("abort rerere fixture merge");
+    }
+
+    #[tokio::test]
+    async fn merge_conflict_is_a_successful_transition_requiring_user_action() {
+        let (directory, backend) = conflicted_repository().await;
         let snapshot = backend
             .snapshot(directory.path())
             .await

@@ -1,7 +1,10 @@
-import { CalendarClock, Check, Copy, FileCode2, GitCommitHorizontal } from "lucide-react";
+import { CalendarClock, Check, GitCommitHorizontal } from "lucide-react";
+import { useId, useMemo, useState } from "react";
 
 import type { ChangedFile, CommitDetails as CommitDetailsType } from "../lib/types";
-import { Badge, IconButton } from "./Primitives";
+import { Badge } from "./Primitives";
+import { FileTree, FileTreeControls } from "./FileTree";
+import type { FileTreeItem, FileViewMode } from "./FileTree";
 
 interface CommitDetailsProps {
   details: CommitDetailsType;
@@ -21,22 +24,44 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export function CommitDetails({ details, selectedPath, onSelectFile, onCopySha }: CommitDetailsProps) {
+  const [fileViewMode, setFileViewMode] = useState<FileViewMode>("path");
+  const shaTooltipId = useId();
   const authored = new Date(details.authored_at.seconds * 1000);
   const initials = details.author.name
     .split(/\s+/)
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join("");
+  const fileItems = useMemo<FileTreeItem<ChangedFile>[]>(() => details.files.map((file) => ({
+    id: file.new_path,
+    path: file.new_path,
+    data: file,
+    status: file.status,
+    statusLabel: STATUS_LABEL[file.status] ?? "M",
+    binary: file.binary,
+    additions: file.additions,
+    deletions: file.deletions,
+  })), [details.files]);
 
   return (
     <aside className="gc-details" aria-label="Commit details">
       <div className="gc-details__sha">
         <GitCommitHorizontal size={14} />
         <span>commit:</span>
-        <code>{details.short_oid}</code>
-        <IconButton aria-label="Copy commit SHA" onClick={onCopySha} title="Copy full SHA">
-          <Copy size={14} />
-        </IconButton>
+        <span className="gc-sha-copy">
+          <button
+            aria-describedby={shaTooltipId}
+            aria-label={`Copy full commit SHA ${details.oid}`}
+            onClick={onCopySha}
+            type="button"
+          >
+            <code>{details.short_oid}</code>
+          </button>
+          <span className="gc-sha-copy__tooltip" id={shaTooltipId} role="tooltip">
+            <code>{details.oid}</code>
+            <small>Click to copy</small>
+          </span>
+        </span>
       </div>
       <div className="gc-details__message">
         <h2>{details.subject}</h2>
@@ -56,27 +81,20 @@ export function CommitDetails({ details, selectedPath, onSelectFile, onCopySha }
         <span className="gc-stat-delete">−{details.stats.deletions}</span>
         {details.parent_oids.length > 1 ? <Badge tone="warning">merge</Badge> : null}
       </div>
-      <div className="gc-file-list__header">
-        <span>Changed files</span>
-        <small>{details.files.length}</small>
-      </div>
-      <div className="gc-file-list">
-        {details.files.map((file) => (
-          <button
-            className={selectedPath === file.new_path ? "gc-file-row--active" : ""}
-            key={`${file.old_path ?? ""}:${file.new_path}`}
-            onClick={() => onSelectFile(file)}
-            type="button"
-          >
-            <FileCode2 size={14} />
-            <span title={file.new_path}>{file.new_path}</span>
-            {file.binary ? <small>binary</small> : null}
-            <b className={`gc-file-status gc-file-status--${file.status}`}>{STATUS_LABEL[file.status] ?? "M"}</b>
-          </button>
-        ))}
-        {!details.files.length ? (
-          <div className="gc-details__empty"><Check size={18} /> No changed files</div>
-        ) : null}
+      <div className="gc-details__files">
+        <div className="gc-file-list__header">
+          <span>Changed files</span>
+          <small>{details.files.length}</small>
+        </div>
+        <FileTreeControls mode={fileViewMode} onModeChange={setFileViewMode} />
+        <FileTree
+          ariaLabel="Changed files"
+          emptyState={<><Check aria-hidden="true" size={16} /> No changed files</>}
+          items={fileItems}
+          mode={fileViewMode}
+          onSelect={onSelectFile}
+          selectedId={selectedPath}
+        />
       </div>
     </aside>
   );

@@ -65,7 +65,7 @@ export function Modal({
   children: ReactNode;
   onClose: () => void;
   footer?: ReactNode;
-  width?: "small" | "medium" | "large";
+  width?: "small" | "medium" | "large" | "wide";
 }) {
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {

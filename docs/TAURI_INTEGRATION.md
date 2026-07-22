@@ -27,6 +27,7 @@ Every subsequent repository call receives a `repository_id`, not an arbitrary wo
 
 Repository:
 
+- `app_metadata`
 - `git_probe`
 - `repository_open`, `repository_init`, `repository_clone`, `repository_close`
 - `repository_snapshot`
@@ -35,10 +36,12 @@ History and diff:
 
 - `history_page`, `history_search`
 - `commit_details`, `file_diff`
+- `conflicts_preflight`, `conflict_details`
 
 Working tree and commit:
 
 - `paths_stage`, `paths_unstage`, `create_commit`
+- `conflict_resolve`, `conflict_save_edited`, `conflicts_auto_resolve`
 
 Branch and remote:
 
@@ -82,12 +85,16 @@ When switching repositories, the frontend requests these in parallel:
 
 When selecting a commit, commit details and action availability arrive in parallel. A diff loads only for the selected repository-relative file. The history cursor carries lane state; after a ref change, the backend may reject a stale cursor.
 
+Conflict preflight is cached by repository HEAD OID, selected target, and target OID. It calls read-only `merge-tree`; active conflict detail/save/resolve commands are serialized mutations with exact index/worktree stale-state guards.
+
 ## Persistent workspace
 
 The core writes `state.json` atomically. It contains:
 
 - repository groups, ordering, collapsed state, and active tab;
+- ungrouped tabs, aliases, and per-tab conflict comparison target;
 - pull mode and performance limits;
+- the complete keybind registry;
 - semantic UI/diff colors and graph palette.
 
 The frontend saves after a 250 ms debounce. At startup, it reopens tab paths; a missing or moved repository appears as an error while the other tabs continue working.
@@ -113,6 +120,7 @@ Important: `GIT_TERMINAL_PROMPT=0`. Authentication requires a preconfigured Git 
 - There is no progress/repository-change event stream; the UI requests a new snapshot after an operation.
 - Init and clone commands are implemented, but the current welcome UI only opens existing repositories.
 - Stash apply/drop and upstream/merge commands are implemented, but the full UI is not yet available.
+- Provider-hosted avatars and external merge-tool launching are not integrated.
 
 ## Adding a new command
 

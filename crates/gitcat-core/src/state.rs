@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -142,7 +143,99 @@ pub fn validate_settings(settings: &AppSettings) -> ApiResult<()> {
         ));
     }
 
+    let keybinds = &settings.keybinds;
+    let bindings = [
+        keybinds.next_repository.as_str(),
+        keybinds.previous_repository.as_str(),
+        keybinds.repository_1.as_str(),
+        keybinds.repository_2.as_str(),
+        keybinds.repository_3.as_str(),
+        keybinds.repository_4.as_str(),
+        keybinds.repository_5.as_str(),
+        keybinds.repository_6.as_str(),
+        keybinds.repository_7.as_str(),
+        keybinds.repository_8.as_str(),
+        keybinds.repository_9.as_str(),
+        keybinds.new_repository_tab.as_str(),
+        keybinds.close_repository.as_str(),
+        keybinds.open_repository.as_str(),
+        keybinds.search_commits.as_str(),
+        keybinds.open_settings.as_str(),
+        keybinds.refresh_repository.as_str(),
+        keybinds.toggle_left_panel.as_str(),
+        keybinds.toggle_right_panel.as_str(),
+        keybinds.fetch.as_str(),
+        keybinds.pull.as_str(),
+        keybinds.push.as_str(),
+        keybinds.create_branch.as_str(),
+        keybinds.stash.as_str(),
+        keybinds.show_worktree.as_str(),
+        keybinds.show_graph.as_str(),
+        keybinds.diff_inline.as_str(),
+        keybinds.diff_split.as_str(),
+        keybinds.copy_selected_sha.as_str(),
+        keybinds.continue_operation.as_str(),
+        keybinds.abort_operation.as_str(),
+        keybinds.stage_all.as_str(),
+        keybinds.unstage_all.as_str(),
+        keybinds.focus_commit_message.as_str(),
+        keybinds.auto_resolve_conflicts.as_str(),
+        keybinds.commit.as_str(),
+    ];
+    let mut unique = HashSet::with_capacity(bindings.len());
+    for binding in bindings {
+        if binding.is_empty() {
+            continue;
+        }
+        if binding.len() > 64 || binding.chars().any(char::is_control) {
+            return Err(invalid_settings(
+                "keybinds must contain a printable key combination up to 64 characters",
+            ));
+        }
+        if is_reserved_keybind(binding) {
+            return Err(invalid_settings(
+                "keybinds cannot replace operating-system or unmodified navigation shortcuts",
+            ));
+        }
+        if !unique.insert(binding.to_ascii_lowercase()) {
+            return Err(invalid_settings("keybinds must be unique"));
+        }
+    }
+
     validate_theme(&settings.theme)
+}
+
+fn is_reserved_keybind(binding: &str) -> bool {
+    let normalized = binding.to_ascii_lowercase();
+    if matches!(
+        normalized.as_str(),
+        "alt+f4" | "ctrl+alt+delete" | "ctrl+shift+escape" | "meta+q" | "meta+alt+escape"
+    ) {
+        return true;
+    }
+
+    let mut parts = normalized.split('+').collect::<Vec<_>>();
+    let Some(key) = parts.pop() else {
+        return false;
+    };
+    let interaction_key = matches!(
+        key,
+        "tab"
+            | "enter"
+            | "space"
+            | "escape"
+            | "backspace"
+            | "delete"
+            | "arrowup"
+            | "arrowdown"
+            | "arrowleft"
+            | "arrowright"
+            | "home"
+            | "end"
+            | "pageup"
+            | "pagedown"
+    );
+    interaction_key && parts.iter().all(|modifier| *modifier == "shift")
 }
 
 pub fn validate_theme(theme: &ThemeColors) -> ApiResult<()> {
@@ -312,7 +405,9 @@ mod tests {
         let state = JsonStateStore::new(path).load().unwrap();
         assert_eq!(state.settings.default_pull_mode, PullMode::Rebase);
         assert_eq!(state.settings.history_page_size, 200);
-        assert_eq!(state.workspace.version, 1);
+        assert_eq!(state.workspace.version, 2);
+        assert_eq!(state.settings.keybinds.next_repository, "Ctrl+Tab");
+        assert!(state.workspace.ungrouped_tabs.is_empty());
     }
 
     #[test]
@@ -360,6 +455,32 @@ mod tests {
         validate_settings(&settings).unwrap();
 
         settings.theme.graph_palette.clear();
+        assert_eq!(
+            validate_settings(&settings).unwrap_err().code,
+            ErrorCode::InvalidSettings
+        );
+    }
+
+    #[test]
+    fn duplicate_and_reserved_keybinds_are_rejected_but_unassigned_is_valid() {
+        let mut settings = AppSettings::default();
+        settings.keybinds.previous_repository = settings.keybinds.next_repository.clone();
+        assert_eq!(
+            validate_settings(&settings).unwrap_err().code,
+            ErrorCode::InvalidSettings
+        );
+
+        settings = AppSettings::default();
+        settings.keybinds.commit.clear();
+        validate_settings(&settings).unwrap();
+
+        settings.keybinds.commit = "Tab".into();
+        assert_eq!(
+            validate_settings(&settings).unwrap_err().code,
+            ErrorCode::InvalidSettings
+        );
+
+        settings.keybinds.commit = "Alt+F4".into();
         assert_eq!(
             validate_settings(&settings).unwrap_err().code,
             ErrorCode::InvalidSettings
