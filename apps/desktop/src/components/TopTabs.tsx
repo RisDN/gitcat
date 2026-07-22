@@ -94,7 +94,6 @@ function RepositoryTabItem({
         title={tab.path}
         type="button"
       >
-        <span className="gc-tab__branch" aria-hidden="true" />
         <span className="gc-tab__label">{tab.label}</span>
         {tab.conflictCount ? (
           <span className="gc-tab__conflict" title={`${tab.conflictCount} unresolved conflict${tab.conflictCount === 1 ? "" : "s"}`}>
