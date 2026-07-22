@@ -166,12 +166,12 @@ function plural(value: number, unit: string): string {
 
 function relativeTimeMarkerLabel(seconds: number, nowSeconds: number): string {
   const elapsedSeconds = Math.max(0, nowSeconds - seconds);
-  const elapsedMinutes = Math.floor(elapsedSeconds / 60);
   const elapsedHours = Math.floor(elapsedSeconds / 3_600);
   const elapsedDays = Math.floor(elapsedSeconds / 86_400);
 
-  if (elapsedMinutes < 1) return "just now";
-  if (elapsedHours < 1) return elapsedMinutes === 1 ? "a minute ago" : plural(elapsedMinutes, "minute");
+  // Coarse buckets like GitKraken: no sub-hour subdivision, so a batch of
+  // commits made minutes apart shares one bucket and produces no divider.
+  if (elapsedHours < 1) return "less than an hour ago";
   if (elapsedDays < 1) return elapsedHours === 1 ? "an hour ago" : plural(elapsedHours, "hour");
   if (elapsedDays === 1) return "yesterday";
   if (elapsedDays < 7) return plural(elapsedDays, "day");

@@ -514,7 +514,7 @@ kbd,
 .gc-commit-graph__rows { position: relative; z-index: 2; display: grid; gap: var(--gc-row-gap); }
 .gc-commit-time-markers { position: absolute; z-index: 3; inset: 0; pointer-events: none; }
 .gc-commit-time-marker { position: absolute; right: 8px; left: 0; height: 1px; border-top: 1px solid color-mix(in srgb, var(--gc-border) 54%, transparent); }
-.gc-commit-time-marker > span { position: absolute; top: 0; right: 0; padding: 1px 5px; border-radius: 3px; background: color-mix(in srgb, var(--gc-panel) 78%, var(--gc-background)); color: color-mix(in srgb, var(--gc-muted) 78%, transparent); font-size: 8px; font-weight: 700; line-height: 1.2; transform: translateY(-50%); white-space: nowrap; }
+.gc-commit-time-marker > span { position: absolute; top: 0; right: 0; padding: 2px 7px; border-radius: 3px; background: color-mix(in srgb, var(--gc-panel) 78%, var(--gc-background)); color: color-mix(in srgb, var(--gc-muted) 78%, transparent); font-size: 9px; font-weight: 700; line-height: 1.2; transform: translateY(-50%); white-space: nowrap; }
 .gc-commit-row { position: relative; display: grid; height: 28px; min-width: 780px; grid-template-columns: 140px var(--gc-graph-column-width, 96px) minmax(180px, 1fr) 86px 116px 64px; align-items: center; border-radius: 4px; cursor: default; }
 .gc-commit-row::before { position: absolute; z-index: 0; top: 50%; right: 0; left: var(--gc-branch-row-origin, 164px); height: 22px; border-radius: 11px 3px 3px 11px; content: ""; pointer-events: none; transform: translateY(-50%); }
 .gc-commit-row:hover::before { background: color-mix(in srgb, var(--gc-row-branch-color, var(--gc-accent)) 1%, color-mix(in srgb, var(--gc-panel) 74%, #2f4a74)); }
