@@ -301,6 +301,8 @@ function App() {
   const [commitDrafts, setCommitDrafts] = useState<Record<string, CommitDraft>>({});
   const [overviewRepositoryId, setOverviewRepositoryId] = useState<string | null>(null);
   const activeRepositoryIdRef = useRef<string | null>(null);
+  const closedTabsRef = useRef<RepositoryTab[]>([]);
+  const workspaceRef = useRef(persisted.workspace);
   const overviewLoadSequence = useRef(0);
   const detailsLoadSequence = useRef(0);
   const diffLoadSequence = useRef(0);
@@ -401,6 +403,7 @@ function App() {
   }, [hydrated, persisted, showError]);
 
   useEffect(() => { selectedOidRef.current = selectedOid; }, [selectedOid]);
+  useEffect(() => { workspaceRef.current = persisted.workspace; }, [persisted.workspace]);
 
   const loadOverview = useCallback(async (repository: RuntimeRepository, preserveSelection = true) => {
     const sequence = ++overviewLoadSequence.current;
@@ -611,6 +614,13 @@ function App() {
 
   const closeTab = useCallback((tabId: string) => {
     if (busy) return;
+    const closedTab = workspaceTabs(workspaceRef.current).find((tab) => tab.id === tabId);
+    if (closedTab) {
+      closedTabsRef.current = [
+        ...closedTabsRef.current.filter((tab) => tab.repository_path !== closedTab.repository_path),
+        closedTab,
+      ].slice(-20);
+    }
     const repository = runtime[tabId];
     if (repository) void gitcatApi.closeRepository(repository.repository_id).catch(() => undefined);
     setRuntime((current) => {
@@ -632,6 +642,37 @@ function App() {
       return { ...current, workspace: { ...current.workspace, ungrouped_tabs, groups, active_tab_id: active } };
     });
   }, [busy, runtime]);
+
+  const reopenClosedRepository = useCallback(async () => {
+    if (busy) return;
+    let restore: RepositoryTab | undefined;
+    while (closedTabsRef.current.length) {
+      const candidate = closedTabsRef.current[closedTabsRef.current.length - 1];
+      closedTabsRef.current = closedTabsRef.current.slice(0, -1);
+      if (!workspaceTabs(workspaceRef.current).some((tab) => tab.repository_path === candidate.repository_path)) {
+        restore = candidate;
+        break;
+      }
+    }
+    if (!restore) return;
+    setBusy(true);
+    try {
+      const opened: OpenedRepository = await gitcatApi.openRepository(restore.repository_path);
+      const tab: RepositoryTab = { ...restore, id: makeId("tab"), repository_path: opened.info.root, order: 0 };
+      setRuntime((current) => ({ ...current, [tab.id]: opened }));
+      setPersisted((current) => {
+        const ungrouped_tabs = [
+          ...current.workspace.ungrouped_tabs,
+          { ...tab, order: current.workspace.ungrouped_tabs.length },
+        ];
+        return { ...current, workspace: { ...current.workspace, ungrouped_tabs, active_tab_id: tab.id } };
+      });
+    } catch (error) {
+      showError("Repository could not be reopened", error);
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, showError]);
 
   const moveRepositoryTab = useCallback((tabId: string, groupId: string | null) => {
     setPersisted((current) => {
@@ -932,6 +973,9 @@ function App() {
       } else if (matches(keybinds.close_repository)) {
         event.preventDefault();
         if (activeTabId) closeTab(activeTabId);
+      } else if (matches(keybinds.reopen_closed_repository)) {
+        event.preventDefault();
+        if (!busy) void reopenClosedRepository();
       } else if (matches(keybinds.search_commits)) {
         event.preventDefault();
         if (activeRepository) openSearch();
@@ -1050,6 +1094,7 @@ function App() {
     pullActiveRepository,
     pushActiveRepository,
     refreshActiveRepository,
+    reopenClosedRepository,
     resetCommit,
     runMutation,
     settingsOpen,
