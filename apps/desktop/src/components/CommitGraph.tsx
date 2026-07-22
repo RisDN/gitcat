@@ -81,6 +81,18 @@ function laneX(lane: number): number {
   return GRAPH_PADDING + lane * LANE_WIDTH;
 }
 
+export function getCommitLaneX(lane: number): number {
+  return laneX(lane);
+}
+
+export function getCommitRowBranchOrigin(lane: number): number {
+  return REF_COLUMN_WIDTH + laneX(lane) - AVATAR_RADIUS;
+}
+
+export function getCommitLaneColorVariable(lane: number): string {
+  return `var(--gc-lane-${lane % LANE_COLOR_COUNT})`;
+}
+
 function rowY(index: number): number {
   return index * ROW_STRIDE + ROW_HEIGHT / 2;
 }
@@ -291,7 +303,7 @@ const CommitRow = memo(function CommitRow({
   const branchInteractiveOrigin = branchOrigin + AVATAR_RADIUS;
   const rowStyle = {
     "--gc-branch-row-origin": `${REF_COLUMN_WIDTH + branchHoverOrigin}px`,
-    "--gc-row-branch-color": `var(--gc-lane-${commit.graph.lane % LANE_COLOR_COUNT})`,
+    "--gc-row-branch-color": getCommitLaneColorVariable(commit.graph.lane),
   } as CSSProperties;
   const graphSlotStyle = {
     width: graphWidth,

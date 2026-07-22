@@ -28,7 +28,10 @@ import { CommitDetails, CommitDetailsSkeleton } from "./components/CommitDetails
 import { ConflictResolverDialog } from "./components/ConflictResolverDialog";
 import {
   CommitGraph,
+  getCommitLaneColorVariable,
+  getCommitLaneX,
   getCommitGraphWidth,
+  getCommitRowBranchOrigin,
   type CommitContextMenuRequest,
 } from "./components/CommitGraph";
 import { ContextMenu, type ContextAction } from "./components/ContextMenu";
@@ -1702,6 +1705,23 @@ function App() {
     [history],
   );
   const currentHeadOid = snapshot?.head.kind === "unborn" ? null : snapshot?.head.oid ?? null;
+  const wipLane = useMemo(() => {
+    const commits = history?.commits ?? [];
+    if (commits.length === 0) return 0;
+
+    const headCommit = currentHeadOid
+      ? commits.find((commit) => commit.oid === currentHeadOid)
+      : null;
+    return (headCommit ?? commits[0]).graph.lane;
+  }, [currentHeadOid, history]);
+  const wipLaneX = getCommitLaneX(wipLane);
+  const wipRowStyle = {
+    "--gc-branch-origin": `${wipLaneX}px`,
+    "--gc-branch-interactive-origin": `${wipLaneX + 11}px`,
+    "--gc-branch-row-origin": `${getCommitRowBranchOrigin(wipLane)}px`,
+    "--gc-row-branch-color": getCommitLaneColorVariable(wipLane),
+    "--gc-wip-lane-x": `${wipLaneX}px`,
+  } as React.CSSProperties;
   const activeCommitDraft = activeTabId
     ? commitDrafts[activeTabId] ?? EMPTY_COMMIT_DRAFT
     : EMPTY_COMMIT_DRAFT;
@@ -1881,6 +1901,7 @@ function App() {
                         }
                       }}
                       ref={wipRowRef}
+                      style={wipRowStyle}
                       type="button"
                     >
                       <span className="gc-wip-row__refs"><span className="gc-ref-label gc-ref-label--head">{currentBranch(snapshot)}</span></span>
@@ -1890,7 +1911,7 @@ function App() {
                         <small>{snapshot.status.entries.length} uncommitted change{snapshot.status.entries.length === 1 ? "" : "s"}</small>
                       </span>
                       <span className={activeConflictCount ? "gc-wip-row__conflicts" : "gc-muted"}>
-                        {activeConflictCount ? <><AlertTriangle size={12} /> {activeConflictCount}</> : "Working tree"}
+                        {activeConflictCount ? <><AlertTriangle size={12} /> {activeConflictCount}</> : ""}
                       </span>
                       <span />
                       <b>{snapshot.status.entries.length}</b>
