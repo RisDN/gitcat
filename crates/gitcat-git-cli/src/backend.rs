@@ -1311,6 +1311,9 @@ impl GitBackend for GitCliBackend {
 
         let mut labels: HashMap<String, Vec<RefLabel>> = HashMap::new();
         for parsed_ref in parse_refs(&refs_output)? {
+            if matches!(parsed_ref.label.kind, RefKind::RemoteBranch) && parsed_ref.symbolic_target.is_some() {
+                continue;
+            }
             labels
                 .entry(parsed_ref.oid)
                 .or_default()

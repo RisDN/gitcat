@@ -1,19 +1,20 @@
 import { memo, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Check, FolderGit, Monitor, Tag } from "lucide-react";
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
 } from "react";
 
-import type { CommitSummary } from "../lib/types";
+import type { CommitSummary, RefLabel } from "../lib/types";
 
 const ROW_HEIGHT = 28;
 const ROW_GAP = 4;
 const ROW_STRIDE = ROW_HEIGHT + ROW_GAP;
 const LANE_WIDTH = 18;
 const GRAPH_PADDING = 24;
-const REF_COLUMN_WIDTH = 140;
+const REF_COLUMN_WIDTH = 118;
 const MIN_GRAPH_WIDTH = 96;
 const LANE_COLOR_COUNT = 8;
 const AVATAR_RADIUS = 11;
@@ -35,6 +36,8 @@ export interface CommitGraphProps {
   beforeFirstSelected?: boolean;
   searchMatchOids?: ReadonlySet<string>;
   hideHeadDecoration?: boolean;
+  detachedHeadOid?: string | null;
+  remoteIconUrls?: ReadonlyMap<string, string>;
   onSelect: (commit: CommitSummary) => void;
   onNavigateBeforeFirst?: () => void;
   onCommitContextMenu?: (request: CommitContextMenuRequest) => void;
@@ -63,6 +66,10 @@ interface TimeMarker {
   top: number;
 }
 
+type GraphRefLabel = RefLabel & {
+  synthetic?: boolean;
+};
+
 interface CommitRowProps {
   commit: CommitSummary;
   id: string;
@@ -70,6 +77,9 @@ interface CommitRowProps {
   selected: boolean;
   searchMatch: boolean;
   hideHeadDecoration: boolean;
+  hasMultipleBranches: boolean;
+  detachedHeadOid?: string | null;
+  remoteIconUrls?: ReadonlyMap<string, string>;
   graphWidth: number;
   onSelect: (commit: CommitSummary) => void;
   onCommitContextMenu?: (request: CommitContextMenuRequest) => void;
@@ -99,6 +109,56 @@ function rowY(index: number): number {
 
 function laneClass(base: string, lane: number): string {
   return `${base} ${base}--lane-${lane % LANE_COLOR_COUNT}`;
+}
+
+function isBranchDecoration(decoration: RefLabel): boolean {
+  return decoration.kind === "local_branch" || decoration.kind === "remote_branch";
+}
+
+function refPriority(decoration: RefLabel): number {
+  if (decoration.is_head) return 0;
+  if (decoration.kind === "local_branch") return 1;
+  if (decoration.kind === "remote_branch") return 2;
+  return 3;
+}
+
+function sortedDecorations(decorations: readonly GraphRefLabel[]): GraphRefLabel[] {
+  return [...decorations].sort((left, right) => (
+    refPriority(left) - refPriority(right)
+      || left.name.localeCompare(right.name)
+      || left.full_name.localeCompare(right.full_name)
+  ));
+}
+
+function visibleDecorations(
+  commit: CommitSummary,
+  hideHeadDecoration: boolean,
+  detachedHeadOid?: string | null,
+): GraphRefLabel[] {
+  const decorations: GraphRefLabel[] = commit.decorations
+    .filter((decoration) => !hideHeadDecoration || !decoration.is_head);
+
+  if (!hideHeadDecoration && detachedHeadOid === commit.oid && !decorations.some((decoration) => decoration.is_head)) {
+    decorations.push({
+      name: "HEAD",
+      full_name: "HEAD",
+      kind: "local_branch",
+      is_head: true,
+      synthetic: true,
+    });
+  }
+
+  return sortedDecorations(decorations);
+}
+
+function remoteBranchNameWithoutRemote(name: string): string {
+  const slashIndex = name.indexOf("/");
+  return slashIndex >= 0 ? name.slice(slashIndex + 1) : name;
+}
+
+function remoteNameFromBranchName(name: string): string | null {
+  const slashIndex = name.indexOf("/");
+  return slashIndex > 0 ? name.slice(0, slashIndex) : null;
 }
 
 export function getCommitGraphWidth(commits: readonly CommitSummary[]): number {
@@ -210,6 +270,144 @@ function buildTimeMarkers(commits: readonly CommitSummary[], nowSeconds: number)
   return markers;
 }
 
+function RefLabelPill({
+  decoration,
+  inactive,
+  linkedRemote,
+  remoteIconUrl,
+  linkedRemoteIconUrl,
+}: {
+  decoration: GraphRefLabel;
+  inactive: boolean;
+  linkedRemote?: GraphRefLabel;
+  remoteIconUrl?: string;
+  linkedRemoteIconUrl?: string;
+}) {
+  const [remoteImageFailed, setRemoteImageFailed] = useState(false);
+  const [linkedRemoteImageFailed, setLinkedRemoteImageFailed] = useState(false);
+  const Icon = decoration.kind === "remote_branch"
+    ? FolderGit
+    : decoration.kind === "tag"
+      ? Tag
+      : Monitor;
+  const classes = [
+    "gc-ref-label",
+    `gc-ref-label--${decoration.kind}`,
+    decoration.is_head ? "gc-ref-label--head" : "",
+    inactive ? "gc-ref-label--inactive" : "",
+  ].filter(Boolean).join(" ");
+  const displayName = decoration.kind === "remote_branch"
+    ? remoteBranchNameWithoutRemote(decoration.name)
+    : decoration.name;
+
+  return (
+    <span className={classes} title={linkedRemote ? `${decoration.full_name}\n${linkedRemote.full_name}` : decoration.full_name}>
+      {decoration.is_head ? <Check aria-hidden="true" size={12} strokeWidth={3} /> : null}
+      <span className="gc-ref-label__name">{displayName}</span>
+      {remoteIconUrl && !remoteImageFailed ? (
+        <img
+          alt=""
+          aria-hidden="true"
+          className="gc-ref-label__remote-avatar"
+          onError={() => setRemoteImageFailed(true)}
+          src={remoteIconUrl}
+        />
+      ) : (
+        <Icon aria-hidden="true" size={decoration.is_head ? 12 : 10} strokeWidth={2.4} />
+      )}
+      {linkedRemote ? (
+        linkedRemoteIconUrl && !linkedRemoteImageFailed ? (
+          <img
+            alt=""
+            aria-hidden="true"
+            className="gc-ref-label__remote-avatar gc-ref-label__remote-icon"
+            onError={() => setLinkedRemoteImageFailed(true)}
+            src={linkedRemoteIconUrl}
+          />
+        ) : (
+          <FolderGit aria-hidden="true" className="gc-ref-label__remote-icon" size={12} strokeWidth={2.4} />
+        )
+      ) : null}
+    </span>
+  );
+}
+
+function CommitRefStack({
+  decorations,
+  hasMultipleBranches,
+  remoteIconUrls,
+}: {
+  decorations: readonly GraphRefLabel[];
+  hasMultipleBranches: boolean;
+  remoteIconUrls?: ReadonlyMap<string, string>;
+}) {
+  if (decorations.length === 0) return null;
+
+  const hiddenRemoteIndexes = new Set<number>();
+  const linkedRemotes = new Map<string, GraphRefLabel>();
+  const localBranches = decorations.filter((decoration) => decoration.kind === "local_branch");
+  for (const localBranch of localBranches) {
+    const remoteIndex = decorations.findIndex((decoration, index) => (
+      !hiddenRemoteIndexes.has(index)
+        && decoration.kind === "remote_branch"
+        && remoteBranchNameWithoutRemote(decoration.name) === localBranch.name
+    ));
+    if (remoteIndex >= 0) {
+      hiddenRemoteIndexes.add(remoteIndex);
+      linkedRemotes.set(decorations[remoteIndex].full_name, decorations[remoteIndex]);
+      linkedRemotes.set(localBranch.full_name, decorations[remoteIndex]);
+    }
+  }
+
+  const displayDecorations = decorations.filter((_, index) => !hiddenRemoteIndexes.has(index));
+  const branchCount = displayDecorations.filter(isBranchDecoration).length;
+  const shouldStack = branchCount > 1;
+  const [primary, ...rest] = displayDecorations;
+  const isInactive = (decoration: GraphRefLabel) =>
+    hasMultipleBranches && decoration.kind === "local_branch" && !decoration.is_head;
+  const remoteIconUrl = (decoration?: GraphRefLabel) => {
+    if (!decoration) return undefined;
+    const remoteName = remoteNameFromBranchName(decoration.name);
+    return remoteName ? remoteIconUrls?.get(remoteName) : undefined;
+  };
+
+  return (
+    <span className={`gc-ref-stack${shouldStack ? " gc-ref-stack--stacked" : ""}`}>
+      <RefLabelPill
+        decoration={primary}
+        inactive={isInactive(primary)}
+        linkedRemote={linkedRemotes.get(primary.full_name)}
+        linkedRemoteIconUrl={remoteIconUrl(linkedRemotes.get(primary.full_name))}
+        remoteIconUrl={remoteIconUrl(primary)}
+      />
+      {rest.length > 0 && shouldStack ? (
+        <span className="gc-ref-stack__overflow">
+          {rest.map((decoration) => (
+            <RefLabelPill
+              decoration={decoration}
+              inactive={isInactive(decoration)}
+              key={decoration.full_name}
+              linkedRemote={linkedRemotes.get(decoration.full_name)}
+              linkedRemoteIconUrl={remoteIconUrl(linkedRemotes.get(decoration.full_name))}
+              remoteIconUrl={remoteIconUrl(decoration)}
+            />
+          ))}
+        </span>
+      ) : null}
+      {rest.length > 0 && !shouldStack ? rest.map((decoration) => (
+        <RefLabelPill
+          decoration={decoration}
+          inactive={isInactive(decoration)}
+          key={decoration.full_name}
+          linkedRemote={linkedRemotes.get(decoration.full_name)}
+          linkedRemoteIconUrl={remoteIconUrl(linkedRemotes.get(decoration.full_name))}
+          remoteIconUrl={remoteIconUrl(decoration)}
+        />
+      )) : null}
+    </span>
+  );
+}
+
 function RowShaButton({ oid, shortOid, onCopy }: { oid: string; shortOid: string; onCopy: (oid: string) => void }) {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ left: number; top: number } | null>(null);
@@ -258,6 +456,9 @@ const CommitRow = memo(function CommitRow({
   selected,
   searchMatch,
   hideHeadDecoration,
+  hasMultipleBranches,
+  detachedHeadOid,
+  remoteIconUrls,
   graphWidth,
   onSelect,
   onCommitContextMenu,
@@ -310,6 +511,7 @@ const CommitRow = memo(function CommitRow({
     "--gc-branch-origin": `${branchOrigin}px`,
     "--gc-branch-interactive-origin": `${branchInteractiveOrigin}px`,
   } as CSSProperties;
+  const decorations = visibleDecorations(commit, hideHeadDecoration, detachedHeadOid);
 
   return (
     <div
@@ -329,15 +531,11 @@ const CommitRow = memo(function CommitRow({
       style={rowStyle}
     >
       <span aria-label="References" className="gc-commit-row__decorations" role="cell">
-        {commit.decorations.filter((decoration) => !hideHeadDecoration || !decoration.is_head).map((decoration) => (
-          <span
-            className={`gc-ref-label gc-ref-label--${decoration.kind}${decoration.is_head ? " gc-ref-label--head" : ""}`}
-            key={decoration.full_name}
-            title={decoration.full_name}
-          >
-            {decoration.name}
-          </span>
-        ))}
+        <CommitRefStack
+          decorations={decorations}
+          hasMultipleBranches={hasMultipleBranches}
+          remoteIconUrls={remoteIconUrls}
+        />
       </span>
       <span
         aria-label="Graph"
@@ -377,6 +575,8 @@ export function CommitGraph({
   beforeFirstSelected = false,
   searchMatchOids,
   hideHeadDecoration = false,
+  detachedHeadOid = null,
+  remoteIconUrls,
   onSelect,
   onNavigateBeforeFirst,
   onCommitContextMenu,
@@ -388,6 +588,15 @@ export function CommitGraph({
   const listRef = useRef<HTMLDivElement>(null);
   const geometry = useMemo(() => buildGraphGeometry(commits), [commits]);
   const timeMarkers = useMemo(() => buildTimeMarkers(commits, Math.floor(Date.now() / 1_000)), [commits]);
+  const hasMultipleBranches = useMemo(() => {
+    const branchNames = new Set<string>();
+    for (const commit of commits) {
+      for (const decoration of commit.decorations) {
+        if (isBranchDecoration(decoration)) branchNames.add(decoration.full_name);
+      }
+    }
+    return branchNames.size > 1;
+  }, [commits]);
   const selectedIndex = useMemo(
     () => commits.findIndex((commit) => commit.oid === selectedOid),
     [commits, selectedOid],
@@ -505,8 +714,10 @@ export function CommitGraph({
         {commits.map((commit, index) => (
           <CommitRow
             commit={commit}
+            detachedHeadOid={detachedHeadOid}
             formatTimestamp={formatTimestamp}
             graphWidth={geometry.width}
+            hasMultipleBranches={hasMultipleBranches}
             hideHeadDecoration={hideHeadDecoration}
             id={`commit-row-${commit.oid}`}
             index={index}
@@ -514,6 +725,7 @@ export function CommitGraph({
             onCommitContextMenu={onCommitContextMenu}
             onCopySha={onCopySha}
             onSelect={onSelect}
+            remoteIconUrls={remoteIconUrls}
             searchMatch={searchMatchOids?.has(commit.oid) ?? false}
             selected={commit.oid === selectedOid}
           />

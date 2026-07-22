@@ -256,7 +256,7 @@ export function WorktreePanel({
           onClick={() => void submit()}
           tone="accent"
         >
-          {draft.amend ? "Amend commit" : `Commit ${staged.length || ""}`}
+          {draft.amend ? "Amend commit" : staged.length > 0 ? `Commit Changes to ${staged.length} files` : "Stage Changes to Commit"}
         </Button>
       </div>
 

@@ -83,6 +83,7 @@ import type {
   OpenedRepository,
   PersistedState,
   PullMode,
+  RemoteInfo,
   RepositoryInfo,
   RepositorySnapshot,
   RepositoryTab,
@@ -216,6 +217,26 @@ function currentBranch(snapshot: RepositorySnapshot | null): string {
   if (snapshot.head.kind === "branch") return snapshot.head.name;
   if (snapshot.head.kind === "detached") return `detached @ ${snapshot.head.oid.slice(0, 7)}`;
   return snapshot.head.intended_branch;
+}
+
+function githubOwnerFromRemoteUrl(url: string): string | null {
+  const trimmed = url.trim();
+  const httpsMatch = /^https?:\/\/github\.com\/([^/\s]+)\/([^/\s]+?)(?:\.git)?(?:[/?#].*)?$/i.exec(trimmed);
+  if (httpsMatch) return httpsMatch[1];
+
+  const sshMatch = /^(?:ssh:\/\/)?git@github\.com[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?$/i.exec(trimmed);
+  if (sshMatch) return sshMatch[1];
+
+  return null;
+}
+
+function githubRemoteIconUrls(remotes: readonly RemoteInfo[]): Map<string, string> {
+  const iconUrls = new Map<string, string>();
+  for (const remote of remotes) {
+    const owner = githubOwnerFromRemoteUrl(remote.fetch_url) ?? githubOwnerFromRemoteUrl(remote.push_url);
+    if (owner) iconUrls.set(remote.name, `https://github.com/${encodeURIComponent(owner)}.png?size=32`);
+  }
+  return iconUrls;
 }
 
 function defaultConflictPreflightTarget(snapshot: RepositorySnapshot | null): string | null {
@@ -1729,6 +1750,10 @@ function App() {
     () => getCommitGraphWidth(history?.commits ?? []),
     [history],
   );
+  const remoteIconUrls = useMemo(
+    () => githubRemoteIconUrls(snapshot?.remotes ?? []),
+    [snapshot?.remotes],
+  );
   const currentHeadOid = snapshot?.head.kind === "unborn" ? null : snapshot?.head.oid ?? null;
   const wipLane = useMemo(() => {
     const commits = history?.commits ?? [];
@@ -1757,7 +1782,6 @@ function App() {
   const pendingOperation = snapshot
     ? continuableOperation(snapshot.operation_state)
     : null;
-
   if (initializing) {
     return <div className="gc-app gc-app--boot"><LoaderCircle size={24} /><span>Opening GitCat…</span></div>;
   }
@@ -1929,29 +1953,30 @@ function App() {
                       style={wipRowStyle}
                       type="button"
                     >
-                      <span className="gc-wip-row__refs"><span className="gc-ref-label gc-ref-label--head">{currentBranch(snapshot)}</span></span>
+                      <span className="gc-wip-row__refs" />
                       <span className="gc-wip-row__rail"><i /></span>
                       <span className="gc-wip-row__message">
                         <strong>// WIP</strong>
                         <Pencil aria-hidden="true" className="gc-wip-row__change-icon" size={11} />
-                        <small>{snapshot.status.entries.length} uncommitted change{snapshot.status.entries.length === 1 ? "" : "s"}</small>
+                        <span className="text-[11px]">{snapshot.status.entries.length}</span>
                       </span>
                       <span className={activeConflictCount ? "gc-wip-row__conflicts" : "gc-muted"}>
                         {activeConflictCount ? <><AlertTriangle size={12} /> {activeConflictCount}</> : ""}
                       </span>
                       <span />
-                      <b>{snapshot.status.entries.length}</b>
                     </button>
                   ) : null}
                   {history ? (
                     <CommitGraph
                       beforeFirstSelected={wipSelected}
                       commits={history.commits}
-                      hideHeadDecoration={Boolean(snapshot && !snapshot.status.clean)}
+                      detachedHeadOid={snapshot?.head.kind === "detached" ? snapshot.head.oid : null}
+                      hideHeadDecoration={false}
                       onNavigateBeforeFirst={snapshot && !snapshot.status.clean ? selectWipFromGraph : undefined}
                       onCommitContextMenu={(request: CommitContextMenuRequest) => setCommitMenu({ x: request.clientX, y: request.clientY, commit: request.commit })}
                       onCopySha={(oid) => void copySha(oid)}
                       onSelect={selectCommit}
+                      remoteIconUrls={remoteIconUrls}
                       searchMatchOids={graphMatches}
                       selectedOid={selectedOid}
                     />
