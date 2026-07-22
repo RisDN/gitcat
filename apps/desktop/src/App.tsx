@@ -24,7 +24,7 @@ import {
   useState,
 } from "react";
 
-import { CommitDetails } from "./components/CommitDetails";
+import { CommitDetails, CommitDetailsSkeleton } from "./components/CommitDetails";
 import { ConflictResolverDialog } from "./components/ConflictResolverDialog";
 import {
   CommitGraph,
@@ -1962,6 +1962,8 @@ function App() {
                     onSelectFile={openCommitFile}
                     selectedPath={selectedPath}
                   />
+                ) : selectedOid && !wipSelected ? (
+                  <CommitDetailsSkeleton />
                 ) : (
                   <aside className="gc-details gc-details--loading"><Spinner label="Loading commit details" /> Select a commit</aside>
                 )}

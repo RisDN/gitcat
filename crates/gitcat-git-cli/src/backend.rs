@@ -460,24 +460,16 @@ impl GitCliBackend {
         }
     }
 
+    async fn git_dir(&self, path: &Path) -> ApiResult<PathBuf> {
+        let output = self
+            .read(Some(path), os_args(&["rev-parse", "--absolute-git-dir"]))
+            .await?;
+        canonical_or_absolute(path, output.stdout_lossy().trim())
+    }
+
     async fn operation_state(&self, path: &Path) -> ApiResult<RepositoryOperationState> {
-        let info = self.inspect_repository(path).await?;
-        let git_dir = PathBuf::from(info.git_dir);
-        let state =
-            if git_dir.join("rebase-merge").exists() || git_dir.join("rebase-apply").exists() {
-                RepositoryOperationState::Rebase
-            } else if git_dir.join("MERGE_HEAD").exists() {
-                RepositoryOperationState::Merge
-            } else if git_dir.join("CHERRY_PICK_HEAD").exists() {
-                RepositoryOperationState::CherryPick
-            } else if git_dir.join("REVERT_HEAD").exists() {
-                RepositoryOperationState::Revert
-            } else if git_dir.join("BISECT_LOG").exists() {
-                RepositoryOperationState::Bisect
-            } else {
-                RepositoryOperationState::Normal
-            };
-        Ok(state)
+        let git_dir = self.git_dir(path).await?;
+        Ok(operation_state_from_git_dir(&git_dir))
     }
 
     async fn remotes(&self, path: &Path) -> ApiResult<Vec<RemoteInfo>> {
@@ -2370,10 +2362,12 @@ impl GitBackend for GitCliBackend {
         oid: &str,
     ) -> ApiResult<Vec<CommitActionAvailability>> {
         self.resolve_commit(path, oid).await?;
-        let snapshot = self.snapshot(path).await?;
-        let operation_busy = snapshot.operation_state != RepositoryOperationState::Normal;
-        let dirty = !snapshot.status.clean;
-        let reset_unavailable = !matches!(snapshot.head, HeadState::Branch { .. });
+        let (status_output, operation_state) =
+            tokio::try_join!(self.status_output(path), self.operation_state(path))?;
+        let parsed_status = parse_status(&status_output.stdout)?;
+        let operation_busy = operation_state != RepositoryOperationState::Normal;
+        let dirty = !parsed_status.status.clean;
+        let reset_unavailable = !matches!(parsed_status.head, HeadState::Branch { .. });
         let action = |kind, requires_clean, requires_confirmation| {
             let disabled_reason = if operation_busy {
                 Some("Finish or abort the current Git operation first".to_owned())
@@ -2905,6 +2899,22 @@ fn canonical_or_absolute(base: &Path, value: &str) -> ApiResult<PathBuf> {
         )
         .with_details(error.to_string())
     })
+}
+
+fn operation_state_from_git_dir(git_dir: &Path) -> RepositoryOperationState {
+    if git_dir.join("rebase-merge").exists() || git_dir.join("rebase-apply").exists() {
+        RepositoryOperationState::Rebase
+    } else if git_dir.join("MERGE_HEAD").exists() {
+        RepositoryOperationState::Merge
+    } else if git_dir.join("CHERRY_PICK_HEAD").exists() {
+        RepositoryOperationState::CherryPick
+    } else if git_dir.join("REVERT_HEAD").exists() {
+        RepositoryOperationState::Revert
+    } else if git_dir.join("BISECT_LOG").exists() {
+        RepositoryOperationState::Bisect
+    } else {
+        RepositoryOperationState::Normal
+    }
 }
 
 fn validate_relative_path(path: &str) -> ApiResult<()> {

@@ -192,3 +192,46 @@ export function CommitDetails({ details, selectedPath, busy = false, onSelectFil
     </aside>
   );
 }
+
+export function CommitDetailsSkeleton() {
+  const fileRows = Array.from({ length: 8 }, (_, index) => index);
+
+  return (
+    <aside className="gc-details gc-details--skeleton" aria-busy="true" aria-label="Loading commit details">
+      <div className="gc-details__sha">
+        <GitCommitHorizontal size={14} />
+        <span className="gc-skeleton-line gc-skeleton-line--label" />
+        <span className="gc-skeleton-line gc-skeleton-line--sha" />
+      </div>
+      <div className="gc-details__message">
+        <span className="gc-skeleton-line gc-skeleton-line--title" />
+        <span className="gc-skeleton-line gc-skeleton-line--body" />
+        <span className="gc-skeleton-line gc-skeleton-line--body-short" />
+      </div>
+      <div className="gc-details__identity">
+        <span className="gc-avatar gc-avatar--skeleton" />
+        <div>
+          <span className="gc-skeleton-line gc-skeleton-line--author" />
+          <span className="gc-skeleton-line gc-skeleton-line--email" />
+          <span className="gc-skeleton-line gc-skeleton-line--date" />
+        </div>
+      </div>
+      <div className="gc-details__stats">
+        <span className="gc-skeleton-pill" />
+        <span className="gc-skeleton-line gc-skeleton-line--stat" />
+        <span className="gc-skeleton-line gc-skeleton-line--stat" />
+      </div>
+      <div className="gc-details__files">
+        <div className="gc-file-list__header">
+          <span className="gc-skeleton-line gc-skeleton-line--files-title" />
+          <small className="gc-skeleton-line gc-skeleton-line--files-count" />
+        </div>
+        <div className="gc-file-tree gc-file-tree--skeleton" aria-hidden="true">
+          {fileRows.map((row) => (
+            <span className="gc-skeleton-line gc-skeleton-line--file" key={row} />
+          ))}
+        </div>
+      </div>
+    </aside>
+  );
+}
