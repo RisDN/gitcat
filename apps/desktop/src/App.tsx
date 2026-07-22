@@ -63,6 +63,7 @@ import type {
   AppMetadata,
   AppSettings,
   BranchInfo,
+  ChangeKind,
   ChangedFile,
   CommitActionAvailability,
   CommitSummary,
@@ -231,6 +232,74 @@ function continuableOperation(
     case "bisect":
       return null;
   }
+}
+
+type WorktreeStageAction = "stage" | "unstage";
+
+function stagedKindFromWorktree(kind: ChangeKind): ChangeKind {
+  return kind === "untracked" || kind === "ignored" ? "added" : kind;
+}
+
+function worktreeKindFromIndex(kind: ChangeKind): ChangeKind {
+  if (kind === "added" || kind === "copied") return "untracked";
+  if (kind === "renamed") return "modified";
+  return kind;
+}
+
+function matchesStatusPath(entry: StatusEntry, paths: Set<string>): boolean {
+  return paths.has(entry.path) || (entry.old_path ? paths.has(entry.old_path) : false);
+}
+
+function compactStatusEntries(entries: StatusEntry[]): StatusEntry[] {
+  return entries.filter((entry) => entry.conflicted || entry.index || entry.worktree);
+}
+
+function optimisticWorktreeSnapshot(
+  current: RepositorySnapshot,
+  action: WorktreeStageAction,
+  paths: string[],
+): RepositorySnapshot {
+  const selected = new Set(paths);
+  if (!selected.size) return current;
+
+  const entries = compactStatusEntries(current.status.entries.map((entry) => {
+    if (entry.conflicted || !matchesStatusPath(entry, selected)) return entry;
+
+    if (action === "stage") {
+      if (!entry.worktree) return entry;
+      return {
+        ...entry,
+        index: stagedKindFromWorktree(entry.worktree),
+        worktree: undefined,
+      };
+    }
+
+    if (!entry.index) return entry;
+    return {
+      ...entry,
+      index: undefined,
+      old_path: entry.index === "renamed" ? undefined : entry.old_path,
+      worktree: entry.worktree ?? worktreeKindFromIndex(entry.index),
+    };
+  }));
+
+  return {
+    ...current,
+    status: {
+      ...current.status,
+      clean: entries.length === 0,
+      entries,
+    },
+  };
+}
+
+function optimisticWorktreeSelection(
+  current: { path: string; staged: boolean } | null,
+  action: WorktreeStageAction,
+  paths: string[],
+): { path: string; staged: boolean } | null {
+  if (!current || !paths.includes(current.path)) return current;
+  return { ...current, staged: action === "stage" };
 }
 
 function applyTheme(settings: AppSettings): void {
@@ -546,17 +615,44 @@ function App() {
     return () => window.clearTimeout(timer);
   }, [activeRepository, searchOpen, searchQuery, showError]);
 
+  const applyOptimisticWorktreeMutation = useCallback((action: WorktreeStageAction, paths: string[]) => {
+    if (!activeRepository || !snapshot || !paths.length) return undefined;
+    const repositoryId = activeRepository.repository_id;
+    const previousSnapshot = snapshot;
+    const previousSelectedWorktreeFile = selectedWorktreeFile;
+
+    setSnapshot((current) => {
+      if (!current || activeRepositoryIdRef.current !== repositoryId) return current;
+      return optimisticWorktreeSnapshot(current, action, paths);
+    });
+    setSelectedWorktreeFile((current) => {
+      if (activeRepositoryIdRef.current !== repositoryId) return current;
+      return optimisticWorktreeSelection(current, action, paths);
+    });
+
+    return () => {
+      if (activeRepositoryIdRef.current !== repositoryId) return;
+      setSnapshot(previousSnapshot);
+      setSelectedWorktreeFile(previousSelectedWorktreeFile);
+    };
+  }, [activeRepository, selectedWorktreeFile, snapshot]);
+
   const runMutation = useCallback(async (
     title: string,
     operation: (repository: RuntimeRepository) => Promise<unknown>,
-    options?: { silent?: boolean },
+    options?: { silent?: boolean; optimistic?: () => (() => void) | undefined },
   ): Promise<boolean> => {
     if (!activeRepository || busy || overviewLoading) return false;
+    let rollbackOptimistic: (() => void) | undefined;
+    let operationCompleted = false;
     setBusy(true);
     try {
+      rollbackOptimistic = options?.optimistic?.();
       const result = await operation(activeRepository);
+      operationCompleted = true;
       if (activeRepositoryIdRef.current === activeRepository.repository_id) {
-        await loadOverview(activeRepository, true);
+        await loadOverview(activeRepository, true)
+          .catch((error) => showError("Refresh failed", error));
       }
       if (isMutationResult(result) && result.conflicts.length) {
         addToast({
@@ -569,12 +665,35 @@ function App() {
       }
       return true;
     } catch (error) {
+      if (!operationCompleted) rollbackOptimistic?.();
       showError(`${title} failed`, error);
       return false;
     } finally {
       setBusy(false);
     }
   }, [activeRepository, addToast, busy, loadOverview, overviewLoading, showError]);
+
+  const stagePaths = useCallback((paths: string[]) => {
+    void runMutation(
+      "Files staged",
+      (repository) => gitcatApi.stagePaths(repository.repository_id, paths),
+      {
+        silent: true,
+        optimistic: () => applyOptimisticWorktreeMutation("stage", paths),
+      },
+    );
+  }, [applyOptimisticWorktreeMutation, runMutation]);
+
+  const unstagePaths = useCallback((paths: string[]) => {
+    void runMutation(
+      "Files unstaged",
+      (repository) => gitcatApi.unstagePaths(repository.repository_id, paths),
+      {
+        silent: true,
+        optimistic: () => applyOptimisticWorktreeMutation("unstage", paths),
+      },
+    );
+  }, [applyOptimisticWorktreeMutation, runMutation]);
 
   const createPatchFile = useCallback(async (paths: string[], staged: boolean) => {
     if (!activeRepository) return;
@@ -1114,7 +1233,7 @@ function App() {
           const paths = snapshot.status.entries
             .filter((entry) => entry.worktree && !entry.conflicted)
             .map((entry) => entry.path);
-          if (paths.length) void runMutation("Files staged", (repository) => gitcatApi.stagePaths(repository.repository_id, paths), { silent: true });
+          if (paths.length) stagePaths(paths);
         }
       } else if (
         matches(keybinds.unstage_all)
@@ -1122,7 +1241,7 @@ function App() {
         event.preventDefault();
         if (activeRepository && snapshot && wipSelected) {
           const paths = snapshot.status.entries.filter((entry) => entry.index && !entry.conflicted).map((entry) => entry.path);
-          if (paths.length) void runMutation("Files unstaged", (repository) => gitcatApi.unstagePaths(repository.repository_id, paths), { silent: true });
+          if (paths.length) unstagePaths(paths);
         }
       } else if (matches(keybinds.focus_commit_message)) {
         event.preventDefault();
@@ -1174,8 +1293,10 @@ function App() {
     showError,
     selectWip,
     snapshot,
+    stagePaths,
     stashActiveRepository,
     tabMenu,
+    unstagePaths,
     wipSelected,
   ]);
 
@@ -1792,8 +1913,8 @@ function App() {
                     onOpenDiff={openWorktreeDiff}
                     onOpenConflict={(entry) => void openConflictEditor(entry)}
                     onResolveConflict={resolveConflictEntry}
-                    onStage={(paths) => void runMutation("Files staged", (repository) => gitcatApi.stagePaths(repository.repository_id, paths), { silent: true })}
-                    onUnstage={(paths) => void runMutation("Files unstaged", (repository) => gitcatApi.unstagePaths(repository.repository_id, paths), { silent: true })}
+                    onStage={stagePaths}
+                    onUnstage={unstagePaths}
                     onDiscard={(paths) => {
                       if (!window.confirm(`Discard all changes to ${paths.length === 1 ? paths[0] : `${paths.length} files`}? This cannot be undone.`)) return;
                       void runMutation("Changes discarded", (repository) => gitcatApi.discardPaths(repository.repository_id, paths));
