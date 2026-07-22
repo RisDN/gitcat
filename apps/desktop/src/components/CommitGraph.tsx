@@ -473,7 +473,6 @@ const CommitRow = memo(function CommitRow({
     if (!onCommitContextMenu) return;
 
     event.preventDefault();
-    onSelect(commit);
     openContextMenu(event.clientX, event.clientY);
   };
 

@@ -381,6 +381,10 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [prompt, setPrompt] = useState<PromptState>(null);
   const [commitMenu, setCommitMenu] = useState<CommitMenuState | null>(null);
+  const [commitMenuActions, setCommitMenuActions] = useState<{
+    oid: string;
+    actions: CommitActionAvailability[];
+  } | null>(null);
   const [tabMenu, setTabMenu] = useState<TabMenuState | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [sidebarWidth, setSidebarWidth] = useState(252);
@@ -399,6 +403,7 @@ function App() {
   const workspaceRef = useRef(persisted.workspace);
   const overviewLoadSequence = useRef(0);
   const detailsLoadSequence = useRef(0);
+  const commitMenuActionSequence = useRef(0);
   const diffLoadSequence = useRef(0);
   const historyLoadSequence = useRef(0);
   const searchSequence = useRef(0);
@@ -1374,16 +1379,48 @@ function App() {
     wipSelected,
   ]);
 
-  const commitActionMap = useMemo(
-    () => new Map(commitActions.map((action) => [action.kind, action])),
-    [commitActions],
-  );
+  useEffect(() => {
+    if (!commitMenu || !activeRepository) {
+      ++commitMenuActionSequence.current;
+      setCommitMenuActions(null);
+      return;
+    }
+
+    if (details?.oid === commitMenu.commit.oid) {
+      ++commitMenuActionSequence.current;
+      setCommitMenuActions({ oid: commitMenu.commit.oid, actions: commitActions });
+      return;
+    }
+
+    const repositoryId = activeRepository.repository_id;
+    const oid = commitMenu.commit.oid;
+    const sequence = ++commitMenuActionSequence.current;
+    setCommitMenuActions({ oid, actions: [] });
+    void gitcatApi.commitActionAvailability(repositoryId, oid)
+      .then((actions) => {
+        if (
+          sequence !== commitMenuActionSequence.current
+          || activeRepositoryIdRef.current !== repositoryId
+        ) return;
+        setCommitMenuActions({ oid, actions });
+      })
+      .catch((error) => {
+        if (
+          sequence === commitMenuActionSequence.current
+          && activeRepositoryIdRef.current === repositoryId
+        ) showError("Commit actions could not be loaded", error);
+      });
+  }, [activeRepository, commitActions, commitMenu, details?.oid, showError]);
+
+  const commitMenuActionMap = useMemo(() => {
+    if (!commitMenuActions || commitMenuActions.oid !== commitMenu?.commit.oid) return new Map();
+    return new Map(commitMenuActions.actions.map((action) => [action.kind, action]));
+  }, [commitMenu?.commit.oid, commitMenuActions]);
 
   const contextActions = useMemo<ContextAction[]>(() => {
     if (!commitMenu) return [];
-    const availabilityMatchesCommit = details?.oid === commitMenu.commit.oid;
     const enabled = (kind: CommitActionAvailability["kind"]) => (
-      availabilityMatchesCommit && (commitActionMap.get(kind)?.enabled ?? false)
+      commitMenuActionMap.get(kind)?.enabled ?? false
     );
     const resetTarget = snapshot?.head.kind === "branch" ? snapshot.head.name : "branch";
     return [
@@ -1406,7 +1443,7 @@ function App() {
       },
       { id: "copy", label: "Copy full commit SHA", icon: <Copy size={15} />, separatorBefore: true },
     ];
-  }, [commitActionMap, commitMenu, details?.oid, snapshot?.head]);
+  }, [commitMenu, commitMenuActionMap, snapshot?.head]);
 
   const executeCommitAction = useCallback((action: string) => {
     if (!commitMenu) return;
