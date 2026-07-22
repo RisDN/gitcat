@@ -436,7 +436,7 @@ kbd,
 .gc-ref-row--current { background: color-mix(in srgb, var(--gc-success) 14%, transparent); }
 .gc-ref-row > button:first-child,
 .gc-ref-row__static { display: flex; min-width: 0; min-height: 30px; flex: 1; align-items: center; gap: 8px; padding: 0 5px 0 18px; background: transparent; color: var(--gc-text); cursor: pointer; text-align: left; }
-.gc-ref-row__static { cursor: default; }
+.gc-ref-row__static { cursor: default; user-select: none; }
 .gc-ref-row > button:first-child > span:not(.gc-ref-row__node),
 .gc-ref-row__static { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gc-ref-row > button:first-child small { margin-left: auto; color: var(--gc-muted); font-size: 10px; }
@@ -551,7 +551,8 @@ kbd,
 .gc-ref-stack__overflow { position: absolute; z-index: 15; top: calc(100% + 2px); left: 0; display: flex; min-width: max-content; flex-direction: column; gap: 2px; padding: 2px; border: 1px solid color-mix(in srgb, var(--gc-accent) 28%, var(--gc-border)); border-radius: 3px; background: color-mix(in srgb, var(--gc-panel) 96%, black); box-shadow: 0 8px 18px rgb(0 0 0 / 28%); opacity: 0; pointer-events: none; transform: translateY(-2px); transition: opacity 90ms ease, transform 90ms ease; }
 .gc-commit-row:hover .gc-ref-stack--stacked .gc-ref-stack__overflow,
 .gc-ref-stack--stacked:hover .gc-ref-stack__overflow { opacity: 1; pointer-events: auto; transform: translateY(0); }
-.gc-ref-label { position: relative; z-index: 2; display: inline-flex; max-width: 125px; min-width: 0; height: 21px; align-items: center; gap: 4px; padding: 1px 6px; border: 1px solid color-mix(in srgb, var(--gc-accent) 45%, var(--gc-border)); border-radius: 3px; background: color-mix(in srgb, var(--gc-accent) 9%, var(--gc-panel)); color: var(--gc-accent); font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; }
+.gc-ref-label { position: relative; z-index: 2; display: inline-flex; max-width: 125px; min-width: 0; height: 21px; align-items: center; gap: 4px; padding: 1px 6px; border: 1px solid color-mix(in srgb, var(--gc-accent) 45%, var(--gc-border)); border-radius: 3px; background: color-mix(in srgb, var(--gc-accent) 9%, var(--gc-panel)); color: var(--gc-accent); font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; user-select: none; }
+.gc-ref-label--local_branch:not(.gc-ref-label--head) { cursor: pointer; }
 .gc-ref-label svg { flex: 0 0 auto; }
 .gc-ref-label__remote-icon { color: color-mix(in srgb, currentColor 70%, var(--gc-text)); }
 .gc-ref-label__remote-avatar { width: 14px; height: 14px; flex: 0 0 auto; border-radius: 2px; object-fit: cover; box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 30%, transparent); }

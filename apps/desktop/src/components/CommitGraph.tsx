@@ -42,6 +42,7 @@ export interface CommitGraphProps {
   onNavigateBeforeFirst?: () => void;
   onCommitContextMenu?: (request: CommitContextMenuRequest) => void;
   onCopySha?: (oid: string) => void;
+  onRefDoubleClick?: (decoration: RefLabel) => void;
   className?: string;
   emptyLabel?: string;
   formatTimestamp?: (seconds: number, offsetMinutes: number) => string;
@@ -84,6 +85,7 @@ interface CommitRowProps {
   onSelect: (commit: CommitSummary) => void;
   onCommitContextMenu?: (request: CommitContextMenuRequest) => void;
   onCopySha?: (oid: string) => void;
+  onRefDoubleClick?: (decoration: RefLabel) => void;
   formatTimestamp?: (seconds: number, offsetMinutes: number) => string;
 }
 
@@ -276,12 +278,14 @@ function RefLabelPill({
   linkedRemote,
   remoteIconUrl,
   linkedRemoteIconUrl,
+  onDoubleClick,
 }: {
   decoration: GraphRefLabel;
   inactive: boolean;
   linkedRemote?: GraphRefLabel;
   remoteIconUrl?: string;
   linkedRemoteIconUrl?: string;
+  onDoubleClick?: (decoration: RefLabel) => void;
 }) {
   const [remoteImageFailed, setRemoteImageFailed] = useState(false);
   const [linkedRemoteImageFailed, setLinkedRemoteImageFailed] = useState(false);
@@ -299,9 +303,17 @@ function RefLabelPill({
   const displayName = decoration.kind === "remote_branch"
     ? remoteBranchNameWithoutRemote(decoration.name)
     : decoration.name;
+  const canCheckout = decoration.kind === "local_branch" && !decoration.synthetic;
 
   return (
-    <span className={classes} title={linkedRemote ? `${decoration.full_name}\n${linkedRemote.full_name}` : decoration.full_name}>
+    <span
+      className={classes}
+      onDoubleClick={canCheckout && onDoubleClick ? (event) => {
+        event.stopPropagation();
+        onDoubleClick(decoration);
+      } : undefined}
+      title={linkedRemote ? `${decoration.full_name}\n${linkedRemote.full_name}` : decoration.full_name}
+    >
       {decoration.is_head ? <Check aria-hidden="true" size={12} strokeWidth={3} /> : null}
       <span className="gc-ref-label__name">{displayName}</span>
       {remoteIconUrl && !remoteImageFailed ? (
@@ -336,10 +348,12 @@ function CommitRefStack({
   decorations,
   hasMultipleBranches,
   remoteIconUrls,
+  onRefDoubleClick,
 }: {
   decorations: readonly GraphRefLabel[];
   hasMultipleBranches: boolean;
   remoteIconUrls?: ReadonlyMap<string, string>;
+  onRefDoubleClick?: (decoration: RefLabel) => void;
 }) {
   if (decorations.length === 0) return null;
 
@@ -378,6 +392,7 @@ function CommitRefStack({
         inactive={isInactive(primary)}
         linkedRemote={linkedRemotes.get(primary.full_name)}
         linkedRemoteIconUrl={remoteIconUrl(linkedRemotes.get(primary.full_name))}
+        onDoubleClick={onRefDoubleClick}
         remoteIconUrl={remoteIconUrl(primary)}
       />
       {rest.length > 0 && shouldStack ? (
@@ -389,6 +404,7 @@ function CommitRefStack({
               key={decoration.full_name}
               linkedRemote={linkedRemotes.get(decoration.full_name)}
               linkedRemoteIconUrl={remoteIconUrl(linkedRemotes.get(decoration.full_name))}
+              onDoubleClick={onRefDoubleClick}
               remoteIconUrl={remoteIconUrl(decoration)}
             />
           ))}
@@ -401,6 +417,7 @@ function CommitRefStack({
           key={decoration.full_name}
           linkedRemote={linkedRemotes.get(decoration.full_name)}
           linkedRemoteIconUrl={remoteIconUrl(linkedRemotes.get(decoration.full_name))}
+          onDoubleClick={onRefDoubleClick}
           remoteIconUrl={remoteIconUrl(decoration)}
         />
       )) : null}
@@ -463,6 +480,7 @@ const CommitRow = memo(function CommitRow({
   onSelect,
   onCommitContextMenu,
   onCopySha,
+  onRefDoubleClick,
   formatTimestamp,
 }: CommitRowProps) {
   const openContextMenu = (clientX: number, clientY: number) => {
@@ -533,6 +551,7 @@ const CommitRow = memo(function CommitRow({
         <CommitRefStack
           decorations={decorations}
           hasMultipleBranches={hasMultipleBranches}
+          onRefDoubleClick={onRefDoubleClick}
           remoteIconUrls={remoteIconUrls}
         />
       </span>
@@ -580,6 +599,7 @@ export function CommitGraph({
   onNavigateBeforeFirst,
   onCommitContextMenu,
   onCopySha,
+  onRefDoubleClick,
   className,
   emptyLabel = "No commits to display.",
   formatTimestamp,
@@ -723,6 +743,7 @@ export function CommitGraph({
             key={commit.oid}
             onCommitContextMenu={onCommitContextMenu}
             onCopySha={onCopySha}
+            onRefDoubleClick={onRefDoubleClick}
             onSelect={onSelect}
             remoteIconUrls={remoteIconUrls}
             searchMatch={searchMatchOids?.has(commit.oid) ?? false}

@@ -2025,6 +2025,11 @@ function App() {
                       onNavigateBeforeFirst={snapshot && !snapshot.status.clean ? selectWipFromGraph : undefined}
                       onCommitContextMenu={(request: CommitContextMenuRequest) => setCommitMenu({ x: request.clientX, y: request.clientY, commit: request.commit })}
                       onCopySha={(oid) => void copySha(oid)}
+                      onRefDoubleClick={(decoration) => {
+                        if (decoration.kind === "local_branch" && !decoration.is_head) {
+                          void runMutation(`Checked out ${decoration.name}`, (repository) => gitcatApi.checkoutBranch(repository.repository_id, decoration.name));
+                        }
+                      }}
                       onSelect={selectCommit}
                       remoteIconUrls={remoteIconUrls}
                       searchMatchOids={graphMatches}
