@@ -773,7 +773,9 @@ kbd,
 .gc-status-section > header .gc-status-section__bulk:disabled { opacity: 1; cursor: default; }
 .gc-status-section > header .gc-status-section__bulk--priority { border-color: var(--gc-danger); background: color-mix(in srgb, var(--gc-danger) 16%, var(--gc-background)); font-weight: 700; }
 .gc-status-section > header .gc-status-section__bulk--priority:hover:not(:disabled) { background: var(--gc-danger); }
-.gc-status-section > .gc-file-tree { max-height: min(220px, 28vh); padding: 0 5px 7px; overflow: auto; }
+.gc-status-section--open > .gc-file-tree,
+.gc-status-section--open > .gc-file-tree__empty { height: min(240px, 30vh); }
+.gc-status-section > .gc-file-tree { padding: 0 5px 7px; overflow: auto; }
 .gc-status-section:not(.gc-status-section--open) > header { border-bottom: 0; }
 
 /* GitKraken-style structured diff */
