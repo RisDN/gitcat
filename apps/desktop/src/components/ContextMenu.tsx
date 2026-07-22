@@ -4,6 +4,10 @@ import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 
 const NESTED_MENU_WIDTH = 268;
 
+function focusWithoutScrolling(element: HTMLElement | null | undefined): void {
+  element?.focus({ preventScroll: true });
+}
+
 export interface ContextAction {
   id: string;
   label: string;
@@ -49,9 +53,9 @@ export function ContextMenu({
         left: Math.max(8, Math.min(x, window.innerWidth - bounds.width - 8)),
         top: Math.max(8, Math.min(y, window.innerHeight - bounds.height - 8)),
       });
-      buttonRefs.current.find((button) => button && !button.disabled)?.focus();
+      focusWithoutScrolling(buttonRefs.current.find((button) => button && !button.disabled));
     }
-    return () => previousFocus?.focus();
+    return () => focusWithoutScrolling(previousFocus);
   }, [x, y]);
 
   useEffect(() => {
@@ -66,11 +70,11 @@ export function ContextMenu({
     const enabled = buttonRefs.current.filter((button): button is HTMLButtonElement => Boolean(button && !button.disabled));
     if (!enabled.length) return;
     event.preventDefault();
-    if (direction === "first") enabled[0].focus();
-    else if (direction === "last") enabled.at(-1)?.focus();
+    if (direction === "first") focusWithoutScrolling(enabled[0]);
+    else if (direction === "last") focusWithoutScrolling(enabled.at(-1));
     else {
       const current = enabled.indexOf(document.activeElement as HTMLButtonElement);
-      enabled[(current + direction + enabled.length) % enabled.length].focus();
+      focusWithoutScrolling(enabled[(current + direction + enabled.length) % enabled.length]);
     }
   };
 
