@@ -880,14 +880,15 @@ kbd,
 .gc-context-menu { position: absolute; width: 244px; max-height: calc(100vh - 16px); overflow-y: auto; padding: 6px; border: 1px solid color-mix(in srgb, var(--gc-border) 92%, white 3%); border-radius: 7px; background: color-mix(in srgb, var(--gc-panel) 96%, black); box-shadow: var(--gc-shadow); }
 .gc-context-menu button { display: flex; width: 100%; min-height: 31px; align-items: center; gap: 9px; padding: 5px 8px; border-radius: 4px; background: transparent; color: var(--gc-text); cursor: pointer; text-align: left; }
 .gc-context-menu button:hover:not(:disabled) { background: var(--gc-row-hover); }
-.gc-context-menu button > span:first-child { display: grid; width: 17px; place-items: center; color: var(--gc-muted); }
+.gc-context-menu__icon { display: grid; width: 17px; flex: 0 0 auto; place-items: center; color: var(--gc-muted); }
+.gc-context-menu__label { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gc-context-menu__separator { margin-top: 5px; border-top: 1px solid var(--gc-border) !important; border-radius: 0 0 4px 4px !important; padding-top: 9px !important; }
 .gc-context-menu__danger { color: var(--gc-danger) !important; }
 .gc-context-menu button:focus-visible, .gc-context-menu button:focus { outline: none; }
 .gc-context-menu button:focus-visible:not(:disabled) { background: var(--gc-row-hover); }
 .gc-context-menu__submenu-host { position: relative; }
 .gc-context-menu__chevron { margin-left: auto; color: var(--gc-muted); }
-.gc-context-menu--nested { position: fixed; z-index: 201; }
+.gc-context-menu--nested { position: fixed; z-index: 201; width: 268px; }
 
 /* Modals and settings */
 .gc-modal-layer { position: fixed; z-index: 300; display: grid; inset: 0; place-items: center; padding: 24px; background: rgb(4 7 11 / 72%); backdrop-filter: blur(5px); }

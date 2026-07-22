@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 
+const NESTED_MENU_WIDTH = 268;
+
 export interface ContextAction {
   id: string;
   label: string;
@@ -32,7 +34,7 @@ export function ContextMenu({
 
   const openSubmenuFor = (id: string, host: HTMLElement) => {
     const bounds = host.getBoundingClientRect();
-    const width = 244;
+    const width = NESTED_MENU_WIDTH;
     let left = bounds.right - 4;
     if (left + width > window.innerWidth - 8) left = bounds.left - width + 4;
     setOpenSubmenu({ id, left: Math.max(8, left), top: Math.max(8, bounds.top - 6) });
@@ -120,8 +122,8 @@ export function ContextMenu({
                   role="menuitem"
                   type="button"
                 >
-                  <span>{action.icon}</span>
-                  <span>{action.label}</span>
+                  {action.icon !== undefined ? <span className="gc-context-menu__icon">{action.icon}</span> : null}
+                  <span className="gc-context-menu__label">{action.label}</span>
                   <ChevronRight aria-hidden="true" className="gc-context-menu__chevron" size={13} />
                 </button>
                 {open ? (
@@ -139,8 +141,8 @@ export function ContextMenu({
                         role="menuitem"
                         type="button"
                       >
-                        <span>{child.icon}</span>
-                        <span>{child.label}</span>
+                        {child.icon !== undefined ? <span className="gc-context-menu__icon">{child.icon}</span> : null}
+                        <span className="gc-context-menu__label">{child.label}</span>
                       </button>
                     ))}
                   </div>
@@ -159,8 +161,8 @@ export function ContextMenu({
               role="menuitem"
               type="button"
             >
-              <span>{action.icon}</span>
-              <span>{action.label}</span>
+              {action.icon !== undefined ? <span className="gc-context-menu__icon">{action.icon}</span> : null}
+              <span className="gc-context-menu__label">{action.label}</span>
             </button>
           );
         })}

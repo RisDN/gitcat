@@ -40,7 +40,6 @@ import { DiffViewer, type DiffViewMode } from "./components/DiffViewer";
 import { Button, IconButton, Spinner } from "./components/Primitives";
 import { PromptDialog } from "./components/PromptDialog";
 import { RefSidebar } from "./components/RefSidebar";
-import { ResetDialog } from "./components/ResetDialog";
 import { SearchBar } from "./components/SearchBar";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { ToastRegion, type ToastMessage } from "./components/ToastRegion";
@@ -360,7 +359,6 @@ function App() {
   const [searchBusy, setSearchBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [prompt, setPrompt] = useState<PromptState>(null);
-  const [resetCommit, setResetCommit] = useState<CommitSummary | null>(null);
   const [commitMenu, setCommitMenu] = useState<CommitMenuState | null>(null);
   const [tabMenu, setTabMenu] = useState<TabMenuState | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -397,7 +395,6 @@ function App() {
 
   useEffect(() => {
     setPrompt(null);
-    setResetCommit(null);
     setCommitMenu(null);
     setTabMenu(null);
     setConflictEditor(null);
@@ -1155,7 +1152,7 @@ function App() {
         matchesKeybind(event, binding)
         && !(editable && isPlainTypingKeybind(binding))
       );
-      if (settingsOpen || conflictEditor || prompt || resetCommit || commitMenu || tabMenu) {
+      if (settingsOpen || conflictEditor || prompt || commitMenu || tabMenu) {
         if (Object.values(keybinds).some((binding) => matches(binding))) event.preventDefault();
         return;
       }
@@ -1331,7 +1328,6 @@ function App() {
     pushActiveRepository,
     refreshActiveRepository,
     reopenClosedRepository,
-    resetCommit,
     runMutation,
     settingsOpen,
     showError,
@@ -1356,16 +1352,28 @@ function App() {
     const enabled = (kind: CommitActionAvailability["kind"]) => (
       availabilityMatchesCommit && (commitActionMap.get(kind)?.enabled ?? false)
     );
+    const resetTarget = snapshot?.head.kind === "branch" ? snapshot.head.name : "branch";
     return [
       { id: "checkout", label: "Checkout commit (detached)", icon: <GitCommitHorizontal size={15} />, disabled: !enabled("checkout") },
       { id: "branch", label: "Create branch here…", icon: <GitBranchPlus size={15} />, disabled: !enabled("create_branch") },
       { id: "tag", label: "Create tag here…", icon: <Tag size={15} />, disabled: !enabled("create_tag") },
       { id: "cherry_pick", label: "Cherry-pick commit", icon: <GitPullRequestArrow size={15} />, disabled: !enabled("cherry_pick"), separatorBefore: true },
       { id: "revert", label: "Revert commit", icon: <RotateCcw size={15} />, disabled: !enabled("revert") },
-      { id: "reset", label: "Reset branch to commit…", icon: <Trash2 size={15} />, disabled: !enabled("reset"), danger: true, separatorBefore: true },
+      {
+        id: "reset",
+        label: `Reset ${resetTarget} to this commit`,
+        icon: <Trash2 size={15} />,
+        disabled: !enabled("reset"),
+        separatorBefore: true,
+        submenu: [
+          { id: "reset:soft", label: "Soft - keep all changes" },
+          { id: "reset:mixed", label: "Mixed - keep working copy but reset index" },
+          { id: "reset:hard", label: "Hard - discard all changes" },
+        ],
+      },
       { id: "copy", label: "Copy full commit SHA", icon: <Copy size={15} />, separatorBefore: true },
     ];
-  }, [commitActionMap, commitMenu, details?.oid]);
+  }, [commitActionMap, commitMenu, details?.oid, snapshot?.head]);
 
   const executeCommitAction = useCallback((action: string) => {
     if (!commitMenu) return;
@@ -1398,11 +1406,27 @@ function App() {
         void runMutation("Commit reverted", (repository) => gitcatApi.revertCommit(repository.repository_id, commit.oid, mainline));
         break;
       }
-      case "reset":
-        setResetCommit(commit);
+      case "reset:soft":
+      case "reset:mixed":
+      case "reset:hard": {
+        if (!snapshot) break;
+        const mode = action.slice("reset:".length) as ResetMode;
+        const branchName = snapshot.head.kind === "branch" ? snapshot.head.name : "branch";
+        if (
+          mode === "hard"
+          && !window.confirm(`Hard reset ${branchName} to ${commit.short_oid}? This will discard uncommitted changes and cannot be undone.`)
+        ) break;
+        void runMutation("Branch reset", (repository) => gitcatApi.resetCommit(
+          repository.repository_id,
+          commit.oid,
+          mode,
+          mode === "hard",
+          expectedState(snapshot),
+        ));
         break;
+      }
     }
-  }, [commitMenu, copySha, runMutation]);
+  }, [commitMenu, copySha, runMutation, snapshot]);
 
   const tabContextActions = useMemo<ContextAction[]>(() => {
     if (!tabMenu) return [];
@@ -2048,17 +2072,6 @@ function App() {
         />
       ) : null}
       {prompt && promptConfig ? <PromptDialog {...promptConfig} onClose={() => setPrompt(null)} onConfirm={submitPrompt} /> : null}
-      {resetCommit && snapshot ? (
-        <ResetDialog
-          onClose={() => setResetCommit(null)}
-          onConfirm={(mode: ResetMode) => {
-            const commit = resetCommit;
-            setResetCommit(null);
-            void runMutation("Branch reset", (repository) => gitcatApi.resetCommit(repository.repository_id, commit.oid, mode, true, expectedState(snapshot)));
-          }}
-          shortOid={resetCommit.short_oid}
-        />
-      ) : null}
       {conflictEditor && snapshot ? (
         <ConflictResolverDialog
           branchName={currentBranch(snapshot)}
