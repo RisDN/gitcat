@@ -544,6 +544,10 @@ class DemoGitCatApi implements GitCatApi {
     // The browser demo has no filesystem to watch.
   }
 
+  async openRepositoryFolder(_repositoryId: RepositoryId): Promise<void> {
+    // The browser demo has no filesystem to reveal.
+  }
+
   async snapshot(repositoryId: RepositoryId): Promise<RepositorySnapshot> {
     await delay();
     this.ensureRepository(repositoryId);

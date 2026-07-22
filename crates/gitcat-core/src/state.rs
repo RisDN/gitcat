@@ -159,6 +159,7 @@ pub fn validate_settings(settings: &AppSettings) -> ApiResult<()> {
         keybinds.new_repository_tab.as_str(),
         keybinds.close_repository.as_str(),
         keybinds.open_repository.as_str(),
+        keybinds.open_repository_folder.as_str(),
         keybinds.search_commits.as_str(),
         keybinds.open_settings.as_str(),
         keybinds.refresh_repository.as_str(),

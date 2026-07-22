@@ -46,6 +46,8 @@ export interface GitCatCommands {
   watchRepository(repositoryId: RepositoryId): Promise<void>;
   /** Stop the active repository watch. */
   unwatchRepository(): Promise<void>;
+  /** Open the repository's worktree root in the OS file explorer. */
+  openRepositoryFolder(repositoryId: RepositoryId): Promise<void>;
   snapshot(repositoryId: RepositoryId): Promise<RepositorySnapshot>;
   history(repositoryId: RepositoryId, query: HistoryQuery): Promise<HistoryPage>;
   searchCommits(
@@ -222,6 +224,8 @@ export function createTauriGitCatApi(): GitCatApi {
     watchRepository: (repositoryId) =>
       invokeTauri("repository_watch", { repositoryId }),
     unwatchRepository: () => invokeTauri("repository_unwatch"),
+    openRepositoryFolder: (repositoryId) =>
+      invokeTauri("repository_reveal", { repositoryId }),
     snapshot: (repositoryId) =>
       invokeTauri("repository_snapshot", { repositoryId }),
     history: (repositoryId, query) =>

@@ -440,6 +440,7 @@ export interface KeybindSettings {
   close_repository: string;
   reopen_closed_repository: string;
   open_repository: string;
+  open_repository_folder: string;
   search_commits: string;
   open_settings: string;
   refresh_repository: string;

@@ -111,6 +111,39 @@ fn repository_unwatch(watchers: State<'_, RepositoryWatchState>) {
 }
 
 #[tauri::command]
+async fn repository_reveal(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+) -> ApiResult<()> {
+    let root = core.repository_root(&repository_id).await?;
+    // Single-purpose file-manager launch for a known, open repository root.
+    // No shell and no caller-supplied arguments: only the resolved worktree path.
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = std::process::Command::new("explorer");
+        command.arg(&root);
+        command
+    };
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = std::process::Command::new("open");
+        command.arg(&root);
+        command
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = {
+        let mut command = std::process::Command::new("xdg-open");
+        command.arg(&root);
+        command
+    };
+    // `explorer` exits non-zero even on success, so spawn without inspecting status.
+    command.spawn().map(|_| ()).map_err(|error| {
+        ApiError::new(ErrorCode::Internal, "could not open repository folder")
+            .with_details(error.to_string())
+    })
+}
+
+#[tauri::command]
 async fn history_page(
     core: State<'_, Arc<CoreApi>>,
     repository_id: RepositoryId,
@@ -504,6 +537,7 @@ pub fn run() {
             repository_snapshot,
             repository_watch,
             repository_unwatch,
+            repository_reveal,
             history_page,
             history_search,
             commit_details,

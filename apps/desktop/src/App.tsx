@@ -1026,6 +1026,12 @@ function App() {
       } else if (matches(keybinds.open_repository)) {
         event.preventDefault();
         if (!busy) void chooseRepository();
+      } else if (matches(keybinds.open_repository_folder)) {
+        event.preventDefault();
+        if (activeRepository) {
+          void gitcatApi.openRepositoryFolder(activeRepository.repository_id)
+            .catch((error) => showError("Could not open repository folder", error));
+        }
       } else if (matches(keybinds.open_settings)) {
         event.preventDefault();
         setSettingsOpen(true);
