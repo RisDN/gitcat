@@ -498,9 +498,13 @@ function App() {
   useEffect(() => { selectedOidRef.current = selectedOid; }, [selectedOid]);
   useEffect(() => { workspaceRef.current = persisted.workspace; }, [persisted.workspace]);
 
-  const loadOverview = useCallback(async (repository: RuntimeRepository, preserveSelection = true) => {
+  const loadOverview = useCallback(async (
+    repository: RuntimeRepository,
+    preserveSelection = true,
+    showLoading = true,
+  ) => {
     const sequence = ++overviewLoadSequence.current;
-    if (activeRepositoryIdRef.current === repository.repository_id) {
+    if (showLoading && activeRepositoryIdRef.current === repository.repository_id) {
       ++historyLoadSequence.current;
       setHistoryLoading(false);
       setOverviewLoading(true);
@@ -534,7 +538,8 @@ function App() {
       });
     } finally {
       if (
-        sequence === overviewLoadSequence.current
+        showLoading
+        && sequence === overviewLoadSequence.current
         && activeRepositoryIdRef.current === repository.repository_id
       ) setOverviewLoading(false);
     }
@@ -686,6 +691,7 @@ function App() {
     if (!activeRepository || busy || overviewLoading) return false;
     let rollbackOptimistic: (() => void) | undefined;
     let operationCompleted = false;
+    ++overviewLoadSequence.current;
     setBusy(true);
     try {
       rollbackOptimistic = options?.optimistic?.();
@@ -1093,11 +1099,17 @@ function App() {
       .catch((error) => showError("Refresh failed", error));
   }, [activeRepository, busy, loadOverview, overviewLoading, showError]);
 
+  const backgroundRefreshActiveRepository = useCallback(() => {
+    if (!activeRepository || busy || overviewLoading) return;
+    void loadOverview(activeRepository, true, false)
+      .catch((error) => showError("Refresh failed", error));
+  }, [activeRepository, busy, loadOverview, overviewLoading, showError]);
+
   // Keep the latest refresh behind a ref so the long-lived filesystem-change
   // listener below always calls the current one without re-subscribing.
   useEffect(() => {
-    autoRefreshRef.current = refreshActiveRepository;
-  }, [refreshActiveRepository]);
+    autoRefreshRef.current = backgroundRefreshActiveRepository;
+  }, [backgroundRefreshActiveRepository]);
 
   // Auto-refresh the active repository when its files change on disk, so
   // commits, checkouts, or edits made outside GitCat appear without a manual
@@ -1823,7 +1835,7 @@ function App() {
         <>
           <Toolbar
             branchName={currentBranch(snapshot)}
-            busy={busy || overviewLoading}
+            busy={busy}
             conflictIndicator={conflictIndicator}
             conflictTarget={conflictTarget}
             conflictTargets={conflictTargets}
@@ -1844,6 +1856,7 @@ function App() {
             onToggleRightPanel={() => setRightPanelVisible((visible) => !visible)}
             operation={snapshot?.operation_state ?? "normal"}
             pullMode={persisted.settings.default_pull_mode}
+            refreshing={overviewLoading}
             repositoryName={activeRepository.info.name}
             rightPanelKeybind={persisted.settings.keybinds.toggle_right_panel}
             rightPanelVisible={rightPanelVisible}
@@ -2029,7 +2042,7 @@ function App() {
             <div className="gc-panel-slot" hidden={!rightPanelVisible}>
                 {wipSelected && snapshot ? (
                   <WorktreePanel
-                    busy={busy || overviewLoading}
+                    busy={busy}
                     branchName={currentBranch(snapshot)}
                     commitKeybind={persisted.settings.keybinds.commit}
                     draft={activeCommitDraft}

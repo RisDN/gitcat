@@ -66,6 +66,7 @@ interface ToolbarProps {
   branchName: string;
   operation: RepositoryOperationState;
   busy: boolean;
+  refreshing?: boolean;
   pullMode: PullMode;
   leftPanelVisible: boolean;
   rightPanelVisible: boolean;
@@ -96,6 +97,7 @@ export function Toolbar({
   branchName,
   operation,
   busy,
+  refreshing = false,
   pullMode,
   leftPanelVisible,
   rightPanelVisible,
@@ -230,7 +232,7 @@ export function Toolbar({
 
       <div className="gc-toolbar__tail">
         {operation !== "normal" ? <span className="gc-operation-chip">{operation.replace("_", " ")}</span> : null}
-        {busy ? <Spinner label="Repository operation running" /> : null}
+        {busy || refreshing ? <Spinner label={busy ? "Repository operation running" : "Refreshing repository"} /> : null}
         <div className="gc-conflict-control" ref={conflictMenuRef}>
           <IconButton
             aria-expanded={conflictOpen}
