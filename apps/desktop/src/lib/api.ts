@@ -42,6 +42,10 @@ export interface GitCatCommands {
   initRepository(path: string, defaultBranch: string): Promise<OpenedRepository>;
   cloneRepository(options: CloneOptions): Promise<OpenedRepository>;
   closeRepository(repositoryId: RepositoryId): Promise<void>;
+  /** Start watching a repository's worktree so the UI auto-refreshes on change. */
+  watchRepository(repositoryId: RepositoryId): Promise<void>;
+  /** Stop the active repository watch. */
+  unwatchRepository(): Promise<void>;
   snapshot(repositoryId: RepositoryId): Promise<RepositorySnapshot>;
   history(repositoryId: RepositoryId, query: HistoryQuery): Promise<HistoryPage>;
   searchCommits(
@@ -215,6 +219,9 @@ export function createTauriGitCatApi(): GitCatApi {
     cloneRepository: (options) => invokeTauri("repository_clone", { options }),
     closeRepository: (repositoryId) =>
       invokeTauri("repository_close", { repositoryId }),
+    watchRepository: (repositoryId) =>
+      invokeTauri("repository_watch", { repositoryId }),
+    unwatchRepository: () => invokeTauri("repository_unwatch"),
     snapshot: (repositoryId) =>
       invokeTauri("repository_snapshot", { repositoryId }),
     history: (repositoryId, query) =>

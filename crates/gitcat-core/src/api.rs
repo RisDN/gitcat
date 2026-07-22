@@ -630,6 +630,12 @@ impl CoreApi {
         Ok(self.repository_entry(repository_id).await?.path)
     }
 
+    /// Worktree root of an open repository. Used by the desktop shell to place a
+    /// filesystem watcher on the active repository.
+    pub async fn repository_root(&self, repository_id: &RepositoryId) -> ApiResult<PathBuf> {
+        self.repository_path(repository_id).await
+    }
+
     async fn mutate<T, F, Fut>(&self, repository_id: &RepositoryId, operation: F) -> ApiResult<T>
     where
         F: FnOnce(Arc<dyn GitBackend>, PathBuf) -> Fut,

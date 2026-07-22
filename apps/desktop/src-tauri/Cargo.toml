@@ -19,6 +19,7 @@ tauri-build = { version = "2", features = [] }
 gitcat-contracts = { path = "../../../crates/gitcat-contracts" }
 gitcat-core = { path = "../../../crates/gitcat-core" }
 gitcat-git-cli = { path = "../../../crates/gitcat-git-cli" }
+notify = "6"
 serde.workspace = true
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"

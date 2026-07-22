@@ -1,18 +1,22 @@
+mod watcher;
+
 use std::sync::Arc;
 
 use gitcat_contracts::{
     ApiError, ApiResult, AppMetadata, CloneOptions, CommitActionAvailability, CommitDetails,
     CommitOptions, CommitSearchQuery, CommitSearchResult, ConflictExpectedState,
     ConflictFileDetails, ConflictLineEndingPolicy, ConflictPreflightResult, ConflictResolution,
-    ContinueOperation, DiffRequest, ExpectedState, FetchOptions, FileDiff, GitVersion, HistoryPage,
-    HistoryQuery, MutationResult, PersistedState, PullOptions, PushOptions, RepositoryId,
-    RepositoryInfo, RepositorySnapshot, ResetMode, StashEntry,
+    ContinueOperation, DiffRequest, ErrorCode, ExpectedState, FetchOptions, FileDiff, GitVersion,
+    HistoryPage, HistoryQuery, MutationResult, PersistedState, PullOptions, PushOptions,
+    RepositoryId, RepositoryInfo, RepositorySnapshot, ResetMode, StashEntry,
 };
 use gitcat_core::{CoreApi, JsonStateStore};
 use gitcat_git_cli::GitCliBackend;
 use serde::Serialize;
-use tauri::{Manager, State};
+use tauri::{AppHandle, Manager, State};
 use tokio_util::sync::CancellationToken;
+
+use crate::watcher::RepositoryWatchState;
 
 #[derive(Debug, Serialize)]
 pub struct OpenedRepository {
@@ -85,6 +89,25 @@ async fn repository_snapshot(
     repository_id: RepositoryId,
 ) -> ApiResult<RepositorySnapshot> {
     core.snapshot(&repository_id).await
+}
+
+#[tauri::command]
+async fn repository_watch(
+    core: State<'_, Arc<CoreApi>>,
+    watchers: State<'_, RepositoryWatchState>,
+    app: AppHandle,
+    repository_id: RepositoryId,
+) -> ApiResult<()> {
+    let root = core.repository_root(&repository_id).await?;
+    watchers.watch(app, repository_id, root).map_err(|error| {
+        ApiError::new(ErrorCode::Internal, "could not start repository watcher")
+            .with_details(error.to_string())
+    })
+}
+
+#[tauri::command]
+fn repository_unwatch(watchers: State<'_, RepositoryWatchState>) {
+    watchers.unwatch();
 }
 
 #[tauri::command]
@@ -468,6 +491,7 @@ pub fn run() {
             let backend = Arc::new(GitCliBackend::default());
             app.manage(Arc::new(CoreApi::new(backend)));
             app.manage(JsonStateStore::new(state_path));
+            app.manage(RepositoryWatchState::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -478,6 +502,8 @@ pub fn run() {
             repository_clone,
             repository_close,
             repository_snapshot,
+            repository_watch,
+            repository_unwatch,
             history_page,
             history_search,
             commit_details,

@@ -301,6 +301,7 @@ function App() {
   const [commitDrafts, setCommitDrafts] = useState<Record<string, CommitDraft>>({});
   const [overviewRepositoryId, setOverviewRepositoryId] = useState<string | null>(null);
   const activeRepositoryIdRef = useRef<string | null>(null);
+  const autoRefreshRef = useRef<() => void>(() => {});
   const closedTabsRef = useRef<RepositoryTab[]>([]);
   const workspaceRef = useRef(persisted.workspace);
   const overviewLoadSequence = useRef(0);
@@ -895,6 +896,49 @@ function App() {
     void loadOverview(activeRepository, true)
       .catch((error) => showError("Refresh failed", error));
   }, [activeRepository, busy, loadOverview, overviewLoading, showError]);
+
+  // Keep the latest refresh behind a ref so the long-lived filesystem-change
+  // listener below always calls the current one without re-subscribing.
+  useEffect(() => {
+    autoRefreshRef.current = refreshActiveRepository;
+  }, [refreshActiveRepository]);
+
+  // Auto-refresh the active repository when its files change on disk, so
+  // commits, checkouts, or edits made outside GitCat appear without a manual
+  // refresh. The backend watches one repository at a time and emits
+  // `repository:changed`; we (re)point it at the active repository here.
+  // No cleanup unwatch on switch: the backend replaces the previous watcher
+  // atomically, so watching the next repository is enough. Explicitly unwatch
+  // only when no repository is active (all tabs closed).
+  useEffect(() => {
+    if (gitcatApi.runtime !== "tauri") return;
+    const repositoryId = activeRepository?.repository_id;
+    if (repositoryId) void gitcatApi.watchRepository(repositoryId).catch(() => undefined);
+    else void gitcatApi.unwatchRepository().catch(() => undefined);
+  }, [activeRepository?.repository_id]);
+
+  useEffect(() => {
+    if (gitcatApi.runtime !== "tauri") return;
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    void (async () => {
+      const { listen } = await import("@tauri-apps/api/event");
+      const stop = await listen<{ repository_id: string }>(
+        "repository:changed",
+        (event) => {
+          if (event.payload.repository_id === activeRepositoryIdRef.current) {
+            autoRefreshRef.current();
+          }
+        },
+      );
+      if (disposed) stop();
+      else unlisten = stop;
+    })();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   const orderedTabIds = useMemo(
     () => workspaceTabs(persisted.workspace)
