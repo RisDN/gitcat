@@ -894,6 +894,8 @@ function App() {
   }, []);
 
   const selectCommit = useCallback((commit: CommitSummary) => {
+    if (!wipSelected && selectedOidRef.current === commit.oid) return;
+
     ++diffLoadSequence.current;
     setSelectedOid(commit.oid);
     setWipSelected(false);
@@ -904,7 +906,7 @@ function App() {
     setDiff(null);
     setDiffLoading(false);
     setCenterView("graph");
-  }, []);
+  }, [wipSelected]);
 
   const selectWip = useCallback(() => {
     ++diffLoadSequence.current;
