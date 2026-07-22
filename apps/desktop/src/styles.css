@@ -831,6 +831,11 @@ kbd,
 .gc-context-menu button > span:first-child { display: grid; width: 17px; place-items: center; color: var(--gc-muted); }
 .gc-context-menu__separator { margin-top: 5px; border-top: 1px solid var(--gc-border) !important; border-radius: 0 0 4px 4px !important; padding-top: 9px !important; }
 .gc-context-menu__danger { color: var(--gc-danger) !important; }
+.gc-context-menu button:focus-visible, .gc-context-menu button:focus { outline: none; }
+.gc-context-menu button:focus-visible:not(:disabled) { background: var(--gc-row-hover); }
+.gc-context-menu__submenu-host { position: relative; }
+.gc-context-menu__chevron { margin-left: auto; color: var(--gc-muted); }
+.gc-context-menu--nested { position: fixed; z-index: 201; }
 
 /* Modals and settings */
 .gc-modal-layer { position: fixed; z-index: 300; display: grid; inset: 0; place-items: center; padding: 24px; background: rgb(4 7 11 / 72%); backdrop-filter: blur(5px); }

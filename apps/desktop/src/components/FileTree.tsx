@@ -15,7 +15,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 
 export type FileViewMode = "path" | "tree";
@@ -37,6 +37,7 @@ interface FileTreeProps<T> {
   items: readonly FileTreeItem<T>[];
   mode: FileViewMode;
   onSelect: (item: T) => void;
+  onItemContextMenu?: (item: T, event: ReactMouseEvent) => void;
   renderAction?: (item: T) => ReactNode;
   selectedId?: string;
 }
@@ -204,6 +205,7 @@ export function FileTree<T>({
   items,
   mode,
   onSelect,
+  onItemContextMenu,
   renderAction,
   selectedId,
 }: FileTreeProps<T>) {
@@ -255,6 +257,7 @@ export function FileTree<T>({
       className={`gc-file-tree__row${selectedId === item.id ? " gc-file-tree__row--selected" : ""}`}
       data-file-tree-id={item.id}
       key={item.id}
+      onContextMenu={onItemContextMenu ? (event) => { event.preventDefault(); onItemContextMenu(item.data, event); } : undefined}
       role="listitem"
     >
       <button

@@ -673,6 +673,47 @@ class DemoGitCatApi implements GitCatApi {
     return this.mutation();
   }
 
+  async discardPaths(repositoryId: RepositoryId, paths: string[]): Promise<MutationResult> {
+    await delay();
+    this.ensureRepository(repositoryId);
+    const targets = new Set(paths);
+    this.snapshotValue.status.entries = this.snapshotValue.status.entries.filter(
+      (candidate) => !targets.has(candidate.path),
+    );
+    return this.mutation();
+  }
+
+  async stashFile(
+    repositoryId: RepositoryId,
+    paths: string[],
+    _message: string | null,
+  ): Promise<MutationResult> {
+    await delay();
+    this.ensureRepository(repositoryId);
+    const targets = new Set(paths);
+    this.snapshotValue.status.entries = this.snapshotValue.status.entries.filter(
+      (candidate) => !targets.has(candidate.path),
+    );
+    this.snapshotValue.status.stash_count += 1;
+    return this.mutation();
+  }
+
+  async appendGitignore(repositoryId: RepositoryId, _patterns: string[]): Promise<MutationResult> {
+    await delay();
+    this.ensureRepository(repositoryId);
+    return this.mutation();
+  }
+
+  async savePatch(
+    repositoryId: RepositoryId,
+    _paths: string[],
+    _staged: boolean,
+    _destination: string,
+  ): Promise<void> {
+    await delay();
+    this.ensureRepository(repositoryId);
+  }
+
   async resolveConflict(
     repositoryId: RepositoryId,
     path: string,

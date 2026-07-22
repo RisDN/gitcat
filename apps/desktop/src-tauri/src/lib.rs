@@ -217,6 +217,50 @@ async fn paths_unstage(
 }
 
 #[tauri::command]
+async fn paths_discard(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    paths: Vec<String>,
+) -> ApiResult<MutationResult> {
+    core.discard(&repository_id, &paths).await
+}
+
+#[tauri::command]
+async fn path_stash(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    paths: Vec<String>,
+    message: Option<String>,
+) -> ApiResult<MutationResult> {
+    core.stash_file(&repository_id, &paths, message.as_deref())
+        .await
+}
+
+#[tauri::command]
+async fn gitignore_append(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    patterns: Vec<String>,
+) -> ApiResult<MutationResult> {
+    core.append_gitignore(&repository_id, &patterns).await
+}
+
+#[tauri::command]
+async fn file_patch_save(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    paths: Vec<String>,
+    staged: bool,
+    destination: String,
+) -> ApiResult<()> {
+    let patch = core.create_patch(&repository_id, &paths, staged).await?;
+    std::fs::write(&destination, patch).map_err(|error| {
+        ApiError::new(ErrorCode::Internal, "could not write patch file")
+            .with_details(error.to_string())
+    })
+}
+
+#[tauri::command]
 async fn conflict_resolve(
     core: State<'_, Arc<CoreApi>>,
     repository_id: RepositoryId,
@@ -546,6 +590,10 @@ pub fn run() {
             conflict_details,
             paths_stage,
             paths_unstage,
+            paths_discard,
+            path_stash,
+            gitignore_append,
+            file_patch_save,
             conflict_resolve,
             conflict_save_edited,
             conflicts_auto_resolve,

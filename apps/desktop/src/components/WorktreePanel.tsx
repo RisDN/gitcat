@@ -1,5 +1,6 @@
 import { AlertTriangle, Check, ChevronDown, ChevronRight, GitMerge, Minus, Plus, WandSparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 
 import { conflictSideLabels } from "../lib/conflicts";
@@ -27,6 +28,10 @@ interface WorktreePanelProps {
   busy: boolean;
   onStage: (paths: string[]) => void;
   onUnstage: (paths: string[]) => void;
+  onDiscard: (paths: string[]) => void;
+  onStashFile: (paths: string[]) => void;
+  onIgnore: (patterns: string[]) => void;
+  onCreatePatch: (paths: string[], staged: boolean) => void;
   onOpenDiff: (entry: StatusEntry, staged: boolean) => void;
   onCommit: (message: string, amend: boolean, signoff: boolean) => Promise<boolean>;
   onResolveConflict: (entry: StatusEntry, resolution: ConflictResolution) => void;
@@ -51,6 +56,10 @@ export function WorktreePanel({
   busy,
   onStage,
   onUnstage,
+  onDiscard,
+  onStashFile,
+  onIgnore,
+  onCreatePatch,
   onOpenDiff,
   onCommit,
   onResolveConflict,
@@ -95,6 +104,55 @@ export function WorktreePanel({
       statusLabel: STATUS_LABEL[change] ?? "M",
     };
   }), [unstaged]);
+
+  const [fileMenu, setFileMenu] = useState<{ entry: StatusEntry; staged: boolean; x: number; y: number } | null>(null);
+
+  const openFileMenu = (entry: StatusEntry, staged: boolean, event: ReactMouseEvent) => {
+    if (entry.conflicted) return;
+    setFileMenu({ entry, staged, x: event.clientX, y: event.clientY });
+  };
+
+  const fileMenuActions = useMemo<ContextAction[]>(() => {
+    if (!fileMenu) return [];
+    const base = fileMenu.entry.path.replaceAll("\\", "/");
+    const name = base.split("/").at(-1) ?? base;
+    const dot = name.lastIndexOf(".");
+    const ext = dot > 0 ? name.slice(dot + 1) : "";
+    const folder = base.includes("/") ? base.slice(0, base.lastIndexOf("/")) : "";
+    const ignore: ContextAction[] = [{ id: "ignore-file", label: "Ignore this file" }];
+    if (ext) ignore.push({ id: "ignore-ext", label: `Ignore all *.${ext} files` });
+    if (folder) ignore.push({ id: "ignore-folder", label: `Ignore ${folder}/ folder` });
+    return [
+      fileMenu.staged ? { id: "unstage", label: "Unstage" } : { id: "stage", label: "Stage" },
+      { id: "discard", label: "Discard changes", danger: true },
+      { id: "ignore", label: "Ignore", submenu: ignore },
+      { id: "stash", label: "Stash file" },
+      { id: "copy", label: "Copy file path", separatorBefore: true },
+      { id: "patch", label: "Create patch from file changes" },
+    ];
+  }, [fileMenu]);
+
+  const executeFileAction = (id: string) => {
+    if (!fileMenu) return;
+    const { entry, staged } = fileMenu;
+    const base = entry.path.replaceAll("\\", "/");
+    const name = base.split("/").at(-1) ?? base;
+    const dot = name.lastIndexOf(".");
+    const ext = dot > 0 ? name.slice(dot + 1) : "";
+    const folder = base.includes("/") ? base.slice(0, base.lastIndexOf("/")) : "";
+    switch (id) {
+      case "stage": onStage([entry.path]); break;
+      case "unstage": onUnstage([entry.path]); break;
+      case "discard": onDiscard([entry.path]); break;
+      case "stash": onStashFile([entry.path]); break;
+      case "ignore-file": onIgnore([base]); break;
+      case "ignore-ext": if (ext) onIgnore([`*.${ext}`]); break;
+      case "ignore-folder": if (folder) onIgnore([`${folder}/`]); break;
+      case "copy": void navigator.clipboard?.writeText(entry.path); break;
+      case "patch": onCreatePatch([entry.path], staged); break;
+    }
+    setFileMenu(null);
+  };
 
   const submit = async () => {
     if (!canCommit) return;
@@ -145,6 +203,7 @@ export function WorktreePanel({
         label="Unstaged"
         onAction={() => onStage(stageable.map((entry) => entry.path))}
         onEntryAction={(entry) => onStage([entry.path])}
+        onItemContextMenu={(entry, event) => openFileMenu(entry, false, event)}
         onOpenDiff={(entry) => onOpenDiff(entry, false)}
         onResolveConflict={onResolveConflict}
         onOpenConflict={onOpenConflict}
@@ -163,6 +222,7 @@ export function WorktreePanel({
         label="Staged"
         onAction={() => onUnstage(staged.map((entry) => entry.path))}
         onEntryAction={(entry) => onUnstage([entry.path])}
+        onItemContextMenu={(entry, event) => openFileMenu(entry, true, event)}
         onOpenDiff={(entry) => onOpenDiff(entry, true)}
         onToggle={() => setStagedOpen((open) => !open)}
         open={stagedOpen}
@@ -199,6 +259,17 @@ export function WorktreePanel({
           {draft.amend ? "Amend commit" : `Commit ${staged.length || ""}`}
         </Button>
       </div>
+
+      {fileMenu ? createPortal(
+        <ContextMenu
+          actions={fileMenuActions}
+          onAction={executeFileAction}
+          onClose={() => setFileMenu(null)}
+          x={fileMenu.x}
+          y={fileMenu.y}
+        />,
+        document.body,
+      ) : null}
     </aside>
   );
 }
@@ -213,6 +284,7 @@ function StatusSection({
   busy,
   onAction,
   onEntryAction,
+  onItemContextMenu,
   onOpenDiff,
   onResolveConflict,
   onOpenConflict,
@@ -232,6 +304,7 @@ function StatusSection({
   busy: boolean;
   onAction: () => void;
   onEntryAction: (entry: StatusEntry) => void;
+  onItemContextMenu?: (entry: StatusEntry, event: ReactMouseEvent) => void;
   onOpenDiff: (entry: StatusEntry) => void;
   onResolveConflict?: (entry: StatusEntry, resolution: ConflictResolution) => void;
   onOpenConflict?: (entry: StatusEntry) => void;
@@ -259,6 +332,7 @@ function StatusSection({
           emptyState={<><Check aria-hidden="true" size={14} /> Nothing here</>}
           items={items}
           mode={viewMode}
+          onItemContextMenu={onItemContextMenu}
           onSelect={onOpenDiff}
           renderAction={(entry) => (
             entry.conflicted && onResolveConflict ? (

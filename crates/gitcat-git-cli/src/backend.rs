@@ -1662,6 +1662,157 @@ impl GitBackend for GitCliBackend {
             .await
     }
 
+    async fn discard_paths(&self, path: &Path, paths: &[String]) -> ApiResult<MutationResult> {
+        if paths.is_empty() {
+            return self.mutation_result(path, self.head_oid(path).await?).await;
+        }
+        validate_paths(paths)?;
+        let before = self.head_oid(path).await?;
+
+        let mut ls_args = os_args(&["ls-files", "-z", "--"]);
+        ls_args.extend(paths.iter().map(OsString::from));
+        let listed = self.read(Some(path), ls_args).await?;
+        let listed_text = listed.stdout_lossy();
+        let tracked: std::collections::HashSet<&str> = listed_text
+            .split('\0')
+            .filter(|entry| !entry.is_empty())
+            .collect();
+        let tracked_paths: Vec<&String> = paths.iter().filter(|p| tracked.contains(p.as_str())).collect();
+        let untracked_paths: Vec<&String> = paths.iter().filter(|p| !tracked.contains(p.as_str())).collect();
+
+        if !tracked_paths.is_empty() {
+            let mut args = if self.head_oid(path).await?.is_some() {
+                os_args(&["restore", "--staged", "--worktree", "--source=HEAD", "--"])
+            } else {
+                os_args(&["rm", "--cached", "--force", "--ignore-unmatch", "--"])
+            };
+            args.extend(tracked_paths.iter().map(|p| OsString::from(p.as_str())));
+            let output = self
+                .runner
+                .run(Some(path), &args, None, CancellationToken::new(), {
+                    let mut options = GitRunOptions::mutation(READ_OUTPUT_CAP);
+                    options.allow_failure = true;
+                    options
+                })
+                .await?;
+            if !output.success() {
+                return Err(self.runner.failure_error(&output));
+            }
+        }
+
+        if !untracked_paths.is_empty() {
+            let mut args = os_args(&["clean", "--force", "-d", "--"]);
+            args.extend(untracked_paths.iter().map(|p| OsString::from(p.as_str())));
+            let output = self
+                .runner
+                .run(Some(path), &args, None, CancellationToken::new(), {
+                    let mut options = GitRunOptions::mutation(READ_OUTPUT_CAP);
+                    options.allow_failure = true;
+                    options
+                })
+                .await?;
+            if !output.success() {
+                return Err(self.runner.failure_error(&output));
+            }
+        }
+
+        self.mutation_result(path, before).await
+    }
+
+    async fn stash_paths(
+        &self,
+        path: &Path,
+        paths: &[String],
+        message: Option<&str>,
+    ) -> ApiResult<MutationResult> {
+        validate_paths(paths)?;
+        if paths.is_empty() {
+            return self.mutation_result(path, self.head_oid(path).await?).await;
+        }
+        let mut args = os_args(&["stash", "push", "--include-untracked"]);
+        if let Some(message) = message {
+            if message.len() > MAX_COMMIT_MESSAGE_BYTES || message.contains('\0') {
+                return Err(ApiError::new(
+                    ErrorCode::InvalidSettings,
+                    "Stash message is too large",
+                ));
+            }
+            args.push("--message".into());
+            args.push(message.into());
+        }
+        args.push("--".into());
+        args.extend(paths.iter().map(OsString::from));
+        self.mutate(path, args, None, CancellationToken::new(), false)
+            .await
+    }
+
+    async fn append_gitignore(
+        &self,
+        path: &Path,
+        patterns: &[String],
+    ) -> ApiResult<MutationResult> {
+        let before = self.head_oid(path).await?;
+        let cleaned: Vec<String> = patterns
+            .iter()
+            .map(|pattern| pattern.trim().to_owned())
+            .filter(|pattern| !pattern.is_empty())
+            .collect();
+        for pattern in &cleaned {
+            if pattern.contains('\0') || pattern.contains('\n') {
+                return Err(ApiError::new(
+                    ErrorCode::InvalidRequest,
+                    "Ignore pattern contains an invalid character",
+                ));
+            }
+        }
+        if cleaned.is_empty() {
+            return self.mutation_result(path, before).await;
+        }
+
+        let gitignore = path.join(".gitignore");
+        let existing = std::fs::read_to_string(&gitignore).unwrap_or_default();
+        let present: std::collections::HashSet<&str> =
+            existing.lines().map(|line| line.trim()).collect();
+        let additions: Vec<&String> = cleaned
+            .iter()
+            .filter(|pattern| !present.contains(pattern.as_str()))
+            .collect();
+        if additions.is_empty() {
+            return self.mutation_result(path, before).await;
+        }
+
+        let mut next = existing;
+        if !next.is_empty() && !next.ends_with('\n') {
+            next.push('\n');
+        }
+        for pattern in additions {
+            next.push_str(pattern);
+            next.push('\n');
+        }
+        std::fs::write(&gitignore, next).map_err(|error| {
+            ApiError::new(ErrorCode::Internal, "Could not update .gitignore")
+                .with_details(error.to_string())
+        })?;
+        self.mutation_result(path, before).await
+    }
+
+    async fn create_patch(
+        &self,
+        path: &Path,
+        paths: &[String],
+        staged: bool,
+    ) -> ApiResult<String> {
+        validate_paths(paths)?;
+        let mut args = if staged {
+            os_args(&["diff", "--cached", "--"])
+        } else {
+            os_args(&["diff", "--"])
+        };
+        args.extend(paths.iter().map(OsString::from));
+        let output = self.read(Some(path), args).await?;
+        Ok(output.stdout_lossy())
+    }
+
     async fn resolve_conflict(
         &self,
         path: &Path,

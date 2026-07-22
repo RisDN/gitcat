@@ -64,6 +64,19 @@ export interface GitCatCommands {
   conflictDetails(repositoryId: RepositoryId, path: string): Promise<ConflictFileDetails>;
   stagePaths(repositoryId: RepositoryId, paths: string[]): Promise<MutationResult>;
   unstagePaths(repositoryId: RepositoryId, paths: string[]): Promise<MutationResult>;
+  discardPaths(repositoryId: RepositoryId, paths: string[]): Promise<MutationResult>;
+  stashFile(
+    repositoryId: RepositoryId,
+    paths: string[],
+    message: string | null,
+  ): Promise<MutationResult>;
+  appendGitignore(repositoryId: RepositoryId, patterns: string[]): Promise<MutationResult>;
+  savePatch(
+    repositoryId: RepositoryId,
+    paths: string[],
+    staged: boolean,
+    destination: string,
+  ): Promise<void>;
   resolveConflict(
     repositoryId: RepositoryId,
     path: string,
@@ -244,6 +257,14 @@ export function createTauriGitCatApi(): GitCatApi {
       invokeTauri("paths_stage", { repositoryId, paths }),
     unstagePaths: (repositoryId, paths) =>
       invokeTauri("paths_unstage", { repositoryId, paths }),
+    discardPaths: (repositoryId, paths) =>
+      invokeTauri("paths_discard", { repositoryId, paths }),
+    stashFile: (repositoryId, paths, message) =>
+      invokeTauri("path_stash", { repositoryId, paths, message }),
+    appendGitignore: (repositoryId, patterns) =>
+      invokeTauri("gitignore_append", { repositoryId, patterns }),
+    savePatch: (repositoryId, paths, staged, destination) =>
+      invokeTauri("file_patch_save", { repositoryId, paths, staged, destination }),
     resolveConflict: (repositoryId, path, resolution, expectedState) =>
       invokeTauri("conflict_resolve", { repositoryId, path, resolution, expectedState }),
     saveConflictResult: (repositoryId, path, text, lineEnding, expectedState) =>

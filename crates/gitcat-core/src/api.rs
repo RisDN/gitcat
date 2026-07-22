@@ -233,6 +233,50 @@ impl CoreApi {
         self.unstage(repository_id, paths).await
     }
 
+    pub async fn discard(
+        &self,
+        repository_id: &RepositoryId,
+        paths: &[String],
+    ) -> ApiResult<MutationResult> {
+        self.mutate(repository_id, |backend, path| async move {
+            backend.discard_paths(&path, paths).await
+        })
+        .await
+    }
+
+    pub async fn stash_file(
+        &self,
+        repository_id: &RepositoryId,
+        paths: &[String],
+        message: Option<&str>,
+    ) -> ApiResult<MutationResult> {
+        self.mutate(repository_id, |backend, path| async move {
+            backend.stash_paths(&path, paths, message).await
+        })
+        .await
+    }
+
+    pub async fn append_gitignore(
+        &self,
+        repository_id: &RepositoryId,
+        patterns: &[String],
+    ) -> ApiResult<MutationResult> {
+        self.mutate(repository_id, |backend, path| async move {
+            backend.append_gitignore(&path, patterns).await
+        })
+        .await
+    }
+
+    pub async fn create_patch(
+        &self,
+        repository_id: &RepositoryId,
+        paths: &[String],
+        staged: bool,
+    ) -> ApiResult<String> {
+        let path = self.repository_path(repository_id).await?;
+        self.backend.create_patch(&path, paths, staged).await
+    }
+
     pub async fn resolve_conflict(
         &self,
         repository_id: &RepositoryId,

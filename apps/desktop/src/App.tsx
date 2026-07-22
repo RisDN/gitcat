@@ -575,6 +575,28 @@ function App() {
     }
   }, [activeRepository, addToast, busy, loadOverview, overviewLoading, showError]);
 
+  const createPatchFile = useCallback(async (paths: string[], staged: boolean) => {
+    if (!activeRepository) return;
+    const repositoryId = activeRepository.repository_id;
+    try {
+      let destination = `${paths[0]?.split(/[\\/]/).at(-1) ?? "changes"}.patch`;
+      if (gitcatApi.runtime === "tauri") {
+        const { save } = await import("@tauri-apps/plugin-dialog");
+        const chosen = await save({
+          title: "Save patch",
+          defaultPath: destination,
+          filters: [{ name: "Patch", extensions: ["patch", "diff"] }],
+        });
+        if (!chosen) return;
+        destination = chosen;
+      }
+      await gitcatApi.savePatch(repositoryId, paths, staged, destination);
+      addToast({ tone: "success", title: "Patch created", detail: destination });
+    } catch (error) {
+      showError("Create patch failed", error);
+    }
+  }, [activeRepository, addToast, showError]);
+
   const chooseRepository = useCallback(async () => {
     if (busy) return;
     try {
@@ -1771,6 +1793,13 @@ function App() {
                     onResolveConflict={resolveConflictEntry}
                     onStage={(paths) => void runMutation("Files staged", (repository) => gitcatApi.stagePaths(repository.repository_id, paths))}
                     onUnstage={(paths) => void runMutation("Files unstaged", (repository) => gitcatApi.unstagePaths(repository.repository_id, paths))}
+                    onDiscard={(paths) => {
+                      if (!window.confirm(`Discard all changes to ${paths.length === 1 ? paths[0] : `${paths.length} files`}? This cannot be undone.`)) return;
+                      void runMutation("Changes discarded", (repository) => gitcatApi.discardPaths(repository.repository_id, paths));
+                    }}
+                    onStashFile={(paths) => void runMutation("File stashed", (repository) => gitcatApi.stashFile(repository.repository_id, paths, null))}
+                    onIgnore={(patterns) => void runMutation("Updated .gitignore", (repository) => gitcatApi.appendGitignore(repository.repository_id, patterns))}
+                    onCreatePatch={(paths, staged) => void createPatchFile(paths, staged)}
                     operation={snapshot.operation_state}
                     selectedFile={selectedWorktreeFile}
                     status={snapshot.status}
