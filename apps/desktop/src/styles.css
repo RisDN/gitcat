@@ -685,10 +685,12 @@ kbd,
   background: transparent;
   color: var(--gc-muted);
   cursor: pointer;
+  font: 500 11px/1.35 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   text-align: left;
 }
 
 .gc-file-tree__file { flex: 1; }
+.gc-file-tree__row:has(.gc-file-tree__action) .gc-file-tree__file { padding-right: 102px; }
 .gc-file-tree__file:hover,
 .gc-file-tree__folder:hover { color: var(--gc-text); }
 .gc-file-tree__file > svg,
@@ -703,9 +705,9 @@ kbd,
 .gc-file-tree__additions { color: var(--gc-success); font: 9px/1 "Cascadia Code", monospace; }
 .gc-file-tree__deletions { color: var(--gc-danger); font: 9px/1 "Cascadia Code", monospace; }
 .gc-file-tree__binary { color: var(--gc-warning); font-size: 9px; }
-.gc-file-tree__action { position: absolute; z-index: 2; top: 50%; right: 5px; display: grid; place-items: center; opacity: 0; transform: translateY(-50%); pointer-events: none; }
+.gc-file-tree__action { position: absolute; z-index: 2; top: 50%; right: 5px; display: grid; width: 92px; place-items: end; opacity: 0; transform: translateY(-50%); pointer-events: none; }
 .gc-file-tree__action .gc-icon-button { width: 25px; height: 25px; }
-.gc-file-tree__stage { padding: 3px 9px; border: 1px solid; border-radius: 4px; color: #fff; cursor: pointer; font-size: 11px; font-weight: 600; white-space: nowrap; box-shadow: 0 2px 9px color-mix(in srgb, black 42%, transparent); }
+.gc-file-tree__stage { min-width: 86px; padding: 3px 8px; border: 1px solid; border-radius: 4px; color: #fff; cursor: pointer; font-size: 11px; font-weight: 600; line-height: 1.35; white-space: nowrap; box-shadow: 0 2px 9px color-mix(in srgb, black 42%, transparent); }
 .gc-file-tree__stage--add { border-color: var(--gc-success); background: color-mix(in srgb, var(--gc-success) 16%, var(--gc-background)); }
 .gc-file-tree__stage--add:hover:not(:disabled) { background: var(--gc-success); }
 .gc-file-tree__stage--remove { border-color: var(--gc-danger); background: color-mix(in srgb, var(--gc-danger) 16%, var(--gc-background)); }
