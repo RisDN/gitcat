@@ -157,6 +157,7 @@ export function WorktreePanel({
       />
       <StatusSection
         actionLabel="Unstage all"
+        actionPriority
         busy={busy}
         items={stagedItems}
         label="Staged"
@@ -207,6 +208,7 @@ function StatusSection({
   items,
   actionLabel,
   actionDisabled = false,
+  actionPriority = false,
   branchName = "current branch",
   busy,
   onAction,
@@ -225,6 +227,7 @@ function StatusSection({
   items: FileTreeItem<StatusEntry>[];
   actionLabel: string;
   actionDisabled?: boolean;
+  actionPriority?: boolean;
   branchName?: string;
   busy: boolean;
   onAction: () => void;
@@ -246,7 +249,9 @@ function StatusSection({
           {open ? <ChevronDown aria-hidden="true" size={13} /> : <ChevronRight aria-hidden="true" size={13} />}
           <span>{label} <b>{items.length}</b></span>
         </button>
-        <button className="gc-status-section__bulk" disabled={busy || actionDisabled || !items.length} onClick={onAction} type="button">{actionLabel}</button>
+        {actionDisabled || !items.length ? null : (
+          <button className={`gc-status-section__bulk${actionPriority ? " gc-status-section__bulk--priority" : ""}`} disabled={busy} onClick={onAction} type="button">{actionLabel}</button>
+        )}
       </header>
       {open ? (
         <FileTree

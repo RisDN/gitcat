@@ -762,6 +762,8 @@ kbd,
 .gc-status-section > header .gc-status-section__toggle b { margin-left: 3px; }
 .gc-status-section > header .gc-status-section__bulk { padding: 4px 6px; border: 1px solid color-mix(in srgb, var(--gc-success) 62%, var(--gc-border)); border-radius: 3px; background: color-mix(in srgb, var(--gc-success) 8%, transparent); color: var(--gc-success); cursor: pointer; font-size: 10px; font-weight: 650; letter-spacing: 0; text-transform: none; }
 .gc-status-section > header .gc-status-section__bulk:hover:not(:disabled) { background: color-mix(in srgb, var(--gc-success) 15%, transparent); }
+.gc-status-section > header .gc-status-section__bulk--priority { border-color: var(--gc-danger); background: var(--gc-danger); color: #fff; font-weight: 700; box-shadow: 0 0 0 2px color-mix(in srgb, var(--gc-danger) 22%, transparent); }
+.gc-status-section > header .gc-status-section__bulk--priority:hover:not(:disabled) { border-color: color-mix(in srgb, var(--gc-danger) 82%, white); background: color-mix(in srgb, var(--gc-danger) 82%, white); }
 .gc-status-section > .gc-file-tree { max-height: min(220px, 28vh); padding: 0 5px 7px; overflow: auto; }
 .gc-status-section:not(.gc-status-section--open) > header { border-bottom: 0; }
 
