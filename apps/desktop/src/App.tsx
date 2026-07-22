@@ -572,6 +572,24 @@ function App() {
       });
   }, [activeRepository, overviewRepositoryId, selectedOid, showError, wipSelected]);
 
+  const closeDiff = useCallback(() => {
+    ++diffLoadSequence.current;
+    setDiff(null);
+    setDiffLoading(false);
+    setSelectedPath(undefined);
+    setSelectedWorktreeFile(null);
+    setCenterView("graph");
+  }, []);
+
+  useEffect(() => {
+    if (!selectedWorktreeFile || !snapshot) return;
+    const selectedEntry = snapshot.status.entries.find((entry) => entry.path === selectedWorktreeFile.path);
+    const stillVisible = selectedWorktreeFile.staged
+      ? Boolean(selectedEntry?.index && !selectedEntry.conflicted)
+      : Boolean(selectedEntry?.worktree || selectedEntry?.conflicted);
+    if (!stillVisible) closeDiff();
+  }, [closeDiff, selectedWorktreeFile, snapshot]);
+
   useEffect(() => {
     const sequence = ++searchSequence.current;
     if (!searchOpen || !activeRepository || !searchQuery.trim()) {
@@ -1253,8 +1271,13 @@ function App() {
         event.preventDefault();
         window.dispatchEvent(new Event("gitcat:commit"));
       } else if (event.key === "Escape") {
-        setCommitMenu(null);
-        setTabMenu(null);
+        if (centerView === "diff" || diff || diffLoading || selectedWorktreeFile) {
+          event.preventDefault();
+          closeDiff();
+        } else {
+          setCommitMenu(null);
+          setTabMenu(null);
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -1267,6 +1290,8 @@ function App() {
     autoResolveActiveConflicts,
     busy,
     chooseRepository,
+    centerView,
+    closeDiff,
     closeTab,
     commitMenu,
     conflictEditor,
@@ -1275,6 +1300,7 @@ function App() {
     createBranchAtHead,
     cycleRepository,
     diff,
+    diffLoading,
     fetchActiveRepository,
     focusCommitMessage,
     overviewLoading,
@@ -1292,6 +1318,7 @@ function App() {
     settingsOpen,
     showError,
     selectWip,
+    selectedWorktreeFile,
     snapshot,
     stagePaths,
     stashActiveRepository,
