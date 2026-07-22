@@ -335,6 +335,7 @@ function App() {
   const [selectedOid, setSelectedOid] = useState<string | null>(null);
   const selectedOidRef = useRef<string | null>(null);
   const [wipSelected, setWipSelected] = useState(false);
+  const wipRowRef = useRef<HTMLButtonElement>(null);
   const [details, setDetails] = useState<Awaited<ReturnType<typeof gitcatApi.commitDetails>> | null>(null);
   const [commitActions, setCommitActions] = useState<CommitActionAvailability[]>([]);
   const [diff, setDiff] = useState<FileDiff | null>(null);
@@ -884,6 +885,19 @@ function App() {
     setDiffLoading(false);
     setCenterView("graph");
   }, []);
+
+  const selectFirstCommitFromWip = useCallback(() => {
+    const firstCommit = history?.commits[0];
+    if (!firstCommit) return;
+
+    document.querySelector<HTMLElement>("[data-commit-list]")?.focus();
+    selectCommit(firstCommit);
+  }, [history, selectCommit]);
+
+  const selectWipFromGraph = useCallback(() => {
+    selectWip();
+    wipRowRef.current?.focus();
+  }, [selectWip]);
 
   const loadDiff = useCallback(async (request: DiffRequest) => {
     if (!activeRepository) return;
@@ -1857,7 +1871,18 @@ function App() {
                     <span>SHA</span>
                   </div>
                   {snapshot && !snapshot.status.clean ? (
-                    <button className={`gc-wip-row ${wipSelected ? "gc-wip-row--selected" : ""}`} onClick={selectWip} type="button">
+                    <button
+                      className={`gc-wip-row ${wipSelected ? "gc-wip-row--selected" : ""}`}
+                      onClick={selectWip}
+                      onKeyDown={(event) => {
+                        if (event.key === "ArrowDown") {
+                          event.preventDefault();
+                          selectFirstCommitFromWip();
+                        }
+                      }}
+                      ref={wipRowRef}
+                      type="button"
+                    >
                       <span className="gc-wip-row__refs"><span className="gc-ref-label gc-ref-label--head">{currentBranch(snapshot)}</span></span>
                       <span className="gc-wip-row__rail"><i /></span>
                       <span className="gc-wip-row__message">
@@ -1873,8 +1898,10 @@ function App() {
                   ) : null}
                   {history ? (
                     <CommitGraph
+                      beforeFirstSelected={wipSelected}
                       commits={history.commits}
                       hideHeadDecoration={Boolean(snapshot && !snapshot.status.clean)}
+                      onNavigateBeforeFirst={snapshot && !snapshot.status.clean ? selectWipFromGraph : undefined}
                       onCommitContextMenu={(request: CommitContextMenuRequest) => setCommitMenu({ x: request.clientX, y: request.clientY, commit: request.commit })}
                       onCopySha={(oid) => void copySha(oid)}
                       onSelect={selectCommit}

@@ -32,9 +32,11 @@ export interface CommitContextMenuRequest {
 export interface CommitGraphProps {
   commits: readonly CommitSummary[];
   selectedOid: string | null;
+  beforeFirstSelected?: boolean;
   searchMatchOids?: ReadonlySet<string>;
   hideHeadDecoration?: boolean;
   onSelect: (commit: CommitSummary) => void;
+  onNavigateBeforeFirst?: () => void;
   onCommitContextMenu?: (request: CommitContextMenuRequest) => void;
   onCopySha?: (oid: string) => void;
   className?: string;
@@ -63,8 +65,8 @@ interface TimeMarker {
 
 interface CommitRowProps {
   commit: CommitSummary;
+  id: string;
   index: number;
-  total: number;
   selected: boolean;
   searchMatch: boolean;
   hideHeadDecoration: boolean;
@@ -141,13 +143,6 @@ function buildGraphGeometry(commits: readonly CommitSummary[]): GraphGeometry {
     width: getCommitGraphWidth(commits),
     height: commits.length * ROW_STRIDE - ROW_GAP,
   };
-}
-
-function focusRow(current: HTMLElement, index: number): void {
-  const listbox = current.closest<HTMLElement>("[data-commit-list]");
-  listbox
-    ?.querySelector<HTMLElement>(`[data-commit-index="${index}"]`)
-    ?.focus();
 }
 
 function dateFromUnixSeconds(seconds: number): Date | null {
@@ -246,8 +241,8 @@ function RowShaButton({ oid, shortOid, onCopy }: { oid: string; shortOid: string
 
 const CommitRow = memo(function CommitRow({
   commit,
+  id,
   index,
-  total,
   selected,
   searchMatch,
   hideHeadDecoration,
@@ -267,43 +262,6 @@ const CommitRow = memo(function CommitRow({
     event.preventDefault();
     onSelect(commit);
     openContextMenu(event.clientX, event.clientY);
-  };
-
-  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.target !== event.currentTarget) return;
-    switch (event.key) {
-      case "ArrowDown":
-        event.preventDefault();
-        focusRow(event.currentTarget, Math.min(index + 1, total - 1));
-        break;
-      case "ArrowUp":
-        event.preventDefault();
-        focusRow(event.currentTarget, Math.max(index - 1, 0));
-        break;
-      case "Home":
-        event.preventDefault();
-        focusRow(event.currentTarget, 0);
-        break;
-      case "End":
-        event.preventDefault();
-        focusRow(event.currentTarget, total - 1);
-        break;
-      case "Enter":
-      case " ":
-        event.preventDefault();
-        onSelect(commit);
-        break;
-      case "F10":
-        if (event.shiftKey && onCommitContextMenu) {
-          event.preventDefault();
-          onSelect(commit);
-          const bounds = event.currentTarget.getBoundingClientRect();
-          openContextMenu(bounds.left + Math.min(graphWidth + 24, bounds.width / 2), bounds.top + bounds.height / 2);
-        }
-        break;
-      default:
-        break;
-    }
   };
 
   const timestamp = formatTimestamp
@@ -349,12 +307,14 @@ const CommitRow = memo(function CommitRow({
       className={stateClasses}
       data-commit-index={index}
       data-oid={commit.oid}
-      onClick={() => onSelect(commit)}
+      id={id}
+      onClick={(event) => {
+        event.currentTarget.closest<HTMLElement>("[data-commit-list]")?.focus();
+        onSelect(commit);
+      }}
       onContextMenu={handleContextMenu}
-      onKeyDown={handleKeyDown}
       role="row"
       style={rowStyle}
-      tabIndex={selected || (index === 0 && !selected) ? 0 : -1}
     >
       <span aria-label="References" className="gc-commit-row__decorations" role="cell">
         {commit.decorations.filter((decoration) => !hideHeadDecoration || !decoration.is_head).map((decoration) => (
@@ -402,17 +362,83 @@ const CommitRow = memo(function CommitRow({
 export function CommitGraph({
   commits,
   selectedOid,
+  beforeFirstSelected = false,
   searchMatchOids,
   hideHeadDecoration = false,
   onSelect,
+  onNavigateBeforeFirst,
   onCommitContextMenu,
   onCopySha,
   className,
   emptyLabel = "No commits to display.",
   formatTimestamp,
 }: CommitGraphProps) {
+  const listRef = useRef<HTMLDivElement>(null);
   const geometry = useMemo(() => buildGraphGeometry(commits), [commits]);
   const timeMarkers = useMemo(() => buildTimeMarkers(commits, Math.floor(Date.now() / 1_000)), [commits]);
+  const selectedIndex = useMemo(
+    () => commits.findIndex((commit) => commit.oid === selectedOid),
+    [commits, selectedOid],
+  );
+  const activeCommit = selectedIndex >= 0 ? commits[selectedIndex] : beforeFirstSelected ? undefined : commits[0];
+  const activeDescendant = activeCommit ? `commit-row-${activeCommit.oid}` : undefined;
+
+  const selectIndex = (index: number) => {
+    const commit = commits[index];
+    if (!commit) return;
+
+    onSelect(commit);
+    listRef.current
+      ?.querySelector<HTMLElement>(`[data-commit-index="${index}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  };
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) return;
+
+    const currentIndex = selectedIndex >= 0 ? selectedIndex : beforeFirstSelected ? -1 : 0;
+    switch (event.key) {
+      case "ArrowDown":
+        event.preventDefault();
+        selectIndex(Math.min(currentIndex + 1, commits.length - 1));
+        break;
+      case "ArrowUp":
+        event.preventDefault();
+        if (currentIndex <= 0 && onNavigateBeforeFirst) onNavigateBeforeFirst();
+        else selectIndex(Math.max(currentIndex - 1, 0));
+        break;
+      case "Home":
+        event.preventDefault();
+        selectIndex(0);
+        break;
+      case "End":
+        event.preventDefault();
+        selectIndex(commits.length - 1);
+        break;
+      case "Enter":
+      case " ":
+        event.preventDefault();
+        selectIndex(currentIndex);
+        break;
+      case "F10":
+        if (event.shiftKey && onCommitContextMenu) {
+          event.preventDefault();
+          const selectedCommit = activeCommit ?? commits[0];
+          const selectedRow = listRef.current
+            ?.querySelector<HTMLElement>(`[data-oid="${selectedCommit.oid}"]`);
+          const bounds = selectedRow?.getBoundingClientRect() ?? event.currentTarget.getBoundingClientRect();
+          onSelect(selectedCommit);
+          onCommitContextMenu({
+            commit: selectedCommit,
+            clientX: bounds.left + Math.min(geometry.width + 24, bounds.width / 2),
+            clientY: bounds.top + bounds.height / 2,
+          });
+        }
+        break;
+      default:
+        break;
+    }
+  };
 
   if (commits.length === 0) {
     return (
@@ -425,10 +451,14 @@ export function CommitGraph({
   return (
     <div
       aria-label="Commit history"
+      aria-activedescendant={activeDescendant}
       aria-rowcount={commits.length}
       className={`gc-commit-graph${className ? ` ${className}` : ""}`}
       data-commit-list
+      onKeyDown={handleKeyDown}
+      ref={listRef}
       role="grid"
+      tabIndex={0}
     >
       <svg
         aria-hidden="true"
@@ -466,6 +496,7 @@ export function CommitGraph({
             formatTimestamp={formatTimestamp}
             graphWidth={geometry.width}
             hideHeadDecoration={hideHeadDecoration}
+            id={`commit-row-${commit.oid}`}
             index={index}
             key={commit.oid}
             onCommitContextMenu={onCommitContextMenu}
@@ -473,7 +504,6 @@ export function CommitGraph({
             onSelect={onSelect}
             searchMatch={searchMatchOids?.has(commit.oid) ?? false}
             selected={commit.oid === selectedOid}
-            total={commits.length}
           />
         ))}
       </div>
