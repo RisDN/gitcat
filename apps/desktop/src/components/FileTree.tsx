@@ -1,14 +1,22 @@
 import {
   ArrowDownAZ,
+  ArrowRight,
   ChevronDown,
   ChevronRight,
+  Copy,
   FileCode2,
+  FileType,
   Folder,
   FolderTree,
   List,
+  Minus,
+  Pencil,
+  Plus,
+  TriangleAlert,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
 
 export type FileViewMode = "path" | "tree";
 
@@ -60,6 +68,17 @@ const pathCollator = new Intl.Collator(undefined, {
   numeric: true,
   sensitivity: "base",
 });
+
+const STATUS_ICON: Record<string, LucideIcon> = {
+  added: Plus,
+  untracked: Plus,
+  modified: Pencil,
+  deleted: Minus,
+  renamed: ArrowRight,
+  copied: Copy,
+  type_changed: FileType,
+  unmerged: TriangleAlert,
+};
 
 function normalizePath(path: string): string {
   return path.replaceAll("\\", "/").replace(/^\/+|\/+$/g, "");
@@ -229,7 +248,9 @@ export function FileTree<T>({
     setFolderExpansion(new Map(folderPaths.map((path) => [path, !allExpanded])));
   };
 
-  const renderFile = (item: FileTreeItem<T>, label: string, depth: number) => (
+  const renderFile = (item: FileTreeItem<T>, label: string, depth: number) => {
+    const StatusIcon = STATUS_ICON[item.status] ?? Pencil;
+    return (
     <div
       className={`gc-file-tree__row${selectedId === item.id ? " gc-file-tree__row--selected" : ""}`}
       data-file-tree-id={item.id}
@@ -249,11 +270,18 @@ export function FileTree<T>({
         {item.additions ? <small className="gc-file-tree__additions">+{item.additions}</small> : null}
         {item.deletions ? <small className="gc-file-tree__deletions">−{item.deletions}</small> : null}
         {item.binary ? <small className="gc-file-tree__binary">binary</small> : null}
-        <b className={`gc-file-status gc-file-status--${item.status}`}>{item.statusLabel}</b>
+        <b
+          aria-label={item.statusLabel}
+          className={`gc-file-status gc-file-status--${item.status}`}
+          title={item.statusLabel}
+        >
+          <StatusIcon aria-hidden="true" size={12} strokeWidth={2.6} />
+        </b>
       </button>
       {renderAction ? <span className="gc-file-tree__action">{renderAction(item.data)}</span> : null}
     </div>
-  );
+    );
+  };
 
   const renderNodes = (nodes: readonly TreeNode<T>[], depth: number): ReactNode => nodes.map((node) => {
     if (node.kind === "file") return renderFile(node.item, node.name, depth);

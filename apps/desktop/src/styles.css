@@ -591,13 +591,15 @@ kbd,
 .gc-file-list > button.gc-file-row--active { background: var(--gc-row-selected); color: var(--gc-text); }
 .gc-file-list > button > span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gc-file-list > button > small { font-size: 9px; }
-.gc-file-status { display: grid; width: 19px; height: 19px; place-items: center; border: 1px solid var(--gc-border); border-radius: 3px; color: var(--gc-muted); font: 750 10px/1 "Cascadia Code", monospace; }
+.gc-file-status { display: grid; width: 19px; height: 19px; place-items: center; color: var(--gc-muted); font: 750 10px/1 "Cascadia Code", monospace; }
 .gc-file-status--added,
-.gc-file-status--untracked { border-color: color-mix(in srgb, var(--gc-success) 55%, var(--gc-border)); color: var(--gc-success); }
-.gc-file-status--deleted { border-color: color-mix(in srgb, var(--gc-danger) 55%, var(--gc-border)); color: var(--gc-danger); }
+.gc-file-status--untracked { color: var(--gc-success); }
+.gc-file-status--deleted { color: var(--gc-danger); }
+.gc-file-status--modified,
+.gc-file-status--type_changed,
 .gc-file-status--renamed,
-.gc-file-status--copied { border-color: color-mix(in srgb, var(--gc-warning) 55%, var(--gc-border)); color: var(--gc-warning); }
-.gc-file-status--unmerged { border-color: var(--gc-danger); background: color-mix(in srgb, var(--gc-danger) 12%, transparent); color: var(--gc-danger); }
+.gc-file-status--copied { color: var(--gc-warning); }
+.gc-file-status--unmerged { color: var(--gc-danger); }
 .gc-details__empty { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 30px; color: var(--gc-muted); }
 
 /* Working tree */
