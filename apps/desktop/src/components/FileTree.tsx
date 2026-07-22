@@ -4,7 +4,6 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
-  FileCode2,
   FileType,
   Folder,
   FolderTree,
@@ -268,11 +267,6 @@ export function FileTree<T>({
         title={item.path}
         type="button"
       >
-        <FileCode2 aria-hidden="true" size={14} />
-        <span className="gc-file-tree__name">{label}</span>
-        {item.additions ? <small className="gc-file-tree__additions">+{item.additions}</small> : null}
-        {item.deletions ? <small className="gc-file-tree__deletions">−{item.deletions}</small> : null}
-        {item.binary ? <small className="gc-file-tree__binary">binary</small> : null}
         <b
           aria-label={item.statusLabel}
           className={`gc-file-status gc-file-status--${item.status}`}
@@ -280,6 +274,10 @@ export function FileTree<T>({
         >
           <StatusIcon aria-hidden="true" size={12} strokeWidth={2.6} />
         </b>
+        <span className="gc-file-tree__name">{label}</span>
+        {item.additions ? <small className="gc-file-tree__additions">+{item.additions}</small> : null}
+        {item.deletions ? <small className="gc-file-tree__deletions">−{item.deletions}</small> : null}
+        {item.binary ? <small className="gc-file-tree__binary">binary</small> : null}
       </button>
       {renderAction ? <span className="gc-file-tree__action">{renderAction(item.data)}</span> : null}
     </div>

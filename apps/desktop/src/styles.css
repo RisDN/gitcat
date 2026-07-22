@@ -669,7 +669,7 @@ kbd,
 .gc-file-tree__branch [role="list"] { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
 .gc-file-tree__expand { display: flex; min-height: 29px; align-items: center; padding: 0 8px; background: transparent; color: color-mix(in srgb, var(--gc-text) 83%, var(--gc-muted)); cursor: pointer; font-size: 10px; }
 .gc-file-tree__expand:hover { color: var(--gc-accent); }
-.gc-file-tree__row { display: flex; min-width: 0; align-items: center; border-radius: 3px; }
+.gc-file-tree__row { position: relative; display: flex; min-width: 0; align-items: center; border-radius: 3px; }
 .gc-file-tree__row:hover { background: var(--gc-row-hover); }
 .gc-file-tree__row--selected { background: var(--gc-row-selected); box-shadow: inset 2px 0 0 var(--gc-accent); }
 .gc-file-tree__row--selected:hover { background: var(--gc-row-selected); }
@@ -703,12 +703,18 @@ kbd,
 .gc-file-tree__additions { color: var(--gc-success); font: 9px/1 "Cascadia Code", monospace; }
 .gc-file-tree__deletions { color: var(--gc-danger); font: 9px/1 "Cascadia Code", monospace; }
 .gc-file-tree__binary { color: var(--gc-warning); font-size: 9px; }
-.gc-file-tree__action { display: grid; width: 27px; flex: 0 0 27px; place-items: center; opacity: 0; }
+.gc-file-tree__action { position: absolute; z-index: 2; top: 50%; right: 5px; display: grid; place-items: center; opacity: 0; transform: translateY(-50%); pointer-events: none; }
 .gc-file-tree__action .gc-icon-button { width: 25px; height: 25px; }
+.gc-file-tree__stage { padding: 3px 9px; border: 1px solid; border-radius: 4px; color: #fff; cursor: pointer; font-size: 11px; font-weight: 600; white-space: nowrap; box-shadow: 0 2px 9px color-mix(in srgb, black 42%, transparent); }
+.gc-file-tree__stage--add { border-color: var(--gc-success); background: color-mix(in srgb, var(--gc-success) 16%, var(--gc-background)); }
+.gc-file-tree__stage--add:hover:not(:disabled) { background: var(--gc-success); }
+.gc-file-tree__stage--remove { border-color: var(--gc-danger); background: color-mix(in srgb, var(--gc-danger) 16%, var(--gc-background)); }
+.gc-file-tree__stage--remove:hover:not(:disabled) { background: var(--gc-danger); }
+.gc-file-tree__stage:disabled { opacity: 1; cursor: default; }
 .gc-file-tree__row:hover .gc-file-tree__action,
-.gc-file-tree__row:focus-within .gc-file-tree__action { opacity: 1; }
+.gc-file-tree__row:focus-within .gc-file-tree__action { opacity: 1; pointer-events: auto; }
 .gc-file-tree__row:has(.gc-file-status--unmerged) { background: color-mix(in srgb, var(--gc-danger) 6%, transparent); }
-.gc-file-tree__row:has(.gc-file-status--unmerged) .gc-file-tree__action { opacity: 1; }
+.gc-file-tree__row:has(.gc-file-status--unmerged) .gc-file-tree__action { opacity: 1; pointer-events: auto; }
 .gc-conflict-quick { position: relative; display: inline-grid; }
 .gc-conflict-quick > .gc-icon-button { color: var(--gc-danger); }
 .gc-conflict-quick__menu { position: absolute; z-index: 90; top: 26px; right: 0; display: flex; width: 218px; flex-direction: column; padding: 5px; border: 1px solid var(--gc-border); border-radius: 6px; background: color-mix(in srgb, var(--gc-panel) 97%, black); box-shadow: var(--gc-shadow); }
@@ -760,10 +766,11 @@ kbd,
 .gc-status-section > header .gc-status-section__toggle { display: flex; min-width: 0; flex: 1; align-items: center; gap: 4px; padding: 0 3px; background: transparent; color: var(--gc-muted); cursor: pointer; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-align: left; text-transform: uppercase; }
 .gc-status-section > header .gc-status-section__toggle:hover { color: var(--gc-text); }
 .gc-status-section > header .gc-status-section__toggle b { margin-left: 3px; }
-.gc-status-section > header .gc-status-section__bulk { padding: 4px 6px; border: 1px solid color-mix(in srgb, var(--gc-success) 62%, var(--gc-border)); border-radius: 3px; background: color-mix(in srgb, var(--gc-success) 8%, transparent); color: var(--gc-success); cursor: pointer; font-size: 10px; font-weight: 650; letter-spacing: 0; text-transform: none; }
-.gc-status-section > header .gc-status-section__bulk:hover:not(:disabled) { background: color-mix(in srgb, var(--gc-success) 15%, transparent); }
-.gc-status-section > header .gc-status-section__bulk--priority { border-color: var(--gc-danger); background: var(--gc-danger); color: #fff; font-weight: 700; box-shadow: 0 0 0 2px color-mix(in srgb, var(--gc-danger) 22%, transparent); }
-.gc-status-section > header .gc-status-section__bulk--priority:hover:not(:disabled) { border-color: color-mix(in srgb, var(--gc-danger) 82%, white); background: color-mix(in srgb, var(--gc-danger) 82%, white); }
+.gc-status-section > header .gc-status-section__bulk { padding: 4px 8px; border: 1px solid var(--gc-success); border-radius: 4px; background: color-mix(in srgb, var(--gc-success) 16%, var(--gc-background)); color: #fff; cursor: pointer; font-size: 10px; font-weight: 650; letter-spacing: 0; text-transform: none; }
+.gc-status-section > header .gc-status-section__bulk:hover:not(:disabled) { background: var(--gc-success); }
+.gc-status-section > header .gc-status-section__bulk:disabled { opacity: 1; cursor: default; }
+.gc-status-section > header .gc-status-section__bulk--priority { border-color: var(--gc-danger); background: color-mix(in srgb, var(--gc-danger) 16%, var(--gc-background)); font-weight: 700; }
+.gc-status-section > header .gc-status-section__bulk--priority:hover:not(:disabled) { background: var(--gc-danger); }
 .gc-status-section > .gc-file-tree { max-height: min(220px, 28vh); padding: 0 5px 7px; overflow: auto; }
 .gc-status-section:not(.gc-status-section--open) > header { border-bottom: 0; }
 

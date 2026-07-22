@@ -549,6 +549,7 @@ function App() {
   const runMutation = useCallback(async (
     title: string,
     operation: (repository: RuntimeRepository) => Promise<unknown>,
+    options?: { silent?: boolean },
   ): Promise<boolean> => {
     if (!activeRepository || busy || overviewLoading) return false;
     setBusy(true);
@@ -563,7 +564,7 @@ function App() {
           title: `${title}: attention required`,
           detail: `${result.conflicts.length} conflict${result.conflicts.length === 1 ? " remains" : "s remain"}. Resolve them in the Working tree panel.`,
         });
-      } else {
+      } else if (!options?.silent) {
         addToast({ tone: "success", title });
       }
       return true;
@@ -1113,7 +1114,7 @@ function App() {
           const paths = snapshot.status.entries
             .filter((entry) => entry.worktree && !entry.conflicted)
             .map((entry) => entry.path);
-          if (paths.length) void runMutation("Files staged", (repository) => gitcatApi.stagePaths(repository.repository_id, paths));
+          if (paths.length) void runMutation("Files staged", (repository) => gitcatApi.stagePaths(repository.repository_id, paths), { silent: true });
         }
       } else if (
         matches(keybinds.unstage_all)
@@ -1121,7 +1122,7 @@ function App() {
         event.preventDefault();
         if (activeRepository && snapshot && wipSelected) {
           const paths = snapshot.status.entries.filter((entry) => entry.index && !entry.conflicted).map((entry) => entry.path);
-          if (paths.length) void runMutation("Files unstaged", (repository) => gitcatApi.unstagePaths(repository.repository_id, paths));
+          if (paths.length) void runMutation("Files unstaged", (repository) => gitcatApi.unstagePaths(repository.repository_id, paths), { silent: true });
         }
       } else if (matches(keybinds.focus_commit_message)) {
         event.preventDefault();
@@ -1791,8 +1792,8 @@ function App() {
                     onOpenDiff={openWorktreeDiff}
                     onOpenConflict={(entry) => void openConflictEditor(entry)}
                     onResolveConflict={resolveConflictEntry}
-                    onStage={(paths) => void runMutation("Files staged", (repository) => gitcatApi.stagePaths(repository.repository_id, paths))}
-                    onUnstage={(paths) => void runMutation("Files unstaged", (repository) => gitcatApi.unstagePaths(repository.repository_id, paths))}
+                    onStage={(paths) => void runMutation("Files staged", (repository) => gitcatApi.stagePaths(repository.repository_id, paths), { silent: true })}
+                    onUnstage={(paths) => void runMutation("Files unstaged", (repository) => gitcatApi.unstagePaths(repository.repository_id, paths), { silent: true })}
                     onDiscard={(paths) => {
                       if (!window.confirm(`Discard all changes to ${paths.length === 1 ? paths[0] : `${paths.length} files`}? This cannot be undone.`)) return;
                       void runMutation("Changes discarded", (repository) => gitcatApi.discardPaths(repository.repository_id, paths));

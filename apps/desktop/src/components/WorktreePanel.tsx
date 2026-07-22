@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, ChevronDown, ChevronRight, GitMerge, Minus, Plus, WandSparkles } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronRight, GitMerge, WandSparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
@@ -345,13 +345,15 @@ function StatusSection({
                 operation={operation}
               />
             ) : (
-              <IconButton
+              <button
                 aria-label={`${plus ? "Stage" : "Unstage"} ${entry.path}`}
+                className={`gc-file-tree__stage gc-file-tree__stage--${plus ? "add" : "remove"}`}
                 disabled={busy}
                 onClick={() => onEntryAction(entry)}
+                type="button"
               >
-                {plus ? <Plus aria-hidden="true" size={14} /> : <Minus aria-hidden="true" size={14} />}
-              </IconButton>
+                {plus ? "Stage File" : "Unstage File"}
+              </button>
             )
           )}
           selectedId={selectedId}
