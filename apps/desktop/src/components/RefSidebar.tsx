@@ -1,8 +1,11 @@
 import {
+  Check,
   ChevronDown,
   ChevronRight,
   Cloud,
+  FolderGit,
   GitBranch,
+  Monitor,
   MoreHorizontal,
   Plus,
   Search,
@@ -16,6 +19,7 @@ import { IconButton } from "./Primitives";
 interface RefSidebarProps {
   localBranches: BranchInfo[];
   remoteBranches: BranchInfo[];
+  remoteIconUrls?: ReadonlyMap<string, string>;
   tags: RefLabel[];
   onCheckout: (branch: BranchInfo) => void;
   onCreateBranch: () => void;
@@ -27,6 +31,7 @@ interface RefSidebarProps {
 export function RefSidebar({
   localBranches,
   remoteBranches,
+  remoteIconUrls,
   tags,
   onCheckout,
   onCreateBranch,
@@ -46,6 +51,16 @@ export function RefSidebar({
     () => remoteBranches.filter((branch) => branch.name.toLocaleLowerCase().includes(needle)),
     [remoteBranches, needle],
   );
+  const remoteGroups = useMemo(() => {
+    const groups = new Map<string, BranchInfo[]>();
+    for (const branch of filteredRemote) {
+      const remote = remoteNameOf(branch.name);
+      const existing = groups.get(remote);
+      if (existing) existing.push(branch);
+      else groups.set(remote, [branch]);
+    }
+    return [...groups.entries()];
+  }, [filteredRemote]);
 
   const toggle = (section: keyof typeof sections) =>
     setSections((current) => ({ ...current, [section]: !current[section] }));
@@ -64,7 +79,7 @@ export function RefSidebar({
 
       <RefSection
         count={filteredLocal.length}
-        icon={<GitBranch size={14} />}
+        icon={<Monitor size={14} />}
         label="LOCAL"
         onToggle={() => toggle("local")}
         open={sections.local}
@@ -75,9 +90,12 @@ export function RefSidebar({
         }
       >
         {filteredLocal.map((branch) => (
-          <div className={`gc-ref-row ${branch.is_head ? "gc-ref-row--current" : ""}`} key={branch.full_name}>
+          <div className={`gc-ref-row gc-ref-row--branch ${branch.is_head ? "gc-ref-row--current" : ""}`} key={branch.full_name}>
             <button onClick={() => onCheckout(branch)} type="button">
-              <span className="gc-ref-row__node" />
+              <span className="gc-ref-row__lead">
+                {branch.is_head ? <Check aria-label="Current branch" size={12} strokeWidth={3} /> : null}
+              </span>
+              <GitBranch className="gc-ref-row__icon" size={13} />
               <span>{branch.name}</span>
               {branch.ahead ? <small>↑{branch.ahead}</small> : null}
               {branch.behind ? <small>↓{branch.behind}</small> : null}
@@ -107,12 +125,22 @@ export function RefSidebar({
         onToggle={() => toggle("remote")}
         open={sections.remote}
       >
-        {filteredRemote.map((branch) => (
-          <div className="gc-ref-row" key={branch.full_name}>
-            <button onClick={() => onCheckoutRemote(branch)} type="button">
-              <span className="gc-ref-row__node gc-ref-row__node--remote" />
-              <span>{branch.name}</span>
-            </button>
+        {remoteGroups.map(([remote, branches]) => (
+          <div className="gc-ref-group" key={remote}>
+            <div className="gc-ref-row gc-ref-row--group">
+              <span className="gc-ref-row__static">
+                <RemoteIcon iconUrl={remoteIconUrls?.get(remote)} />
+                {remote}
+              </span>
+            </div>
+            {branches.map((branch) => (
+              <div className="gc-ref-row gc-ref-row--branch gc-ref-row--nested" key={branch.full_name}>
+                <button onClick={() => onCheckoutRemote(branch)} type="button">
+                  <GitBranch className="gc-ref-row__icon" size={13} />
+                  <span>{branchNameWithoutRemote(branch.name)}</span>
+                </button>
+              </div>
+            ))}
           </div>
         ))}
         {!filteredRemote.length ? <p className="gc-sidebar__empty">No matching remote branch</p> : null}
@@ -133,6 +161,30 @@ export function RefSidebar({
       </RefSection>
     </aside>
   );
+}
+
+function RemoteIcon({ iconUrl }: { iconUrl?: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!iconUrl || failed) return <FolderGit className="gc-ref-row__icon" size={13} />;
+  return (
+    <img
+      alt=""
+      aria-hidden="true"
+      className="gc-ref-row__avatar"
+      onError={() => setFailed(true)}
+      src={iconUrl}
+    />
+  );
+}
+
+function remoteNameOf(branchName: string): string {
+  const slashIndex = branchName.indexOf("/");
+  return slashIndex >= 0 ? branchName.slice(0, slashIndex) : branchName;
+}
+
+function branchNameWithoutRemote(branchName: string): string {
+  const slashIndex = branchName.indexOf("/");
+  return slashIndex >= 0 ? branchName.slice(slashIndex + 1) : branchName;
 }
 
 function RefSection({

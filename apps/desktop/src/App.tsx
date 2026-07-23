@@ -1941,6 +1941,7 @@ function App() {
                   }}
                   onRenameBranch={(branch) => setPrompt({ kind: "rename_branch", branch })}
                   remoteBranches={snapshot?.remote_branches ?? []}
+                  remoteIconUrls={remoteIconUrls}
                   tags={snapshot?.tags ?? []}
                 />
             </div>
