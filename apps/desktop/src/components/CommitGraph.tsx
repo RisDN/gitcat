@@ -700,6 +700,11 @@ export function CommitGraph({
       role="grid"
       tabIndex={0}
     >
+      <div aria-hidden="true" className="gc-commit-time-markers gc-commit-time-markers--lines">
+        {timeMarkers.map((marker) => (
+          <span className="gc-commit-time-marker" key={marker.key} style={{ top: marker.top }} />
+        ))}
+      </div>
       <svg
         aria-hidden="true"
         className="gc-commit-graph__lanes"
@@ -751,10 +756,10 @@ export function CommitGraph({
           />
         ))}
       </div>
-      <div aria-hidden="true" className="gc-commit-time-markers">
+      <div aria-hidden="true" className="gc-commit-time-markers gc-commit-time-markers--labels">
         {timeMarkers.map((marker) => (
-          <span className="gc-commit-time-marker" key={marker.key} style={{ top: marker.top }}>
-            <span>{marker.label}</span>
+          <span className="gc-commit-time-marker__label" key={marker.key} style={{ top: marker.top }}>
+            {marker.label}
           </span>
         ))}
       </div>
