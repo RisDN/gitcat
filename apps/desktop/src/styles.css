@@ -574,6 +574,7 @@ kbd,
 .gc-commit-row__graph-slot--lane-7 { --gc-graph-slot-color: var(--gc-lane-7); }
 .gc-commit-row__avatar { position: absolute; z-index: 3; top: 50%; display: grid; width: 22px; height: 22px; place-items: center; border: 2px solid var(--gc-graph-slot-color, var(--gc-accent)); border-radius: 50%; background: var(--gc-panel); color: var(--gc-text); font: 700 8px/1 "Segoe UI", sans-serif; transform: translate(-50%, -50%); }
 .gc-commit-row__avatar--selected { box-shadow: none; }
+.gc-commit-row__avatar--stash { border-style: dashed; background: color-mix(in srgb, var(--gc-graph-slot-color, var(--gc-accent)) 16%, var(--gc-panel)); color: color-mix(in srgb, var(--gc-graph-slot-color, var(--gc-accent)) 62%, var(--gc-text)); }
 .gc-commit-row__subject { min-width: 0; padding: 0 7px; overflow: hidden; color: var(--gc-text); cursor: pointer; font-size: 11px; font-weight: 570; text-overflow: ellipsis; white-space: nowrap; }
 .gc-commit-row__decorations { display: flex; min-width: 0; gap: 3px; padding: 0 6px; overflow: visible; }
 .gc-ref-stack { isolation: isolate; position: relative; display: inline-flex; max-width: 100%; min-width: 0; align-items: center; gap: 3px; }

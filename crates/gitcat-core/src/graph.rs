@@ -107,6 +107,7 @@ mod tests {
                 offset_minutes: 0,
             },
             decorations: Vec::new(),
+            stash: None,
             graph: GraphCell::default(),
         }
     }

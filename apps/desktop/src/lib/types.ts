@@ -141,6 +141,11 @@ export interface GraphCell {
   edges: GraphEdge[];
 }
 
+export interface StashRef {
+  index: number;
+  selector: string;
+}
+
 export interface CommitSummary {
   oid: string;
   short_oid: string;
@@ -151,6 +156,7 @@ export interface CommitSummary {
   authored_at: CommitTime;
   committed_at: CommitTime;
   decorations: RefLabel[];
+  stash?: StashRef | null;
   graph: GraphCell;
 }
 

@@ -216,6 +216,12 @@ pub struct GraphCell {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StashRef {
+    pub index: usize,
+    pub selector: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommitSummary {
     pub oid: String,
     pub short_oid: String,
@@ -226,6 +232,8 @@ pub struct CommitSummary {
     pub authored_at: CommitTime,
     pub committed_at: CommitTime,
     pub decorations: Vec<RefLabel>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stash: Option<StashRef>,
     pub graph: GraphCell,
 }
 

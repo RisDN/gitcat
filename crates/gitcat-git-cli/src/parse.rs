@@ -1,9 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use gitcat_contracts::{
     ApiError, ApiResult, BranchInfo, ChangeKind, ChangedFile, CommitDetails, CommitSearchHit,
     CommitSummary, CommitTime, DiffHunk, DiffLine, DiffLineKind, DiffStats, FileDiff, GraphCell,
-    HeadState, Identity, RefKind, RefLabel, StashEntry, StatusEntry, WorktreeStatus,
+    HeadState, Identity, RefKind, RefLabel, StashEntry, StashRef, StatusEntry, WorktreeStatus,
 };
 
 use gitcat_contracts::ErrorCode;
@@ -15,6 +15,7 @@ pub(crate) const LOG_FORMAT: &str =
     "%x1e%H%x00%h%x00%P%x00%an%x00%ae%x00%at%x00%ai%x00%ct%x00%ci%x00%s%x00%b%x00";
 pub(crate) const DETAIL_FORMAT: &str = "%x1e%H%x00%h%x00%T%x00%P%x00%an%x00%ae%x00%at%x00%ai%x00%cn%x00%ce%x00%ct%x00%ci%x00%s%x00%b%x00";
 pub(crate) const STASH_FORMAT: &str = "%gd%x00%H%x00%gs%x00";
+pub(crate) const STASH_GRAPH_FORMAT: &str = "%gd%x00%H%x00%P%x00%gs%x00";
 
 #[derive(Debug)]
 pub(crate) struct ParsedStatus {
@@ -33,6 +34,24 @@ pub(crate) struct ParsedRef {
 #[derive(Debug)]
 pub(crate) struct ParsedCommitDetails {
     pub details: CommitDetails,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct StashCommit {
+    pub reference: StashRef,
+    pub label: String,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct StashGraph {
+    pub commits: HashMap<String, StashCommit>,
+    pub hidden: HashSet<String>,
+}
+
+impl StashGraph {
+    pub fn is_empty(&self) -> bool {
+        self.commits.is_empty() && self.hidden.is_empty()
+    }
 }
 
 pub(crate) fn parse_git_version(raw: &[u8]) -> ApiResult<(u32, u32, u32, String)> {
@@ -332,6 +351,7 @@ pub(crate) fn parse_log(output: &[u8]) -> ApiResult<Vec<CommitSummary>> {
             authored_at: parse_time(fields[5], fields[6])?,
             committed_at: parse_time(fields[7], fields[8])?,
             decorations: Vec::new(),
+            stash: None,
             graph: GraphCell::default(),
         });
     }
@@ -762,6 +782,57 @@ pub(crate) fn parse_stashes(output: &[u8]) -> ApiResult<Vec<StashEntry>> {
     Ok(stashes)
 }
 
+pub(crate) fn parse_stash_graph(output: &[u8]) -> ApiResult<StashGraph> {
+    let mut graph = StashGraph::default();
+    for line in output.split(|byte| *byte == b'\n') {
+        let fields: Vec<&[u8]> = trim_line(line).split(|byte| *byte == 0).collect();
+        if fields.first().is_none_or(|field| field.is_empty()) {
+            continue;
+        }
+        if fields.len() < 4 {
+            return Err(parse_error("Malformed stash graph record"));
+        }
+        let selector = text(fields[0]).into_owned();
+        let index = selector
+            .strip_prefix("stash@{")
+            .and_then(|value| value.strip_suffix('}'))
+            .and_then(|value| value.parse().ok())
+            .ok_or_else(|| parse_error("Malformed stash selector"))?;
+        let oid = text(fields[1]).into_owned();
+        let parents = split_oids(fields[2]);
+        graph.hidden.extend(parents.into_iter().skip(1));
+        graph.commits.insert(
+            oid,
+            StashCommit {
+                reference: StashRef { index, selector },
+                label: stash_label(&text(fields[3])),
+            },
+        );
+    }
+    Ok(graph)
+}
+
+fn stash_label(message: &str) -> String {
+    let message = message.trim();
+    if let Some(rest) = message.strip_prefix("On ") {
+        if let Some((_, described)) = rest.split_once(": ") {
+            let described = described.trim();
+            if !described.is_empty() {
+                return described.to_owned();
+            }
+        }
+    }
+    if let Some(rest) = message.strip_prefix("WIP on ") {
+        if let Some((branch, _)) = rest.split_once(": ") {
+            let branch = branch.trim();
+            if !branch.is_empty() {
+                return format!("WIP on {branch}");
+            }
+        }
+    }
+    message.to_owned()
+}
+
 fn split_oids(value: &[u8]) -> Vec<String> {
     text(value).split_whitespace().map(str::to_owned).collect()
 }
@@ -853,6 +924,22 @@ mod tests {
         assert_eq!(commits.len(), 1);
         assert_eq!(commits[0].subject, "subject");
         assert_eq!(commits[0].authored_at.offset_minutes, 150);
+    }
+
+    #[test]
+    fn parses_stash_graph_with_hidden_parents_and_labels() {
+        let bytes = b"stash@{0}\0aaa\0base index untracked\0WIP on main: 400e481 feat: header\0\nstash@{1}\0bbb\0base2 index2\0On feature/x: cleanup: drop dead code\0\n";
+        let graph = parse_stash_graph(bytes).unwrap();
+        assert_eq!(graph.commits.len(), 2);
+        assert_eq!(graph.commits["aaa"].label, "WIP on main");
+        assert_eq!(graph.commits["aaa"].reference.index, 0);
+        assert_eq!(graph.commits["bbb"].label, "cleanup: drop dead code");
+        assert_eq!(graph.commits["bbb"].reference.selector, "stash@{1}");
+        assert_eq!(graph.hidden.len(), 3);
+        assert!(graph.hidden.contains("index"));
+        assert!(graph.hidden.contains("untracked"));
+        assert!(graph.hidden.contains("index2"));
+        assert!(!graph.hidden.contains("base"));
     }
 
     #[test]

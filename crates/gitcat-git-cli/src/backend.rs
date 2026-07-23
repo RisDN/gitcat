@@ -17,9 +17,9 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     parse::{
-        DETAIL_FORMAT, LOG_FORMAT, ParsedStatus, REF_FORMAT, STASH_FORMAT, parse_changed_files,
-        parse_commit_details, parse_file_diff, parse_git_version, parse_log, parse_refs,
-        parse_search_hits, parse_stashes, parse_status,
+        DETAIL_FORMAT, LOG_FORMAT, ParsedStatus, REF_FORMAT, STASH_FORMAT, STASH_GRAPH_FORMAT,
+        StashGraph, parse_changed_files, parse_commit_details, parse_file_diff, parse_git_version,
+        parse_log, parse_refs, parse_search_hits, parse_stash_graph, parse_stashes, parse_status,
     },
     runner::{GitCommandOutput, GitRunOptions, GitRunner, os_args, redact_sensitive},
 };
@@ -1052,6 +1052,16 @@ impl GitCliBackend {
         parse_changed_files(&names.stdout, &stats.stdout)
     }
 
+    async fn stash_graph(&self, path: &Path) -> ApiResult<StashGraph> {
+        let mut args = os_args(&["stash", "list"]);
+        args.push(format!("--format={STASH_GRAPH_FORMAT}").into());
+        let output = self.read_allow_failure(Some(path), args).await?;
+        if !output.success() {
+            return Ok(StashGraph::default());
+        }
+        parse_stash_graph(&output.stdout)
+    }
+
     async fn history_revision(&self, path: &Path, scope: &HistoryScope) -> ApiResult<OsString> {
         match scope {
             HistoryScope::CurrentBranch => Ok("HEAD".into()),
@@ -1285,6 +1295,7 @@ impl GitBackend for GitCliBackend {
                 "History cursor offset is outside the supported range",
             ));
         }
+        let stashes = self.stash_graph(path).await?;
         let mut args = os_args(&[
             "log",
             "--topo-order",
@@ -1296,6 +1307,11 @@ impl GitBackend for GitCliBackend {
         args.push(format!("--skip={offset}").into());
         args.push(format!("--max-count={}", limit + 1).into());
         args.push(self.history_revision(path, &query.scope).await?);
+        if matches!(query.scope, HistoryScope::AllRefs) {
+            let mut stash_tips: Vec<&String> = stashes.commits.keys().collect();
+            stash_tips.sort_unstable();
+            args.extend(stash_tips.into_iter().map(OsString::from));
+        }
         args.push("--".into());
         let output = self.read(Some(path), args).await?;
         let (generation_after, _) = self.history_generation_and_refs(path).await?;
@@ -1308,6 +1324,8 @@ impl GitBackend for GitCliBackend {
         let mut commits = parse_log(&output.stdout)?;
         let has_more = commits.len() > limit;
         commits.truncate(limit);
+        let walked = commits.len();
+        apply_stash_view(&mut commits, &stashes);
 
         let mut labels: HashMap<String, Vec<RefLabel>> = HashMap::new();
         for parsed_ref in parse_refs(&refs_output)? {
@@ -1331,7 +1349,7 @@ impl GitBackend for GitCliBackend {
         layout_commits(&mut commits, &mut lanes, head_oid.as_deref());
         let next_cursor = has_more.then(|| HistoryCursor {
             generation: generation.clone(),
-            offset: offset + commits.len(),
+            offset: offset + walked,
             lanes,
         });
         Ok(HistoryPage {
@@ -1429,6 +1447,11 @@ impl GitBackend for GitCliBackend {
         args.push("--".into());
         let output = self.read(Some(path), args).await?;
         let mut details = parse_commit_details(&output.stdout)?.details;
+        if details.parent_oids.len() > 1 {
+            if let Some(stash) = self.stash_graph(path).await?.commits.get(&oid) {
+                details.subject = stash.label.clone();
+            }
+        }
         let files = self
             .changed_files_for_commit(path, &oid, &details.parent_oids, parent_index)
             .await?;
@@ -3120,6 +3143,25 @@ fn ensure_operation(
     }
 }
 
+fn apply_stash_view(commits: &mut Vec<CommitSummary>, stashes: &StashGraph) {
+    if stashes.is_empty() {
+        return;
+    }
+
+    commits.retain(|commit| !stashes.hidden.contains(&commit.oid));
+    for commit in commits.iter_mut() {
+        let Some(stash) = stashes.commits.get(&commit.oid) else {
+            continue;
+        };
+        commit.parent_oids.truncate(1);
+        if commit.body_preview.is_empty() {
+            commit.body_preview = commit.subject.clone();
+        }
+        commit.subject = stash.label.clone();
+        commit.stash = Some(stash.reference.clone());
+    }
+}
+
 fn verify_stash_index(stashes: Vec<StashEntry>, index: usize) -> ApiResult<()> {
     if stashes.iter().any(|stash| stash.index == index) {
         Ok(())
@@ -3665,6 +3707,83 @@ mod tests {
         assert_eq!(details.files.len(), 1);
         assert_eq!(details.files[0].new_path, "hello.txt");
         assert_eq!(details.files[0].additions, Some(1));
+    }
+
+    #[tokio::test]
+    async fn history_shows_one_row_per_stash() {
+        let (directory, backend, _) = committed_repository().await;
+        fs::write(directory.path().join("hello.txt"), "stashed\n").expect("write tracked change");
+        fs::write(directory.path().join("extra.txt"), "untracked\n").expect("write untracked file");
+        backend
+            .stage_paths(directory.path(), &["hello.txt".into()])
+            .await
+            .expect("stage tracked change");
+        backend
+            .stash_push(directory.path(), None, true)
+            .await
+            .expect("stash changes");
+
+        let page = backend
+            .history(
+                directory.path(),
+                &HistoryQuery {
+                    scope: HistoryScope::AllRefs,
+                    cursor: None,
+                    limit: 50,
+                },
+            )
+            .await
+            .expect("history page");
+
+        let stash_rows: Vec<&CommitSummary> = page
+            .commits
+            .iter()
+            .filter(|commit| commit.stash.is_some())
+            .collect();
+        assert_eq!(stash_rows.len(), 1);
+        assert_eq!(stash_rows[0].subject, "WIP on main");
+        assert_eq!(stash_rows[0].parent_oids.len(), 1);
+        assert_eq!(stash_rows[0].graph.edges.len(), 1);
+        assert_eq!(stash_rows[0].stash.as_ref().unwrap().index, 0);
+        let first_stash_oid = stash_rows[0].oid.clone();
+        assert!(
+            !page
+                .commits
+                .iter()
+                .any(|commit| commit.subject.starts_with("index on")
+                    || commit.subject.starts_with("untracked files on"))
+        );
+
+        fs::write(directory.path().join("hello.txt"), "named\n").expect("write second change");
+        backend
+            .stash_push(directory.path(), Some("layout tweaks"), true)
+            .await
+            .expect("stash with message");
+        let page = backend
+            .history(
+                directory.path(),
+                &HistoryQuery {
+                    scope: HistoryScope::AllRefs,
+                    cursor: None,
+                    limit: 50,
+                },
+            )
+            .await
+            .expect("history page after named stash");
+        let mut labels: Vec<&str> = page
+            .commits
+            .iter()
+            .filter(|commit| commit.stash.is_some())
+            .map(|commit| commit.subject.as_str())
+            .collect();
+        labels.sort_unstable();
+        assert_eq!(labels, vec!["WIP on main", "layout tweaks"]);
+
+        let details = backend
+            .commit_details(directory.path(), &first_stash_oid, 0)
+            .await
+            .expect("stash commit details");
+        assert_eq!(details.subject, "WIP on main");
     }
 
     #[tokio::test]

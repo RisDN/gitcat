@@ -1,6 +1,6 @@
 import { memo, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, FolderGit, Monitor, Tag } from "lucide-react";
+import { Check, FolderGit, Inbox, Monitor, Tag } from "lucide-react";
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
@@ -551,7 +551,7 @@ const CommitRow = memo(function CommitRow({
   ].filter(Boolean).join(" ");
   const accessibleLabel = [
     commit.subject,
-    `commit ${commit.short_oid}`,
+    commit.stash ? `stash ${commit.stash.selector}` : `commit ${commit.short_oid}`,
     commit.author.name,
     timestamp,
     searchMatch ? "search result" : "",
@@ -603,10 +603,14 @@ const CommitRow = memo(function CommitRow({
       >
         <span
           aria-hidden="true"
-          className={`gc-commit-row__avatar${selected ? " gc-commit-row__avatar--selected" : ""}`}
+          className={[
+            "gc-commit-row__avatar",
+            selected ? "gc-commit-row__avatar--selected" : "",
+            commit.stash ? "gc-commit-row__avatar--stash" : "",
+          ].filter(Boolean).join(" ")}
           style={{ left: laneX(commit.graph.lane) }}
         >
-          {initials.slice(0, 1) || "?"}
+          {commit.stash ? <Inbox size={11} strokeWidth={2.4} /> : initials.slice(0, 1) || "?"}
         </span>
       </span>
       <span className="gc-commit-row__subject" role="cell" title={commit.body_preview || commit.subject}>
