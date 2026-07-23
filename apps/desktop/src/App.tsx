@@ -35,6 +35,7 @@ import {
   getCommitLaneX,
   getCommitGraphWidth,
   getCommitRowBranchOrigin,
+  getWipLane,
   type CommitContextMenuRequest,
 } from "./components/CommitGraph";
 import { ContextMenu, type ContextAction } from "./components/ContextMenu";
@@ -1933,24 +1934,19 @@ function App() {
   };
 
   const graphMatches = useMemo(() => new Set(searchOids), [searchOids]);
-  const graphColumnWidth = useMemo(
-    () => getCommitGraphWidth(history?.commits ?? []),
-    [history],
-  );
   const remoteIconUrls = useMemo(
     () => githubRemoteIconUrls(snapshot?.remotes ?? []),
     [snapshot?.remotes],
   );
   const currentHeadOid = snapshot?.head.kind === "unborn" ? null : snapshot?.head.oid ?? null;
-  const wipLane = useMemo(() => {
-    const commits = history?.commits ?? [];
-    if (commits.length === 0) return 0;
-
-    const headCommit = currentHeadOid
-      ? commits.find((commit) => commit.oid === currentHeadOid)
-      : null;
-    return (headCommit ?? commits[0]).graph.lane;
-  }, [currentHeadOid, history]);
+  const wipLane = useMemo(
+    () => getWipLane(history?.commits ?? [], currentHeadOid),
+    [currentHeadOid, history],
+  );
+  const graphColumnWidth = useMemo(
+    () => getCommitGraphWidth(history?.commits ?? []),
+    [history],
+  );
   const wipLaneX = getCommitLaneX(wipLane);
   const wipRowStyle = {
     "--gc-branch-origin": `${wipLaneX}px`,
@@ -2178,6 +2174,9 @@ function App() {
                       remoteIconUrls={remoteIconUrls}
                       searchMatchOids={graphMatches}
                       selectedOid={selectedOid}
+                      wip={snapshot && !snapshot.status.clean
+                        ? { lane: wipLane, headOid: currentHeadOid }
+                        : undefined}
                     />
                   ) : <div className="gc-loading-panel"><Spinner label="Loading history" /> Loading history…</div>}
                   {history?.has_more && history.next_cursor ? (

@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, useState } from "react";
+import { memo, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, FolderGit, Monitor, Tag } from "lucide-react";
 import type {
@@ -17,7 +17,10 @@ const GRAPH_PADDING = 24;
 const REF_COLUMN_WIDTH = 118;
 const MIN_GRAPH_WIDTH = 96;
 const LANE_COLOR_COUNT = 8;
+const EDGE_CORNER = 12;
 const AVATAR_RADIUS = 11;
+const WIP_NODE_RADIUS = 12;
+const WIP_ROW_Y = -(ROW_GAP + ROW_HEIGHT / 2);
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
@@ -30,9 +33,15 @@ export interface CommitContextMenuRequest {
   clientY: number;
 }
 
+export interface WipConnector {
+  lane: number;
+  headOid: string | null;
+}
+
 export interface CommitGraphProps {
   commits: readonly CommitSummary[];
   selectedOid: string | null;
+  wip?: WipConnector;
   beforeFirstSelected?: boolean;
   searchMatchOids?: ReadonlySet<string>;
   hideHeadDecoration?: boolean;
@@ -177,6 +186,38 @@ export function getCommitGraphWidth(commits: readonly CommitSummary[]): number {
   return Math.max(MIN_GRAPH_WIDTH, GRAPH_PADDING * 2 + maxLane * LANE_WIDTH + LANE_WIDTH);
 }
 
+export function getWipLane(commits: readonly CommitSummary[], headOid: string | null): number {
+  if (commits.length === 0) return 0;
+
+  const headCommit = headOid ? commits.find((commit) => commit.oid === headOid) : undefined;
+  return (headCommit ?? commits[0]).graph.lane;
+}
+
+function buildEdgePath(
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+  parentVisible: boolean,
+): string {
+  if (startX === endX) return `M ${startX} ${startY} L ${endX} ${endY}`;
+
+  const corner = Math.min(EDGE_CORNER, Math.abs(endY - startY));
+
+  if (!parentVisible) {
+    const bendY = Math.min(startY + ROW_STRIDE * 0.55, endY);
+    return `M ${startX} ${startY} C ${startX} ${bendY}, ${endX} ${bendY}, ${endX} ${endY}`;
+  }
+
+  if (endX < startX) {
+    const turnY = Math.max(startY, endY - corner);
+    return `M ${startX} ${startY} L ${startX} ${turnY} Q ${startX} ${endY}, ${endX} ${endY}`;
+  }
+
+  const turnY = Math.min(endY, startY + corner);
+  return `M ${startX} ${startY} Q ${endX} ${startY}, ${endX} ${turnY} L ${endX} ${endY}`;
+}
+
 function buildGraphGeometry(commits: readonly CommitSummary[]): GraphGeometry {
   const commitIndex = new Map<string, number>();
 
@@ -191,23 +232,19 @@ function buildGraphGeometry(commits: readonly CommitSummary[]): GraphGeometry {
 
     for (let edgeIndex = 0; edgeIndex < commit.graph.edges.length; edgeIndex += 1) {
       const edge = commit.graph.edges[edgeIndex];
-      const parentIndex = commitIndex.get(edge.parent_oid);
-      const targetIndex = parentIndex !== undefined && parentIndex > index
-        ? parentIndex
-        : commits.length;
+      const parentIndex = commitIndex.get(edge.parent_oid) ?? -1;
+      const parentVisible = parentIndex > index;
+      const targetIndex = parentVisible ? parentIndex : commits.length;
       const startX = laneX(edge.from_lane);
       const startY = rowY(index);
       const endX = laneX(edge.to_lane);
       const endY = Math.min(rowY(targetIndex), commits.length * ROW_STRIDE - ROW_GAP);
-      const bendY = Math.min(startY + ROW_STRIDE * 0.55, endY);
-      const data = startX === endX
-        ? `M ${startX} ${startY} L ${endX} ${endY}`
-        : `M ${startX} ${startY} C ${startX} ${bendY}, ${endX} ${bendY}, ${endX} ${endY}`;
+      const data = buildEdgePath(startX, startY, endX, endY, parentVisible);
 
       paths.push({
         key: `${commit.oid}:${edge.parent_oid}:${edgeIndex}`,
         data,
-        lane: edge.to_lane,
+        lane: Math.max(edge.from_lane, edge.to_lane),
         merge: edge.merge,
       });
     }
@@ -593,6 +630,7 @@ const CommitRow = memo(function CommitRow({
 export function CommitGraph({
   commits,
   selectedOid,
+  wip,
   beforeFirstSelected = false,
   searchMatchOids,
   hideHeadDecoration = false,
@@ -608,7 +646,21 @@ export function CommitGraph({
   formatTimestamp,
 }: CommitGraphProps) {
   const listRef = useRef<HTMLDivElement>(null);
+  const nodeMaskId = `gc-node-mask-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const geometry = useMemo(() => buildGraphGeometry(commits), [commits]);
+  const wipPath = useMemo(() => {
+    if (!wip?.headOid) return null;
+
+    const headIndex = commits.findIndex((commit) => commit.oid === wip.headOid);
+    if (headIndex < 0) return null;
+
+    const headLane = commits[headIndex].graph.lane;
+    return {
+      data: buildEdgePath(laneX(wip.lane), WIP_ROW_Y, laneX(headLane), rowY(headIndex), true),
+      lane: Math.max(wip.lane, headLane),
+    };
+  }, [commits, wip?.headOid, wip?.lane]);
+  const maskTop = wipPath ? WIP_ROW_Y - WIP_NODE_RADIUS : 0;
   const timeMarkers = useMemo(() => buildTimeMarkers(commits, Math.floor(Date.now() / 1_000)), [commits]);
   const hasMultipleBranches = useMemo(() => {
     const branchNames = new Set<string>();
@@ -718,25 +770,49 @@ export function CommitGraph({
         viewBox={`0 0 ${geometry.width} ${geometry.height}`}
         width={geometry.width}
       >
-        {geometry.paths.map((path) => (
-          <path
-            className={`${laneClass("gc-commit-graph__edge", path.lane)}${path.merge ? " gc-commit-graph__edge--merge" : ""}`}
-            d={path.data}
-            fill="none"
-            key={path.key}
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
-        {commits.map((commit, index) => (
-          <circle
-            className={`${laneClass("gc-commit-graph__node", commit.graph.lane)}${commit.oid === selectedOid ? " gc-commit-graph__node--selected" : ""}`}
-            cx={laneX(commit.graph.lane)}
-            cy={rowY(index)}
-            key={commit.oid}
-            r={commit.parent_oids.length > 1 ? 5 : 4}
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
+        <defs>
+          <mask
+            height={geometry.height - maskTop}
+            id={nodeMaskId}
+            maskUnits="userSpaceOnUse"
+            width={geometry.width}
+            x={0}
+            y={maskTop}
+          >
+            <rect fill="white" height={geometry.height - maskTop} width={geometry.width} x={0} y={maskTop} />
+            {commits.map((commit, index) => (
+              <circle
+                cx={laneX(commit.graph.lane)}
+                cy={rowY(index)}
+                fill="black"
+                key={commit.oid}
+                r={AVATAR_RADIUS}
+              />
+            ))}
+            {wipPath ? (
+              <circle cx={laneX(wip?.lane ?? 0)} cy={WIP_ROW_Y} fill="black" r={WIP_NODE_RADIUS} />
+            ) : null}
+          </mask>
+        </defs>
+        <g mask={`url(#${nodeMaskId})`}>
+          {wipPath ? (
+            <path
+              className={laneClass("gc-commit-graph__edge", wipPath.lane)}
+              d={wipPath.data}
+              fill="none"
+              vectorEffect="non-scaling-stroke"
+            />
+          ) : null}
+          {geometry.paths.map((path) => (
+            <path
+              className={`${laneClass("gc-commit-graph__edge", path.lane)}${path.merge ? " gc-commit-graph__edge--merge" : ""}`}
+              d={path.data}
+              fill="none"
+              key={path.key}
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+        </g>
       </svg>
       <div className="gc-commit-graph__rows">
         {commits.map((commit, index) => (

@@ -5,8 +5,10 @@ use gitcat_contracts::{CommitSummary, GraphCell, GraphEdge, LaneState};
 /// Each lane head is the next commit expected in that lane. Keeping `lanes`
 /// between calls makes layout identical whether history is processed in one
 /// batch or several pages.
-pub fn layout_commits(commits: &mut [CommitSummary], lanes: &mut LaneState) {
-    for commit in commits {
+pub fn layout_commits(commits: &mut [CommitSummary], lanes: &mut LaneState, head_oid: Option<&str>) {
+    reserve_head_lane(commits, lanes, head_oid);
+
+    for commit in commits.iter_mut() {
         let lane = lane_for_commit(&mut lanes.heads, &commit.oid);
 
         // A malformed or externally supplied cursor may contain the same head
@@ -39,6 +41,20 @@ pub fn layout_commits(commits: &mut [CommitSummary], lanes: &mut LaneState) {
 
         commit.graph = GraphCell { lane, edges };
     }
+}
+
+fn reserve_head_lane(commits: &[CommitSummary], lanes: &mut LaneState, head_oid: Option<&str>) {
+    let Some(head_oid) = head_oid else {
+        return;
+    };
+    if !lanes.heads.is_empty() {
+        return;
+    }
+    if !commits.iter().any(|commit| commit.oid == head_oid) {
+        return;
+    }
+
+    lanes.heads.push(Some(head_oid.to_owned()));
 }
 
 fn lane_for_commit(heads: &mut Vec<Option<String>>, oid: &str) -> usize {
@@ -100,7 +116,7 @@ mod tests {
         let mut commits = vec![commit("a", &["b"]), commit("b", &["c"]), commit("c", &[])];
         let mut lanes = LaneState { heads: Vec::new() };
 
-        layout_commits(&mut commits, &mut lanes);
+        layout_commits(&mut commits, &mut lanes, Some("a"));
 
         assert!(commits.iter().all(|commit| commit.graph.lane == 0));
         assert_eq!(commits[0].graph.edges[0].to_lane, 0);
@@ -118,7 +134,7 @@ mod tests {
         ];
         let mut lanes = LaneState { heads: Vec::new() };
 
-        layout_commits(&mut commits, &mut lanes);
+        layout_commits(&mut commits, &mut lanes, None);
 
         assert_eq!(commits[0].graph.lane, 0);
         assert_eq!(commits[0].graph.edges.len(), 2);
@@ -142,17 +158,17 @@ mod tests {
 
         let mut one_batch = commits.clone();
         let mut one_batch_lanes = LaneState { heads: Vec::new() };
-        layout_commits(&mut one_batch, &mut one_batch_lanes);
+        layout_commits(&mut one_batch, &mut one_batch_lanes, None);
 
         let mut first_page = commits[..2].to_vec();
         let mut second_page = commits[2..].to_vec();
         let mut paged_lanes = LaneState { heads: Vec::new() };
-        layout_commits(&mut first_page, &mut paged_lanes);
+        layout_commits(&mut first_page, &mut paged_lanes, None);
         assert_eq!(
             paged_lanes.heads,
             vec![Some("base".into()), Some("right".into())]
         );
-        layout_commits(&mut second_page, &mut paged_lanes);
+        layout_commits(&mut second_page, &mut paged_lanes, None);
 
         let paged_graphs: Vec<_> = first_page
             .iter()
@@ -175,12 +191,40 @@ mod tests {
         };
         let mut commits = vec![commit("new-tip", &[])];
 
-        layout_commits(&mut commits, &mut lanes);
+        layout_commits(&mut commits, &mut lanes, None);
 
         assert_eq!(commits[0].graph.lane, 1);
         assert_eq!(
             lanes.heads,
             vec![Some("expected".into()), None, Some("other".into())]
         );
+    }
+
+    #[test]
+    fn branch_ahead_of_head_forks_off_the_head_lane() {
+        let mut commits = vec![
+            commit("tip", &["head"]),
+            commit("head", &["base"]),
+            commit("base", &[]),
+        ];
+        let mut lanes = LaneState { heads: Vec::new() };
+
+        layout_commits(&mut commits, &mut lanes, Some("head"));
+
+        assert_eq!(commits[0].graph.lane, 1);
+        assert_eq!(commits[0].graph.edges[0].from_lane, 1);
+        assert_eq!(commits[0].graph.edges[0].to_lane, 0);
+        assert_eq!(commits[1].graph.lane, 0);
+        assert_eq!(commits[2].graph.lane, 0);
+    }
+
+    #[test]
+    fn head_outside_the_page_keeps_the_default_layout() {
+        let mut commits = vec![commit("a", &["b"]), commit("b", &[])];
+        let mut lanes = LaneState { heads: Vec::new() };
+
+        layout_commits(&mut commits, &mut lanes, Some("missing"));
+
+        assert!(commits.iter().all(|commit| commit.graph.lane == 0));
     }
 }
