@@ -104,7 +104,7 @@ import type {
 
 const DEFAULT_SETTINGS: AppSettings = {
   default_pull_mode: "merge",
-  auto_fetch_interval_minutes: 0,
+  auto_fetch_interval_minutes: 1,
   auto_prune: true,
   history_page_size: 200,
   diff_context_lines: 3,
@@ -452,6 +452,8 @@ function App() {
   const [overviewRepositoryId, setOverviewRepositoryId] = useState<string | null>(null);
   const activeRepositoryIdRef = useRef<string | null>(null);
   const autoRefreshRef = useRef<() => void>(() => {});
+  const autoFetchRef = useRef<() => void>(() => {});
+  const lastAutoFetchRef = useRef<Map<string, number>>(new Map());
   const closedTabsRef = useRef<RepositoryTab[]>([]);
   const workspaceRef = useRef(persisted.workspace);
   const overviewLoadSequence = useRef(0);
@@ -1186,6 +1188,49 @@ function App() {
   useEffect(() => {
     autoRefreshRef.current = backgroundRefreshActiveRepository;
   }, [backgroundRefreshActiveRepository]);
+
+  const autoFetchActiveRepository = useCallback(() => {
+    if (!activeRepository || busy || overviewLoading) return;
+    if (!snapshot?.remotes.length) return;
+    const repository = activeRepository;
+    lastAutoFetchRef.current.set(repository.repository_id, Date.now());
+    void gitcatApi.fetch(repository.repository_id, {
+      remote: null,
+      prune: persisted.settings.auto_prune,
+      tags: false,
+    })
+      .then(() => {
+        if (activeRepositoryIdRef.current !== repository.repository_id) return;
+        return loadOverview(repository, true, false);
+      })
+      .catch(() => undefined);
+  }, [
+    activeRepository,
+    busy,
+    loadOverview,
+    overviewLoading,
+    persisted.settings.auto_prune,
+    snapshot?.remotes.length,
+  ]);
+
+  useEffect(() => {
+    autoFetchRef.current = autoFetchActiveRepository;
+  }, [autoFetchActiveRepository]);
+
+  useEffect(() => {
+    const minutes = persisted.settings.auto_fetch_interval_minutes;
+    if (!minutes) return;
+    const timer = window.setInterval(() => autoFetchRef.current(), minutes * 60_000);
+    return () => window.clearInterval(timer);
+  }, [persisted.settings.auto_fetch_interval_minutes]);
+
+  useEffect(() => {
+    const minutes = persisted.settings.auto_fetch_interval_minutes;
+    if (!minutes || !overviewRepositoryId) return;
+    const lastFetchedAt = lastAutoFetchRef.current.get(overviewRepositoryId) ?? 0;
+    if (Date.now() - lastFetchedAt < minutes * 60_000) return;
+    autoFetchRef.current();
+  }, [overviewRepositoryId, persisted.settings.auto_fetch_interval_minutes]);
 
   // Auto-refresh the active repository when its files change on disk, so
   // commits, checkouts, or edits made outside GitCat appear without a manual

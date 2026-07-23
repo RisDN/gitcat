@@ -1,8 +1,7 @@
 import type {
   ButtonHTMLAttributes,
-  InputHTMLAttributes,
+  ComponentPropsWithRef,
   ReactNode,
-  TextareaHTMLAttributes,
 } from "react";
 import { useEffect } from "react";
 import { LoaderCircle, X } from "lucide-react";
@@ -46,14 +45,14 @@ export function IconButton({
 }
 
 // autoComplete defaults to "off" so the webview never offers saved form data.
-export function Input({ autoComplete = "off", ...props }: InputHTMLAttributes<HTMLInputElement>) {
+export function Input({ autoComplete = "off", ...props }: ComponentPropsWithRef<"input">) {
   return <input autoComplete={autoComplete} {...props} />;
 }
 
 export function TextArea({
   autoComplete = "off",
   ...props
-}: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+}: ComponentPropsWithRef<"textarea">) {
   return <textarea autoComplete={autoComplete} {...props} />;
 }
 

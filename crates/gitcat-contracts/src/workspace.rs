@@ -159,7 +159,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             default_pull_mode: PullMode::Merge,
-            auto_fetch_interval_minutes: 0,
+            auto_fetch_interval_minutes: 1,
             auto_prune: true,
             history_page_size: 200,
             diff_context_lines: 3,

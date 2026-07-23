@@ -1063,6 +1063,37 @@ mod tests {
             self.mutation("unstage_paths", path).await
         }
 
+        async fn discard_paths(&self, path: &Path, _paths: &[String]) -> ApiResult<MutationResult> {
+            self.mutation("discard_paths", path).await
+        }
+
+        async fn stash_paths(
+            &self,
+            path: &Path,
+            _paths: &[String],
+            _message: Option<&str>,
+        ) -> ApiResult<MutationResult> {
+            self.mutation("stash_paths", path).await
+        }
+
+        async fn append_gitignore(
+            &self,
+            path: &Path,
+            _patterns: &[String],
+        ) -> ApiResult<MutationResult> {
+            self.mutation("append_gitignore", path).await
+        }
+
+        async fn create_patch(
+            &self,
+            path: &Path,
+            _paths: &[String],
+            _staged: bool,
+        ) -> ApiResult<String> {
+            self.record("create_patch", path);
+            Ok(String::new())
+        }
+
         async fn resolve_conflict(
             &self,
             path: &Path,
