@@ -9,7 +9,7 @@ import { matchesKeybind } from "../lib/keybinds";
 import { ContextMenu, type ContextAction } from "./ContextMenu";
 import { FileTree, FileTreeControls } from "./FileTree";
 import type { FileTreeItem, FileViewMode } from "./FileTree";
-import { Badge, Button, IconButton } from "./Primitives";
+import { Badge, Button, IconButton, Input, TextArea } from "./Primitives";
 
 const STATUS_LABEL: Record<string, string> = {
   added: "A",
@@ -254,7 +254,7 @@ export function WorktreePanel({
 
       <div className="gc-commit-form">
         <label htmlFor="commit-message">Commit message</label>
-        <input
+        <Input
           className="gc-commit-form__summary"
           disabled={busy}
           id="commit-message"
@@ -275,7 +275,7 @@ export function WorktreePanel({
           type="text"
           value={draft.message}
         />
-        <textarea
+        <TextArea
           disabled={busy}
           id="commit-description"
           onChange={(event) => onDraftChange({ ...draft, description: event.target.value })}

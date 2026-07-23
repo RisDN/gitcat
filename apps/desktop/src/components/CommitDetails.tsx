@@ -2,7 +2,7 @@ import { CalendarClock, Check, GitCommitHorizontal, Pencil } from "lucide-react"
 import { useEffect, useId, useMemo, useState } from "react";
 
 import type { ChangedFile, CommitDetails as CommitDetailsType } from "../lib/types";
-import { Badge, Button } from "./Primitives";
+import { Badge, Button, Input, TextArea } from "./Primitives";
 import { FileTree, FileTreeControls } from "./FileTree";
 import type { FileTreeItem, FileViewMode } from "./FileTree";
 
@@ -109,7 +109,7 @@ export function CommitDetails({ details, selectedPath, busy = false, fileViewMod
           }}
         >
           <div className="gc-details__edit-subject-row">
-            <input
+            <Input
               aria-label="Commit summary"
               autoFocus
               className="gc-details__edit-subject"
@@ -120,7 +120,7 @@ export function CommitDetails({ details, selectedPath, busy = false, fileViewMod
             />
             <span className="gc-details__edit-count">{subject.length}</span>
           </div>
-          <textarea
+          <TextArea
             aria-label="Commit description"
             className="gc-details__edit-body"
             disabled={busy}

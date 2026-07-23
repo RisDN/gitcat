@@ -10,7 +10,7 @@ import type {
   ConflictResolution,
   RepositoryOperationState,
 } from "../lib/types";
-import { Button, Modal } from "./Primitives";
+import { Button, Modal, TextArea } from "./Primitives";
 
 interface ConflictResolverDialogProps {
   branchName: string;
@@ -224,7 +224,7 @@ export function ConflictResolverDialog({
             </div>
           ) : null}
           {editable ? (
-            <textarea
+            <TextArea
               aria-label="Resolved file content"
               disabled={busy}
               onChange={(event) => setResult(event.target.value)}

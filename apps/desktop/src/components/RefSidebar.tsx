@@ -14,7 +14,7 @@ import { useMemo, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 
 import type { BranchInfo, RefLabel } from "../lib/types";
-import { IconButton } from "./Primitives";
+import { IconButton, Input } from "./Primitives";
 
 export type BranchScope = "local" | "remote";
 
@@ -92,7 +92,7 @@ export function RefSidebar({
     <aside className="gc-sidebar" aria-label="References">
       <div className="gc-sidebar__filter">
         <Search size={14} />
-        <input
+        <Input
           aria-label="Filter branches"
           onChange={(event) => setFilter(event.target.value)}
           placeholder="Filter branches"

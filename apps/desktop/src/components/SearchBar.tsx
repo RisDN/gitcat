@@ -1,7 +1,7 @@
 import { ArrowDown, ArrowUp, Search, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 
-import { IconButton, Spinner } from "./Primitives";
+import { IconButton, Input, Spinner } from "./Primitives";
 
 interface SearchBarProps {
   value: string;
@@ -35,7 +35,7 @@ export function SearchBar({
   return (
     <div className="gc-search" role="search">
       <Search size={16} aria-hidden="true" />
-      <input
+      <Input
         aria-label="Search commit subject and description"
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {

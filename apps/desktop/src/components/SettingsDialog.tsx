@@ -10,7 +10,7 @@ import {
   KEYBIND_DEFINITIONS,
   type KeybindAction,
 } from "../lib/keybinds";
-import { Button, Modal } from "./Primitives";
+import { Button, Input, Modal } from "./Primitives";
 
 const COLOR_FIELDS: Array<[keyof ThemeColors, string]> = [
   ["background", "Background"],
@@ -74,7 +74,7 @@ export function SettingsDialog({ settings, defaults, onSave, onClose }: Settings
           </label>
           <label className="gc-field">
             <span>Auto-fetch interval <small>minutes, 0 disables</small></span>
-            <input
+            <Input
               max={60}
               min={0}
               onChange={(event) => setDraft((current) => ({ ...current, auto_fetch_interval_minutes: Number(event.target.value) }))}
@@ -93,7 +93,7 @@ export function SettingsDialog({ settings, defaults, onSave, onClose }: Settings
           <h3>Performance</h3>
           <label className="gc-field">
             <span>Commits per page</span>
-            <input
+            <Input
               max={500}
               min={1}
               onChange={(event) => setDraft((current) => ({ ...current, history_page_size: Number(event.target.value) }))}
@@ -103,7 +103,7 @@ export function SettingsDialog({ settings, defaults, onSave, onClose }: Settings
           </label>
           <label className="gc-field">
             <span>Diff context lines</span>
-            <input
+            <Input
               max={100}
               min={0}
               onChange={(event) => setDraft((current) => ({ ...current, diff_context_lines: Number(event.target.value) }))}

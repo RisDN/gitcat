@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { Button, Modal } from "./Primitives";
+import { Button, Input, Modal } from "./Primitives";
 
 export function PromptDialog({
   title,
@@ -48,7 +48,7 @@ export function PromptDialog({
     >
       <label className="gc-prompt-field">
         <span>{label}</span>
-        <input
+        <Input
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && value.trim()) onConfirm(value.trim());
