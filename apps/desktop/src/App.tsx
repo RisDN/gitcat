@@ -6,6 +6,7 @@ import { CommitGraph, getCommitGraphWidth, getCommitLaneColorVariable, getCommit
 import { ConflictResolverDialog } from "./components/conflict";
 import { ContextMenu, type ContextAction } from "./components/ContextMenu";
 import { DiffViewer, type DiffViewMode } from "./components/diff";
+import { fileChangeCounts } from "./components/file-tree";
 import { PromptDialog } from "./components/PromptDialog";
 import {
     RefSidebar,
@@ -295,6 +296,13 @@ function worktreeKindFromIndex(kind: ChangeKind): ChangeKind {
     if (kind === "added" || kind === "copied") return "untracked";
     if (kind === "renamed") return "modified";
     return kind;
+}
+
+function wipChangeKind(entry: StatusEntry): ChangeKind | null {
+    if (entry.conflicted) return "unmerged";
+    const kinds = [entry.index, entry.worktree].filter((kind): kind is ChangeKind => Boolean(kind));
+    if (kinds.includes("deleted")) return "deleted";
+    return kinds.find((kind) => kind === "added" || kind === "untracked" || kind === "copied") ?? kinds[0] ?? null;
 }
 
 function matchesStatusPath(entry: StatusEntry, paths: Set<string>): boolean {
@@ -1801,11 +1809,16 @@ function App() {
     const wipStats = useMemo(() => {
         const entries = snapshot?.status.entries ?? [];
         return entries.reduce(
-            (total, entry) => ({
-                additions: total.additions + (entry.index_stats?.additions ?? 0) + (entry.worktree_stats?.additions ?? 0),
-                deletions: total.deletions + (entry.index_stats?.deletions ?? 0) + (entry.worktree_stats?.deletions ?? 0),
-            }),
-            { additions: 0, deletions: 0 },
+            (total, entry) => {
+                const kind = wipChangeKind(entry);
+                const counts = kind ? fileChangeCounts(kind) : { added: 0, deleted: 0, modified: 0 };
+                return {
+                    added: total.added + counts.added,
+                    deleted: total.deleted + counts.deleted,
+                    modified: total.modified + counts.modified,
+                };
+            },
+            { added: 0, deleted: 0, modified: 0 },
         );
     }, [snapshot?.status.entries]);
     const conflictTarget = activeTab?.conflict_target_disabled
@@ -2191,18 +2204,22 @@ function App() {
                                             <span className="gc-wip-row__rail"><i /></span>
                                             <span className="gc-wip-row__message">
                                                 <strong>// WIP</strong>
-                                                <Pencil aria-hidden="true" className="gc-wip-row__change-icon" size={11} />
-                                                <span className="text-[11px]">{snapshot.status.entries.length}</span>
-                                                {wipStats.additions ? (
+                                                {wipStats.modified ? (
                                                     <span className="flex items-center gap-px font-mono text-[10px] text-foreground">
-                                                        <Plus aria-hidden="true" className="shrink-0 text-success" size={11} strokeWidth={3} />
-                                                        {wipStats.additions}
+                                                        <Pencil aria-hidden="true" className="shrink-0 text-warning" size={11} strokeWidth={3} />
+                                                        {wipStats.modified}
                                                     </span>
                                                 ) : null}
-                                                {wipStats.deletions ? (
+                                                {wipStats.added ? (
+                                                    <span className="flex items-center gap-px font-mono text-[10px] text-foreground">
+                                                        <Plus aria-hidden="true" className="shrink-0 text-success" size={11} strokeWidth={3} />
+                                                        {wipStats.added}
+                                                    </span>
+                                                ) : null}
+                                                {wipStats.deleted ? (
                                                     <span className="flex items-center gap-px font-mono text-[10px] text-foreground">
                                                         <Minus aria-hidden="true" className="shrink-0 text-danger" size={11} strokeWidth={3} />
-                                                        {wipStats.deletions}
+                                                        {wipStats.deleted}
                                                     </span>
                                                 ) : null}
                                             </span>
