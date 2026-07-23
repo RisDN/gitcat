@@ -668,13 +668,17 @@ kbd,
 /* Working tree */
 .gc-worktree { display: flex; flex-direction: column; }
 .gc-worktree__header { display: flex; min-height: 57px; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 11px; border-bottom: 1px solid var(--gc-border); }
-.gc-worktree__header > div { display: flex; align-items: center; gap: 9px; }
-.gc-worktree__header > div > div { display: flex; flex-direction: column; }
-.gc-worktree__header small { color: var(--gc-muted); font-size: 10px; }
+.gc-worktree__header > div { display: flex; min-width: 0; align-items: center; gap: 7px; }
+.gc-worktree__summary { display: flex; min-width: 0; align-items: center; gap: 5px; font-size: 12px; }
+.gc-worktree__summary strong { white-space: nowrap; }
+.gc-worktree__summary .gc-badge { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gc-worktree__header small { color: var(--gc-muted); font-size: 11px; }
+.gc-worktree__discard { width: 27px; height: 27px; border: 1px solid var(--gc-danger); border-radius: 4px; background: color-mix(in srgb, var(--gc-danger) 16%, var(--gc-background)); color: var(--gc-danger); }
+.gc-worktree__discard:hover:not(:disabled) { border-color: var(--gc-danger); background: var(--gc-danger); color: #fff; }
+.gc-worktree__discard:disabled { opacity: 0.45; cursor: default; }
 .gc-worktree__header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
 .gc-worktree__header-actions .gc-badge { gap: 4px; white-space: nowrap; }
 .gc-worktree__header-actions .gc-button { min-height: 26px; padding: 0 7px; font-size: 9px; }
-.gc-wip-node { width: 17px; height: 17px; border: 2px solid var(--gc-warning); border-radius: 5px 9px 5px 9px; background: color-mix(in srgb, var(--gc-warning) 10%, transparent); }
 .gc-status-section { border-bottom: 1px solid var(--gc-border); }
 .gc-status-section > header { display: flex; height: 34px; align-items: center; justify-content: space-between; padding: 0 9px; color: var(--gc-muted); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
 .gc-status-section > header b { color: var(--gc-text); }

@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, ChevronDown, ChevronRight, GitMerge, WandSparkles } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronRight, GitMerge, Trash2, WandSparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
@@ -181,8 +181,20 @@ export function WorktreePanel({
     <aside className="gc-worktree" aria-label="Working tree">
       <header className="gc-worktree__header">
         <div>
-          <span className="gc-wip-node" />
-          <div><strong>Working tree</strong><small>{status.clean ? "Clean" : `${status.entries.length} changed`}</small></div>
+          <IconButton
+            aria-label="Discard all changes"
+            className="gc-worktree__discard"
+            disabled={busy || !status.entries.length}
+            onClick={() => onDiscard(status.entries.map((entry) => entry.path))}
+            title="Discard all changes"
+          >
+            <Trash2 aria-hidden="true" size={15} />
+          </IconButton>
+          <div className="gc-worktree__summary">
+            <strong>{status.clean ? "No file changes" : `${status.entries.length} file change${status.entries.length === 1 ? "" : "s"}`}</strong>
+            <small>on</small>
+            <Badge tone="accent">{branchName}</Badge>
+          </div>
         </div>
         <span className="gc-worktree__header-actions">
           {conflicts.length ? (
