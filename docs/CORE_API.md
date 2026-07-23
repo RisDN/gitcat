@@ -43,7 +43,7 @@ History returns DAG/lane data, not pixels or colors. The UI chooses colors by la
 - `fast_forward_only`: `git pull --ff-only --no-rebase`
 - `rebase`: `git pull --rebase`
 
-The result never silently depends on the global `pull.rebase` value. `autostash` is a separate option and defaults to false. Network ports accept cancellation tokens; the current Tauri UI does not expose cancellation.
+The result never silently depends on the global `pull.rebase` value. `autostash` is a separate option; the desktop UI enables it for pull so unstaged work does not block merge, fast-forward, or rebase pulls. If Git stops for conflicts, the resulting in-progress operation is returned as a `MutationResult` and surfaced in the working-tree conflict UI. Network ports accept cancellation tokens; the current Tauri UI does not expose cancellation.
 
 ## Commit context menu
 

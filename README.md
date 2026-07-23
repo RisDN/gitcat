@@ -16,7 +16,7 @@ Lightweight, Windows-first desktop Git client. Tauri v2 + React UI, Rust core, a
 - GitKraken-style structured diff: aligned inline/split views, line numbers, and rename/mode/binary/truncation states.
 - WIP/working tree: separate collapsible staged/unstaged trees, optimistic staging with rollback on failure, per-file or bulk actions, separate summary and description fields, amend, sign-off, and discard-all.
 - Changed-file context menu: stage/unstage, discard, ignore the file, extension, or folder, stash a single file, copy the path, and save a patch.
-- Push and pull quick actions carrying ahead/behind counts, stash push and pop, and explicit pull modes: merge, fast-forward only, or rebase. Fetch and refresh are keybind-driven (`Ctrl+L`, `F5`).
+- Push and pull quick actions carrying ahead/behind counts, autostash-backed pull for dirty worktrees, stash push and pop, and explicit pull modes: merge, fast-forward only, or rebase. Fetch and refresh are keybind-driven (`Ctrl+L`, `F5`).
 - Commit context menu: detached checkout, branch/tag creation, cherry-pick, revert, a reset submenu (soft, mixed, hard), and full SHA copy.
 - Continue or abort an in-progress merge/rebase/cherry-pick/revert.
 - Read-only merge-conflict preflight plus an operation-aware Base/Ours/Theirs/result editor, guarded side selection, delete/stage actions, and conservative Git `rerere` reuse.

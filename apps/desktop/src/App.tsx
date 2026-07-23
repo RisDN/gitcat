@@ -1098,7 +1098,7 @@ function App() {
             branch: null,
             mode,
             prune: persisted.settings.auto_prune,
-            autostash: false,
+            autostash: true,
         }));
     }, [persisted.settings.auto_prune, persisted.settings.default_pull_mode, runMutation]);
 

@@ -4499,9 +4499,13 @@ mod tests {
         git(&updater, &["add", "--", "remote.txt"]);
         git(&updater, &["commit", "--quiet", "-m", "remote change"]);
         git(&updater, &["push", "--quiet", "origin", "main"]);
+        fs::write(directory.path().join("hello.txt"), "local dirty change\n")
+            .expect("write local dirty change");
 
         // Explicit Merge mode must override pull.ff=false and still fast-forward
         // when possible, matching GitKraken's "fast-forward if possible" choice.
+        // Autostash lets the pull proceed without forcing the user to manually
+        // stash and pop unrelated working-tree changes.
         git(directory.path(), &["config", "pull.ff", "false"]);
         backend
             .pull(
@@ -4511,12 +4515,19 @@ mod tests {
                     branch: Some("main".into()),
                     mode: PullMode::Merge,
                     prune: false,
-                    autostash: false,
+                    autostash: true,
                 },
                 CancellationToken::new(),
             )
             .await
             .expect("explicit merge-mode pull");
+        let restored_dirty_change = fs::read_to_string(directory.path().join("hello.txt"))
+            .expect("read restored dirty change")
+            .replace("\r\n", "\n");
+        assert_eq!(
+            restored_dirty_change, "local dirty change\n",
+            "autostash should restore the user's working-tree edit"
+        );
         let head = backend
             .head_oid(directory.path())
             .await
