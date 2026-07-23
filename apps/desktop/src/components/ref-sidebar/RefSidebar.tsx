@@ -1,20 +1,12 @@
-import {
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Cloud,
-  FolderGit,
-  GitBranch,
-  Monitor,
-  Plus,
-  Search,
-  Tag,
-} from "lucide-react";
+import { Check, Cloud, GitBranch, Monitor, Plus, Search, Tag } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 
-import type { BranchInfo, RefLabel } from "../lib/types";
-import { IconButton, Input } from "./Primitives";
+import { cx } from "../../lib";
+import type { BranchInfo, RefLabel } from "../../lib/types";
+import { IconButton, Input, SidePanel } from "../ui";
+import { RefButton, RefCounter, RefName, RefRow, RefStatic, RemoteIcon, TagNode } from "./RefRow";
+import { RefSection, SidebarEmpty } from "./RefSection";
 
 export type BranchScope = "local" | "remote";
 
@@ -34,6 +26,16 @@ interface RefSidebarProps {
   onCreateBranch: () => void;
   onCheckoutRemote: (branch: BranchInfo) => void;
   onBranchContextMenu: (request: BranchContextMenuRequest) => void;
+}
+
+export function remoteNameOf(branchName: string): string {
+  const slashIndex = branchName.indexOf("/");
+  return slashIndex >= 0 ? branchName.slice(0, slashIndex) : branchName;
+}
+
+export function branchNameWithoutRemote(branchName: string): string {
+  const slashIndex = branchName.indexOf("/");
+  return slashIndex >= 0 ? branchName.slice(slashIndex + 1) : branchName;
 }
 
 export function RefSidebar({
@@ -89,11 +91,12 @@ export function RefSidebar({
   };
 
   return (
-    <aside className="gc-sidebar" aria-label="References">
-      <div className="gc-sidebar__filter">
+    <SidePanel className="overflow-x-hidden" aria-label="References">
+      <div className="m-2.25 flex h-9.75 flex-[0_0_39px] items-center gap-2 rounded-[5px] border border-border bg-background px-2.25 text-muted focus-within:border-accent focus-within:text-accent">
         <Search size={14} />
         <Input
           aria-label="Filter branches"
+          className="min-w-0 flex-1 border-0 bg-transparent outline-0 placeholder:text-muted"
           onChange={(event) => setFilter(event.target.value)}
           placeholder="Filter branches"
           value={filter}
@@ -113,27 +116,35 @@ export function RefSidebar({
         }
       >
         {filteredLocal.map((branch) => (
-          <div
-            className={`gc-ref-row gc-ref-row--branch ${branch.is_head ? "gc-ref-row--current" : ""}`}
+          <RefRow
+            current={branch.is_head}
             key={branch.full_name}
             onContextMenu={(event) => openBranchMenu(branch, "local", event)}
           >
-            <button
+            <RefButton
+              className="gap-1.5 pl-1.5"
               onClick={() => onCheckout(branch)}
               onKeyDown={(event) => openBranchMenuFromKeyboard(branch, "local", event)}
-              type="button"
             >
-              <span className="gc-ref-row__lead">
+              <span className="inline-flex w-3.25 shrink-0 items-center justify-center text-success">
                 {branch.is_head ? <Check aria-label="Current branch" size={12} strokeWidth={3} /> : null}
               </span>
-              <GitBranch className="gc-ref-row__icon" size={13} />
-              <span>{branch.name}</span>
-              {branch.ahead ? <small>↑{branch.ahead}</small> : null}
-              {branch.behind ? <small>↓{branch.behind}</small> : null}
-            </button>
-          </div>
+              <GitBranch
+                className={cx(
+                  "shrink-0",
+                  branch.is_head
+                    ? "text-[color-mix(in_srgb,var(--gc-success)_70%,var(--gc-text))]"
+                    : "text-muted",
+                )}
+                size={13}
+              />
+              <RefName>{branch.name}</RefName>
+              {branch.ahead ? <RefCounter>{`↑${branch.ahead}`}</RefCounter> : null}
+              {branch.behind ? <RefCounter>{`↓${branch.behind}`}</RefCounter> : null}
+            </RefButton>
+          </RefRow>
         ))}
-        {!filteredLocal.length ? <p className="gc-sidebar__empty">No matching local branch</p> : null}
+        {!filteredLocal.length ? <SidebarEmpty>No matching local branch</SidebarEmpty> : null}
       </RefSection>
 
       <RefSection
@@ -144,32 +155,31 @@ export function RefSidebar({
         open={sections.remote}
       >
         {remoteGroups.map(([remote, branches]) => (
-          <div className="gc-ref-group" key={remote}>
-            <div className="gc-ref-row gc-ref-row--group">
-              <span className="gc-ref-row__static">
+          <div className="mt-1 first:mt-0" key={remote}>
+            <RefRow hoverable={false}>
+              <RefStatic className="gap-1.5 pl-1.5 text-[color-mix(in_srgb,var(--gc-text)_88%,var(--gc-muted))]">
                 <RemoteIcon iconUrl={remoteIconUrls?.get(remote)} />
                 {remote}
-              </span>
-            </div>
+              </RefStatic>
+            </RefRow>
             {branches.map((branch) => (
-              <div
-                className="gc-ref-row gc-ref-row--branch gc-ref-row--nested"
+              <RefRow
                 key={branch.full_name}
                 onContextMenu={(event) => openBranchMenu(branch, "remote", event)}
               >
-                <button
+                <RefButton
+                  className="gap-1.5 pl-6"
                   onClick={() => onCheckoutRemote(branch)}
                   onKeyDown={(event) => openBranchMenuFromKeyboard(branch, "remote", event)}
-                  type="button"
                 >
-                  <GitBranch className="gc-ref-row__icon" size={13} />
-                  <span>{branchNameWithoutRemote(branch.name)}</span>
-                </button>
-              </div>
+                  <GitBranch className="shrink-0 text-muted" size={13} />
+                  <RefName>{branchNameWithoutRemote(branch.name)}</RefName>
+                </RefButton>
+              </RefRow>
             ))}
           </div>
         ))}
-        {!filteredRemote.length ? <p className="gc-sidebar__empty">No matching remote branch</p> : null}
+        {!filteredRemote.length ? <SidebarEmpty>No matching remote branch</SidebarEmpty> : null}
       </RefSection>
 
       <RefSection
@@ -180,68 +190,14 @@ export function RefSidebar({
         open={sections.tags}
       >
         {tags.map((tag) => (
-          <div className="gc-ref-row" key={tag.full_name}>
-            <span className="gc-ref-row__static"><span className="gc-ref-row__node gc-ref-row__node--tag" />{tag.name}</span>
-          </div>
+          <RefRow key={tag.full_name}>
+            <RefStatic className="gap-2 pl-4.5">
+              <TagNode />
+              {tag.name}
+            </RefStatic>
+          </RefRow>
         ))}
       </RefSection>
-    </aside>
-  );
-}
-
-function RemoteIcon({ iconUrl }: { iconUrl?: string }) {
-  const [failed, setFailed] = useState(false);
-  if (!iconUrl || failed) return <FolderGit className="gc-ref-row__icon" size={13} />;
-  return (
-    <img
-      alt=""
-      aria-hidden="true"
-      className="gc-ref-row__avatar"
-      onError={() => setFailed(true)}
-      src={iconUrl}
-    />
-  );
-}
-
-export function remoteNameOf(branchName: string): string {
-  const slashIndex = branchName.indexOf("/");
-  return slashIndex >= 0 ? branchName.slice(0, slashIndex) : branchName;
-}
-
-export function branchNameWithoutRemote(branchName: string): string {
-  const slashIndex = branchName.indexOf("/");
-  return slashIndex >= 0 ? branchName.slice(slashIndex + 1) : branchName;
-}
-
-function RefSection({
-  label,
-  count,
-  icon,
-  open,
-  onToggle,
-  trailing,
-  children,
-}: {
-  label: string;
-  count: number;
-  icon: React.ReactNode;
-  open: boolean;
-  onToggle: () => void;
-  trailing?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="gc-ref-section">
-      <header>
-        <button aria-expanded={open} onClick={onToggle} type="button">
-          {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-          {icon}
-          <span>{label}</span>
-          <b>{count}</b>
-        </button>
-        {trailing}
-      </header>
-      {open ? <div className="gc-ref-section__body">{children}</div> : null}
-    </section>
+    </SidePanel>
   );
 }

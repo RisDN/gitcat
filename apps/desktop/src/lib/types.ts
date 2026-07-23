@@ -63,6 +63,11 @@ export type ChangeKind =
   | "untracked"
   | "ignored";
 
+export interface LineStats {
+  additions: number;
+  deletions: number;
+}
+
 export interface StatusEntry {
   path: string;
   old_path?: string;
@@ -70,6 +75,8 @@ export interface StatusEntry {
   worktree?: ChangeKind;
   conflicted: boolean;
   submodule: boolean;
+  index_stats?: LineStats;
+  worktree_stats?: LineStats;
 }
 
 export interface WorktreeStatus {

@@ -1,0 +1,210 @@
+import { ArrowRight, ChevronDown, ChevronRight, Copy, FileType, Folder, Minus, Pencil, Plus, TriangleAlert } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
+
+import { cx } from "../../lib";
+import type { FileViewMode } from "../../lib/types";
+import { ChangeCount, EntryName, RowAction, TreeEntry, TreeRow, fileStatusClass } from "./TreeRow";
+import {
+  buildTree,
+  collectFolderItems,
+  collectFolderPaths,
+  normalizePath,
+  pathCollator,
+  treeIndent,
+} from "./tree";
+import type { FileTreeItem, TreeNode } from "./tree";
+
+const STATUS_ICON: Record<string, LucideIcon> = {
+  added: Plus,
+  untracked: Plus,
+  modified: Pencil,
+  deleted: Minus,
+  renamed: ArrowRight,
+  copied: Copy,
+  type_changed: FileType,
+  unmerged: TriangleAlert,
+};
+
+interface FileTreeProps<T> {
+  ariaLabel: string;
+  className?: string;
+  collapseSignal?: number;
+  emptyClassName?: string;
+  emptyState: ReactNode;
+  items: readonly FileTreeItem<T>[];
+  mode: FileViewMode;
+  onSelect: (item: T) => void;
+  onItemContextMenu?: (item: T, event: ReactMouseEvent) => void;
+  onFolderContextMenu?: (folder: { path: string; items: T[] }, event: ReactMouseEvent) => void;
+  renderAction?: (item: T) => ReactNode;
+  selectedId?: string;
+}
+
+export function FileTree<T>({
+  ariaLabel,
+  className = "",
+  collapseSignal = 0,
+  emptyClassName = "",
+  emptyState,
+  items,
+  mode,
+  onSelect,
+  onItemContextMenu,
+  onFolderContextMenu,
+  renderAction,
+  selectedId,
+}: FileTreeProps<T>) {
+  const sortedItems = useMemo(
+    () => [...items].sort((left, right) => pathCollator.compare(normalizePath(left.path), normalizePath(right.path))),
+    [items],
+  );
+  const tree = useMemo(() => buildTree(items), [items]);
+  const folderPaths = useMemo(() => collectFolderPaths(tree), [tree]);
+  const [folderExpansion, setFolderExpansion] = useState<Map<string, boolean>>(() => new Map());
+  const [defaultExpanded, setDefaultExpanded] = useState<boolean | null>(null);
+  const isFolderExpanded = (path: string) => (
+    folderExpansion.get(path) ?? defaultExpanded ?? normalizePath(path).split("/").length <= 3
+  );
+  const allExpanded = folderPaths.every(isFolderExpanded);
+  const collapseSignalRef = useRef(collapseSignal);
+  const skipSelectionExpandRef = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (collapseSignalRef.current === collapseSignal) return;
+    collapseSignalRef.current = collapseSignal;
+    skipSelectionExpandRef.current = selectedId;
+    setFolderExpansion(new Map());
+    setDefaultExpanded(false);
+  }, [collapseSignal, selectedId]);
+
+  useEffect(() => {
+    if (mode !== "tree" || !selectedId) return;
+    if (skipSelectionExpandRef.current === selectedId) return;
+    const selected = items.find((item) => item.id === selectedId);
+    if (!selected) return;
+    const segments = normalizePath(selected.path).split("/").slice(0, -1);
+    const ancestors = segments.map((_, index) => segments.slice(0, index + 1).join("/"));
+    setFolderExpansion((current) => {
+      if (ancestors.every((path) => current.get(path) === true)) return current;
+      const next = new Map(current);
+      ancestors.forEach((path) => next.set(path, true));
+      return next;
+    });
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(`[data-selected="true"][data-file-tree-id="${CSS.escape(selectedId)}"]`)?.scrollIntoView({ block: "nearest" });
+    });
+  }, [items, mode, selectedId]);
+
+  const toggleFolder = (path: string) => {
+    const expanded = isFolderExpanded(path);
+    setFolderExpansion((current) => {
+      const next = new Map(current);
+      next.set(path, !expanded);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    setFolderExpansion(new Map());
+    setDefaultExpanded(!allExpanded);
+  };
+
+  const renderFile = (item: FileTreeItem<T>, label: string, depth: number) => {
+    const StatusIcon = STATUS_ICON[item.status] ?? Pencil;
+    const selected = selectedId === item.id;
+    const unmerged = item.status === "unmerged";
+    return (
+      <TreeRow
+        data-file-tree-id={item.id}
+        data-selected={selected ? "true" : undefined}
+        key={item.id}
+        onContextMenu={onItemContextMenu ? (event) => { event.preventDefault(); onItemContextMenu(item.data, event); } : undefined}
+        role="listitem"
+        selected={selected}
+        unmerged={unmerged}
+      >
+        <TreeEntry
+          aria-current={selected ? "true" : undefined}
+          className={cx("flex-1", renderAction && "pr-25.5")}
+          depth={depth}
+          onClick={() => onSelect(item.data)}
+          title={item.path}
+        >
+          <b aria-label={item.statusLabel} className={fileStatusClass(item.status)} title={item.statusLabel}>
+            <StatusIcon aria-hidden="true" size={12} strokeWidth={2.6} />
+          </b>
+          <EntryName>{label}</EntryName>
+          {item.additions ? <ChangeCount tone="add">{item.additions}</ChangeCount> : null}
+          {item.deletions ? <ChangeCount tone="remove">{item.deletions}</ChangeCount> : null}
+          {item.binary ? <small className="text-[9px] text-warning">binary</small> : null}
+        </TreeEntry>
+        {renderAction ? <RowAction pinned={unmerged}>{renderAction(item.data)}</RowAction> : null}
+      </TreeRow>
+    );
+  };
+
+  const renderNodes = (nodes: readonly TreeNode<T>[], depth: number): ReactNode => nodes.map((node) => {
+    if (node.kind === "file") return renderFile(node.item, node.name, depth);
+
+    const expanded = isFolderExpanded(node.path);
+    return (
+      <div key={node.path} role="listitem">
+        <TreeEntry
+          aria-expanded={expanded}
+          className="w-full text-[color-mix(in_srgb,var(--gc-muted)_88%,var(--gc-text))] [&>svg:first-child]:-mr-1 [&>svg]:shrink-0"
+          depth={depth}
+          onClick={() => toggleFolder(node.path)}
+          onContextMenu={onFolderContextMenu ? (event) => {
+            event.preventDefault();
+            onFolderContextMenu({ path: node.path, items: collectFolderItems(node.children) }, event);
+          } : undefined}
+          title={node.path}
+        >
+          {expanded ? <ChevronDown aria-hidden="true" size={13} /> : <ChevronRight aria-hidden="true" size={13} />}
+          <Folder aria-hidden="true" size={14} />
+          <EntryName>{node.name}</EntryName>
+          <Pencil aria-hidden="true" className="shrink-0 text-warning" size={10} strokeWidth={3} />
+          <small className="text-right font-mono text-[9px] leading-none text-foreground">
+            {node.count}
+          </small>
+          {node.additions ? <ChangeCount tone="add">{node.additions}</ChangeCount> : null}
+          {node.deletions ? <ChangeCount tone="remove">{node.deletions}</ChangeCount> : null}
+        </TreeEntry>
+        {expanded ? (
+          <div className="flex min-w-0 flex-col gap-0.75" role="list" style={treeIndent(depth)}>
+            {renderNodes(node.children, depth + 1)}
+          </div>
+        ) : null}
+      </div>
+    );
+  });
+
+  if (!items.length) {
+    return (
+      <div className={cx("flex min-h-14.5 items-center justify-center gap-1.5 text-[10px] text-muted", emptyClassName)}>
+        {emptyState}
+      </div>
+    );
+  }
+
+  return (
+    <div className={cx("min-h-0 min-w-0 overflow-auto", className)}>
+      {mode === "tree" && folderPaths.length ? (
+        <button
+          className="flex min-h-7.25 cursor-pointer items-center bg-transparent px-2 text-[10px] text-[color-mix(in_srgb,var(--gc-text)_83%,var(--gc-muted))] hover:text-accent"
+          onClick={toggleAll}
+          type="button"
+        >
+          {allExpanded ? "Collapse all" : "Expand all"}
+        </button>
+      ) : null}
+      <div aria-label={ariaLabel} className="flex min-w-0 flex-col gap-0.75" role="list">
+        {mode === "tree"
+          ? renderNodes(tree, 0)
+          : sortedItems.map((item) => renderFile(item, normalizePath(item.path), 0))}
+      </div>
+    </div>
+  );
+}

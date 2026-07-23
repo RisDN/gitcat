@@ -479,7 +479,7 @@ function RowShaButton({ oid, shortOid, onCopy }: { oid: string; shortOid: string
     <>
       <button
         aria-label={`Copy full commit SHA ${oid}`}
-        className="gc-sha-copy gc-sha-copy--row"
+        className="relative cursor-pointer rounded-[3px] bg-transparent px-0.75 py-0.5 font-mono text-[9px] leading-none text-muted/78 hover:bg-accent/11 hover:text-accent focus-visible:bg-accent/11 focus-visible:text-accent"
         onBlur={() => setTooltipPosition(null)}
         onClick={(event) => {
           event.stopPropagation();
@@ -494,9 +494,13 @@ function RowShaButton({ oid, shortOid, onCopy }: { oid: string; shortOid: string
         {shortOid}
       </button>
       {tooltipPosition ? createPortal(
-        <span className="gc-sha-row-tooltip" role="tooltip" style={tooltipPosition}>
-          <code>{oid}</code>
-          <small>Click to copy</small>
+        <span
+          className="pointer-events-none fixed z-260 flex w-[min(340px,calc(100vw-16px))] flex-col gap-0.75 rounded-[5px] border border-border bg-menu px-2.25 py-1.75 text-foreground shadow-panel"
+          role="tooltip"
+          style={tooltipPosition}
+        >
+          <code className="font-mono text-[10px] leading-[1.45] wrap-anywhere">{oid}</code>
+          <small className="text-[9px] text-muted">Click to copy</small>
         </span>,
         document.body,
       ) : null}
@@ -625,7 +629,7 @@ const CommitRow = memo(function CommitRow({
       <span className="gc-commit-row__oid-wrap" role="cell">
         {onCopySha ? (
           <RowShaButton oid={commit.oid} onCopy={onCopySha} shortOid={commit.short_oid} />
-        ) : <span className="gc-commit-row__oid">{commit.short_oid}</span>}
+        ) : <span className="font-mono text-muted/70">{commit.short_oid}</span>}
       </span>
     </div>
   );

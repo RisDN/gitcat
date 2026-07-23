@@ -1,93 +1,37 @@
 import {
-  AlertTriangle,
   Archive,
   ArchiveRestore,
   ChevronDown,
   Download,
   GitBranchPlus,
-  GitMerge,
-  LoaderCircle,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
   Search,
   Settings,
-  ShieldCheck,
   Upload,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 
-import type { PullMode, RepositoryOperationState } from "../lib/types";
-import { IconButton, Spinner } from "./Primitives";
+import { cx } from "../../lib";
+import type { PullMode, RepositoryOperationState } from "../../lib/types";
+import { MenuHeading, MenuItem, MenuNote, MenuRadio, MenuSurface } from "../menu";
+import { IconButton, Spinner } from "../ui";
+import { CONFLICT_STATUS_TONE, ConflictIndicatorButton } from "./ConflictIndicatorButton";
+import type { ConflictIndicator } from "./ConflictIndicatorButton";
+import { RepositoryContext } from "./RepositoryContext";
+import { ToolbarAction } from "./ToolbarAction";
+import { handleMenuKeyDown } from "./menuKeys";
+
+export type { ConflictIndicator };
 
 export const PULL_LABELS: Record<PullMode, string> = {
   merge: "Pull (merge)",
   fast_forward_only: "Pull (fast-forward only)",
   rebase: "Pull (rebase)",
 };
-
-export interface ConflictIndicator {
-  state: "checking" | "clean" | "conflicting" | "active" | "unavailable";
-  label: string;
-  count?: number;
-}
-
-function handleMenuKeyDown(
-  event: ReactKeyboardEvent<HTMLDivElement>,
-  close: () => void,
-  restoreFocus: () => void,
-) {
-  const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
-  const current = items.indexOf(document.activeElement as HTMLButtonElement);
-  let next: number | null = null;
-  if (event.key === "ArrowDown") next = (current + 1 + items.length) % items.length;
-  else if (event.key === "ArrowUp") next = (current - 1 + items.length) % items.length;
-  else if (event.key === "Home") next = 0;
-  else if (event.key === "End") next = items.length - 1;
-  else if (event.key === "Escape") {
-    event.preventDefault();
-    close();
-    requestAnimationFrame(restoreFocus);
-    return;
-  } else if (event.key === "Tab") {
-    close();
-    return;
-  }
-  if (next !== null && items[next]) {
-    event.preventDefault();
-    items[next].focus();
-  }
-}
-
-interface ToolbarActionProps {
-  accent?: boolean;
-  count?: number;
-  disabled?: boolean;
-  icon: ReactNode;
-  label: string;
-  onClick: () => void;
-  title?: string;
-}
-
-function ToolbarAction({ accent = false, count, disabled = false, icon, label, onClick, title }: ToolbarActionProps) {
-  return (
-    <button
-      className={`gc-toolbar-action${accent ? " gc-toolbar-action--accent" : ""}`}
-      disabled={disabled}
-      onClick={onClick}
-      title={title ?? label}
-      type="button"
-    >
-      <span className="gc-toolbar-action__label">{label}</span>
-      <span className="gc-toolbar-action__icon">
-        {icon}
-        {count ? <b>{count > 99 ? "99+" : count}</b> : null}
-      </span>
-    </button>
-  );
-}
 
 interface ToolbarProps {
   repositoryName: string;
@@ -199,21 +143,11 @@ export function Toolbar({
   }, [conflictOpen]);
 
   return (
-    <header className="gc-toolbar">
-      <div className="gc-toolbar__context">
-        <div className="gc-repository-switcher">
-          <span className="gc-toolbar__caption">repository</span>
-          <strong>{repositoryName}</strong>
-        </div>
-        <span className="gc-toolbar__slash" aria-hidden="true">/</span>
-        <div className="gc-repository-switcher">
-          <span className="gc-toolbar__caption">branch</span>
-          <strong>{branchName}</strong>
-        </div>
-      </div>
+    <header className="z-15 grid min-h-15.25 flex-[0_0_61px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2.75 border-b border-border bg-[color-mix(in_srgb,var(--gc-panel)_91%,black)] px-3 py-2">
+      <RepositoryContext branchName={branchName} repositoryName={repositoryName} />
 
-      <div className="gc-toolbar__actions" aria-label="Repository actions">
-        <div className="gc-split-action" ref={menuRef}>
+      <div className="flex min-w-0 items-center gap-1.25 justify-self-center" aria-label="Repository actions">
+        <div className="relative flex items-center gap-px" ref={menuRef}>
           <ToolbarAction
             accent={behind > 0}
             count={behind}
@@ -227,14 +161,15 @@ export function Toolbar({
             aria-expanded={pullOpen}
             aria-haspopup="menu"
             aria-label="Choose pull mode"
+            className="h-11! w-4.5! border-0! enabled:hover:bg-row-hover!"
             disabled={busy}
             onClick={() => setPullOpen((open) => !open)}
           >
             <ChevronDown size={14} />
           </IconButton>
           {pullOpen ? (
-            <div
-              className="gc-pull-menu"
+            <MenuSurface
+              className="absolute left-0 top-11.5 z-120 w-60.5 rounded-[7px]! p-2!"
               onKeyDown={(event) => handleMenuKeyDown(
                 event,
                 () => setPullOpen(false),
@@ -242,25 +177,31 @@ export function Toolbar({
               )}
               role="menu"
             >
-              <p>Pull behavior</p>
+              <MenuHeading className="mx-1.75 mb-1.75 mt-0.75 text-[10px] font-bold tracking-[0.07em]">
+                Pull behavior
+              </MenuHeading>
               {(Object.keys(PULL_LABELS) as PullMode[]).map((mode) => (
-                <button
+                <MenuItem
                   aria-checked={pullMode === mode}
-                  className={pullMode === mode ? "gc-pull-menu__active" : ""}
+                  density="roomy"
                   key={mode}
                   onClick={() => {
                     onPullModeChange(mode);
                     setPullOpen(false);
                   }}
                   role="menuitemradio"
-                  type="button"
                 >
-                  <i aria-hidden="true" />
+                  <MenuRadio
+                    checked={pullMode === mode}
+                    className={pullMode === mode ? "size-2.5 border-[3px]" : "size-2.5 border"}
+                  />
                   <span>{PULL_LABELS[mode]}</span>
-                </button>
+                </MenuItem>
               ))}
-              <small>Choice overrides global Git pull settings.</small>
-            </div>
+              <MenuNote className="block border-t border-border px-1.75 pb-0.5 pt-1.75">
+                Choice overrides global Git pull settings.
+              </MenuNote>
+            </MenuSurface>
           ) : null}
         </div>
         <ToolbarAction
@@ -294,27 +235,22 @@ export function Toolbar({
         />
       </div>
 
-      <div className="gc-toolbar__tail">
-        {operation !== "normal" ? <span className="gc-operation-chip">{operation.replace("_", " ")}</span> : null}
+      <div className="flex min-w-0 items-center justify-end gap-1.5">
+        {operation !== "normal" ? (
+          <span className="rounded border border-[color-mix(in_srgb,var(--gc-warning)_55%,var(--gc-border))] px-2 py-1 text-[10px] font-bold uppercase text-warning">
+            {operation.replace("_", " ")}
+          </span>
+        ) : null}
         {busy || refreshing ? <Spinner label={busy ? "Repository operation running" : "Refreshing repository"} /> : null}
-        <div className="gc-conflict-control" ref={conflictMenuRef}>
-          <IconButton
-            aria-expanded={conflictOpen}
-            aria-haspopup="menu"
-            aria-label={conflictIndicator.label}
-            className={`gc-conflict-indicator gc-conflict-indicator--${conflictIndicator.state}`}
+        <div className="relative grid" ref={conflictMenuRef}>
+          <ConflictIndicatorButton
+            expanded={conflictOpen}
+            indicator={conflictIndicator}
             onClick={() => { setConflictOpen((open) => !open); setPullOpen(false); }}
-            title={conflictIndicator.label}
-          >
-            {conflictIndicator.state === "checking" ? <LoaderCircle aria-hidden="true" className="gc-spin" size={18} /> : null}
-            {conflictIndicator.state === "clean" ? <ShieldCheck aria-hidden="true" size={18} /> : null}
-            {conflictIndicator.state === "conflicting" || conflictIndicator.state === "active" ? <AlertTriangle aria-hidden="true" size={18} /> : null}
-            {conflictIndicator.state === "unavailable" ? <GitMerge aria-hidden="true" size={18} /> : null}
-            {conflictIndicator.count ? <b>{conflictIndicator.count}</b> : null}
-          </IconButton>
+          />
           {conflictOpen ? (
-            <div
-              className="gc-conflict-menu"
+            <MenuSurface
+              className="absolute right-0 top-8.75 z-95 flex max-h-[min(430px,calc(100vh-108px))] w-71.5 flex-col"
               onKeyDown={(event) => handleMenuKeyDown(
                 event,
                 () => setConflictOpen(false),
@@ -322,34 +258,45 @@ export function Toolbar({
               )}
               role="menu"
             >
-              <button className={`gc-conflict-menu__status gc-conflict-menu__status--${conflictIndicator.state}`} onClick={() => { onConflictIndicator(); setConflictOpen(false); }} role="menuitem" type="button">
-                <strong>{conflictIndicator.label}</strong>
-                <small>Show status details</small>
-              </button>
-              <p>Compare current branch with</p>
-              <button
+              <MenuItem
+                className="flex-col items-start rounded-b-none rounded-t-[3px] border-b border-border"
+                density="dense"
+                onClick={() => { onConflictIndicator(); setConflictOpen(false); }}
+                role="menuitem"
+              >
+                <strong className={cx("text-[10px]", CONFLICT_STATUS_TONE[conflictIndicator.state])}>
+                  {conflictIndicator.label}
+                </strong>
+                <small className="text-[9px] text-muted">Show status details</small>
+              </MenuItem>
+              <MenuHeading className="mx-2 mb-1 mt-1.75 text-[9px] font-[750] tracking-[0.06em]">
+                Compare current branch with
+              </MenuHeading>
+              <MenuItem
                 aria-checked={!conflictTarget}
+                density="dense"
                 onClick={() => { onConflictTargetChange(null); setConflictOpen(false); }}
                 role="menuitemradio"
-                type="button"
               >
-                <i aria-hidden="true" />
-                <span>No target</span>
-              </button>
+                <MenuRadio checked={!conflictTarget} className="size-2 border" filled />
+                <span className="overflow-hidden text-ellipsis whitespace-nowrap">No target</span>
+              </MenuItem>
               {conflictTargets.map((target) => (
-                <button
+                <MenuItem
                   aria-checked={conflictTarget === target}
+                  density="dense"
                   key={target}
                   onClick={() => { onConflictTargetChange(target); setConflictOpen(false); }}
                   role="menuitemradio"
-                  type="button"
                 >
-                  <i aria-hidden="true" />
-                  <span>{target}</span>
-                </button>
+                  <MenuRadio checked={conflictTarget === target} className="size-2 border" filled />
+                  <span className="overflow-hidden text-ellipsis whitespace-nowrap">{target}</span>
+                </MenuItem>
               ))}
-              <small>Read-only merge preview. Your worktree and index are not changed.</small>
-            </div>
+              <MenuNote className="px-2 pb-1 pt-1.75 text-[9px]">
+                Read-only merge preview. Your worktree and index are not changed.
+              </MenuNote>
+            </MenuSurface>
           ) : null}
         </div>
         <IconButton

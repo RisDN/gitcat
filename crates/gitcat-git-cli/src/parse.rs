@@ -3,7 +3,8 @@ use std::collections::{HashMap, HashSet};
 use gitcat_contracts::{
     ApiError, ApiResult, BranchInfo, ChangeKind, ChangedFile, CommitDetails, CommitSearchHit,
     CommitSummary, CommitTime, DiffHunk, DiffLine, DiffLineKind, DiffStats, FileDiff, GraphCell,
-    HeadState, Identity, RefKind, RefLabel, StashEntry, StashRef, StatusEntry, WorktreeStatus,
+    HeadState, Identity, LineStats, RefKind, RefLabel, StashEntry, StashRef, StatusEntry,
+    WorktreeStatus,
 };
 
 use gitcat_contracts::ErrorCode;
@@ -143,6 +144,8 @@ pub(crate) fn parse_status(output: &[u8]) -> ApiResult<ParsedStatus> {
                 worktree: Some(ChangeKind::Untracked),
                 conflicted: false,
                 submodule: false,
+                index_stats: None,
+                worktree_stats: None,
             }),
             Some(b'!') => entries.push(StatusEntry {
                 path: text(record.get(2..).unwrap_or_default()).into_owned(),
@@ -151,6 +154,8 @@ pub(crate) fn parse_status(output: &[u8]) -> ApiResult<ParsedStatus> {
                 worktree: Some(ChangeKind::Ignored),
                 conflicted: false,
                 submodule: false,
+                index_stats: None,
+                worktree_stats: None,
             }),
             _ => return Err(parse_error("Unknown porcelain v2 status record")),
         }
@@ -222,6 +227,8 @@ fn status_entry(
         worktree,
         conflicted,
         submodule: !submodule.starts_with(b"N..."),
+        index_stats: None,
+        worktree_stats: None,
     })
 }
 
@@ -562,6 +569,25 @@ fn parse_file_status(value: &[u8]) -> ApiResult<(ChangeKind, Option<u8>, usize)>
 }
 
 type FileStats = (Option<u64>, Option<u64>, bool);
+
+pub(crate) fn parse_line_stats(output: &[u8]) -> ApiResult<HashMap<String, LineStats>> {
+    let stats = parse_numstat(output)?;
+    Ok(stats
+        .into_iter()
+        .filter_map(|(path, (additions, deletions, binary))| {
+            if binary {
+                return None;
+            }
+            Some((
+                path,
+                LineStats {
+                    additions: additions?,
+                    deletions: deletions?,
+                },
+            ))
+        })
+        .collect())
+}
 
 fn parse_numstat(output: &[u8]) -> ApiResult<HashMap<String, FileStats>> {
     let tokens: Vec<&[u8]> = output

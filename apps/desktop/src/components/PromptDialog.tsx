@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
-import { Button, Input, Modal } from "./Primitives";
+import { FIELD_INPUT } from "../lib";
+import { Button, Input, Modal, ModalSpacer } from "./ui";
 
 export function PromptDialog({
   title,
@@ -35,7 +36,7 @@ export function PromptDialog({
       description={description}
       footer={
         <>
-          <span className="gc-modal__spacer" />
+          <ModalSpacer />
           <Button onClick={onClose}>Cancel</Button>
           <Button disabled={!value.trim()} onClick={() => onConfirm(value.trim())} tone={danger ? "danger" : "accent"}>
             {confirmLabel}
@@ -46,9 +47,10 @@ export function PromptDialog({
       title={title}
       width="small"
     >
-      <label className="gc-prompt-field">
+      <label className="flex flex-col gap-1.75 text-[11px] font-[650] text-muted">
         <span>{label}</span>
         <Input
+          className={FIELD_INPUT}
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && value.trim()) onConfirm(value.trim());

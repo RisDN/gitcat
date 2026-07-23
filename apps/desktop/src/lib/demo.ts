@@ -426,18 +426,21 @@ class DemoGitCatApi implements GitCatApi {
           index: "modified",
           conflicted: false,
           submodule: false,
+          index_stats: { additions: 34, deletions: 12 },
         },
         {
           path: "apps/desktop/src/styles.css",
           worktree: "modified",
           conflicted: false,
           submodule: false,
+          worktree_stats: { additions: 18, deletions: 5 },
         },
         {
           path: "apps/desktop/src/components/CommandMenu.tsx",
           worktree: "untracked",
           conflicted: false,
           submodule: false,
+          worktree_stats: { additions: 96, deletions: 0 },
         },
       ],
     },
@@ -1142,6 +1145,7 @@ class DemoGitCatApi implements GitCatApi {
       worktree: "modified",
       conflicted: false,
       submodule: false,
+      worktree_stats: { additions: 21, deletions: 5 },
     };
     this.snapshotValue.status.entries = [restored];
     this.snapshotValue.status.clean = false;

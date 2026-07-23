@@ -19,7 +19,8 @@ use crate::{
     parse::{
         DETAIL_FORMAT, LOG_FORMAT, ParsedStatus, REF_FORMAT, STASH_FORMAT, STASH_GRAPH_FORMAT,
         StashGraph, parse_changed_files, parse_commit_details, parse_file_diff, parse_git_version,
-        parse_log, parse_refs, parse_search_hits, parse_stash_graph, parse_stashes, parse_status,
+        parse_line_stats, parse_log, parse_refs, parse_search_hits, parse_stash_graph,
+        parse_stashes, parse_status,
     },
     runner::{GitCommandOutput, GitRunOptions, GitRunner, os_args, redact_sensitive},
 };
@@ -31,6 +32,8 @@ const MAX_SEARCH_RESULTS: usize = 10_000;
 const MAX_DIFF_BYTES: usize = 128 * 1024 * 1024;
 const MAX_COMMIT_MESSAGE_BYTES: usize = 1024 * 1024;
 const MAX_CONFLICT_TEXT_BYTES: usize = 1024 * 1024;
+const MAX_UNTRACKED_STAT_BYTES: u64 = 1024 * 1024;
+const MAX_UNTRACKED_STAT_FILES: usize = 2000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct UnmergedIndexEntry {
@@ -245,6 +248,96 @@ impl GitCliBackend {
             ]),
         )
         .await
+    }
+
+    async fn line_stats(&self, path: &Path, cached: bool) -> ApiResult<HashMap<String, LineStats>> {
+        let mut args = os_args(&[
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "-M",
+            "--numstat",
+            "-z",
+        ]);
+        if cached {
+            args.push("--cached".into());
+        }
+        let output = self.read_allow_failure(Some(path), args).await?;
+        if !output.success() {
+            return Ok(HashMap::new());
+        }
+        parse_line_stats(&output.stdout)
+    }
+
+    // Untracked files never reach `git diff --numstat`, so their additions come
+    // from counting the lines on disk. Large or binary files stay unmeasured.
+    async fn untracked_line_stats(
+        &self,
+        path: &Path,
+        paths: Vec<String>,
+    ) -> ApiResult<HashMap<String, LineStats>> {
+        if paths.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let root = path.to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            let mut stats = HashMap::new();
+            for relative in paths.into_iter().take(MAX_UNTRACKED_STAT_FILES) {
+                let file = root.join(&relative);
+                let Ok(metadata) = fs::metadata(&file) else {
+                    continue;
+                };
+                if !metadata.is_file() || metadata.len() > MAX_UNTRACKED_STAT_BYTES {
+                    continue;
+                }
+                let Ok(bytes) = fs::read(&file) else {
+                    continue;
+                };
+                if bytes.contains(&0) {
+                    continue;
+                }
+                let lines = bytes.iter().filter(|byte| **byte == b'\n').count() as u64
+                    + u64::from(!bytes.is_empty() && !bytes.ends_with(b"\n"));
+                stats.insert(
+                    relative,
+                    LineStats {
+                        additions: lines,
+                        deletions: 0,
+                    },
+                );
+            }
+            stats
+        })
+        .await
+        .map_err(blocking_line_stats_task_error)
+    }
+
+    async fn apply_line_stats(&self, path: &Path, status: &mut WorktreeStatus) -> ApiResult<()> {
+        if status.entries.is_empty() {
+            return Ok(());
+        }
+        let untracked: Vec<String> = status
+            .entries
+            .iter()
+            .filter(|entry| {
+                matches!(entry.worktree, Some(ChangeKind::Untracked)) && !entry.submodule
+            })
+            .map(|entry| entry.path.clone())
+            .collect();
+        let (worktree, index, new_files) = tokio::try_join!(
+            self.line_stats(path, false),
+            self.line_stats(path, true),
+            self.untracked_line_stats(path, untracked)
+        )?;
+        for entry in &mut status.entries {
+            entry.index_stats = index.get(&entry.path).copied();
+            entry.worktree_stats = if matches!(entry.worktree, Some(ChangeKind::Untracked)) {
+                new_files.get(&entry.path).copied()
+            } else {
+                worktree.get(&entry.path).copied()
+            };
+        }
+        Ok(())
     }
 
     async fn refs_output(&self, path: &Path) -> ApiResult<GitCommandOutput> {
@@ -1210,7 +1303,9 @@ impl GitBackend for GitCliBackend {
     }
 
     async fn snapshot(&self, path: &Path) -> ApiResult<RepositorySnapshot> {
-        let (generation, refs_output, parsed_status) = self.generation_and_refs(path).await?;
+        let (generation, refs_output, mut parsed_status) = self.generation_and_refs(path).await?;
+        self.apply_line_stats(path, &mut parsed_status.status)
+            .await?;
         let refs = parse_refs(&refs_output)?;
         let mut local_branches = Vec::new();
         let mut remote_branches = Vec::new();
@@ -2612,6 +2707,14 @@ impl GitBackend for GitCliBackend {
     }
 }
 
+fn blocking_line_stats_task_error(error: tokio::task::JoinError) -> ApiError {
+    ApiError::new(
+        ErrorCode::Internal,
+        "Untracked line count worker task failed unexpectedly",
+    )
+    .with_details(error.to_string())
+}
+
 fn blocking_conflict_task_error(error: tokio::task::JoinError) -> ApiError {
     ApiError::new(
         ErrorCode::Internal,
@@ -3997,6 +4100,77 @@ mod tests {
         assert_eq!(diff.stats.deletions, 0);
         assert_eq!(diff.hunks.len(), 1);
         assert_eq!(diff.new_path, "fresh.txt");
+    }
+
+    #[tokio::test]
+    async fn snapshot_reports_line_stats_for_staged_worktree_and_untracked_changes() {
+        let directory = tempdir().expect("temp repository");
+        let backend = GitCliBackend::default();
+        backend
+            .init_repository(directory.path(), "main")
+            .await
+            .expect("initialize repository");
+        fs::write(directory.path().join("tracked.txt"), "one\ntwo\n").expect("write tracked file");
+        backend
+            .stage_paths(directory.path(), &["tracked.txt".into()])
+            .await
+            .expect("stage tracked file");
+        backend
+            .create_commit(
+                directory.path(),
+                &CommitOptions {
+                    message: "chore: seed".into(),
+                    amend: false,
+                    signoff: false,
+                },
+            )
+            .await
+            .expect("seed commit");
+
+        fs::write(directory.path().join("staged.txt"), "alpha\nbeta\n").expect("write staged file");
+        backend
+            .stage_paths(directory.path(), &["staged.txt".into()])
+            .await
+            .expect("stage new file");
+        fs::write(directory.path().join("tracked.txt"), "one\ntwo\nthree\n")
+            .expect("modify tracked file");
+        fs::write(directory.path().join("fresh.txt"), "new\nlines\nhere\n")
+            .expect("write untracked file");
+
+        let snapshot = backend
+            .snapshot(directory.path())
+            .await
+            .expect("snapshot with stats");
+        let stats = |path: &str| {
+            snapshot
+                .status
+                .entries
+                .iter()
+                .find(|entry| entry.path == path)
+                .cloned()
+                .unwrap_or_else(|| panic!("status entry for {path}"))
+        };
+        assert_eq!(
+            stats("staged.txt").index_stats,
+            Some(LineStats {
+                additions: 2,
+                deletions: 0
+            })
+        );
+        assert_eq!(
+            stats("tracked.txt").worktree_stats,
+            Some(LineStats {
+                additions: 1,
+                deletions: 0
+            })
+        );
+        assert_eq!(
+            stats("fresh.txt").worktree_stats,
+            Some(LineStats {
+                additions: 3,
+                deletions: 0
+            })
+        );
     }
 
     #[tokio::test]

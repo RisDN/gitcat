@@ -1,7 +1,7 @@
 import { ArrowDown, ArrowUp, Search, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 
-import { IconButton, Input, Spinner } from "./Primitives";
+import { IconButton, Input, Spinner } from "./ui";
 
 interface SearchBarProps {
   value: string;
@@ -33,10 +33,14 @@ export function SearchBar({
   }, [focusToken]);
 
   return (
-    <div className="gc-search" role="search">
+    <div
+      className="z-10 flex h-10.25 flex-[0_0_41px] items-center gap-1.25 border-b border-[color-mix(in_srgb,var(--gc-accent)_45%,var(--gc-border))] bg-[color-mix(in_srgb,var(--gc-accent)_8%,var(--gc-panel))] py-1.25 pl-3 pr-1.75 text-accent"
+      role="search"
+    >
       <Search size={16} aria-hidden="true" />
       <Input
         aria-label="Search commit subject and description"
+        className="min-w-20 flex-1 rounded border border-[color-mix(in_srgb,var(--gc-accent)_55%,var(--gc-border))] bg-background px-2 py-1.25 text-foreground outline-0"
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter") {
@@ -51,7 +55,7 @@ export function SearchBar({
         value={value}
       />
       {busy ? <Spinner label="Searching commits" /> : null}
-      <span className="gc-search__count">
+      <span className="min-w-14.5 text-center text-[11px] text-muted">
         {count ? `${activeIndex + 1} of ${count}` : "0 results"}
       </span>
       <IconButton aria-label="Previous result" disabled={!count} onClick={onPrevious}>

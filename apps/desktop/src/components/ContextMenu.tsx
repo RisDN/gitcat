@@ -1,8 +1,24 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronRight } from "lucide-react";
-import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import type { ComponentPropsWithRef, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+
+import { cx } from "../lib";
+import { MenuIcon, MenuItem, MenuItemHost, MenuLabel, MenuSurface } from "./menu";
 
 const NESTED_MENU_WIDTH = 268;
+
+// Slightly lighter border and rounder corners than the in-app menus.
+function ContextSurface({ className = "", ...props }: ComponentPropsWithRef<"div">) {
+  return (
+    <MenuSurface
+      className={cx(
+        "max-h-[calc(100vh-16px)] rounded-[7px]! border-[color-mix(in_srgb,var(--gc-border)_92%,white_3%)]!",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
 
 function focusWithoutScrolling(element: HTMLElement | null | undefined): void {
   element?.focus({ preventScroll: true });
@@ -79,9 +95,9 @@ export function ContextMenu({
   };
 
   return (
-    <div className="gc-context-layer" onMouseDown={onClose} role="presentation">
-      <div
-        className="gc-context-menu"
+    <div className="fixed inset-0 z-200" onMouseDown={onClose} role="presentation">
+      <ContextSurface
+        className="absolute w-61"
         ref={menuRef}
         onContextMenu={(event) => event.preventDefault()}
         onKeyDown={(event) => {
@@ -102,15 +118,15 @@ export function ContextMenu({
           if (action.submenu) {
             const open = openSubmenu?.id === action.id;
             return (
-              <div
-                className={`gc-context-menu__submenu-host${action.separatorBefore ? " gc-context-menu__separator" : ""}`}
+              <MenuItemHost
                 key={action.id}
+                separatorBefore={action.separatorBefore}
                 onMouseLeave={() => setOpenSubmenu((current) => (current?.id === action.id ? null : current))}
               >
-                <button
+                <MenuItem
                   aria-expanded={open}
                   aria-haspopup="menu"
-                  className={action.danger ? "gc-context-menu__danger" : ""}
+                  danger={action.danger}
                   disabled={action.disabled}
                   onClick={(event) => {
                     if (openSubmenu?.id === action.id) setOpenSubmenu(null);
@@ -124,53 +140,52 @@ export function ContextMenu({
                   }}
                   ref={(node) => { buttonRefs.current[index] = node; }}
                   role="menuitem"
-                  type="button"
                 >
-                  {action.icon !== undefined ? <span className="gc-context-menu__icon">{action.icon}</span> : null}
-                  <span className="gc-context-menu__label">{action.label}</span>
-                  <ChevronRight aria-hidden="true" className="gc-context-menu__chevron" size={13} />
-                </button>
+                  {action.icon !== undefined ? <MenuIcon>{action.icon}</MenuIcon> : null}
+                  <MenuLabel>{action.label}</MenuLabel>
+                  <ChevronRight aria-hidden="true" className="ml-auto text-muted" size={13} />
+                </MenuItem>
                 {open ? (
-                  <div
-                    className="gc-context-menu gc-context-menu--nested"
+                  <ContextSurface
+                    className="fixed z-201 w-67"
                     role="menu"
                     style={{ left: openSubmenu.left, top: openSubmenu.top }}
                   >
                     {action.submenu.map((child) => (
-                      <button
-                        className={`${child.separatorBefore ? "gc-context-menu__separator" : ""} ${child.danger ? "gc-context-menu__danger" : ""}`}
+                      <MenuItem
+                        danger={child.danger}
                         disabled={child.disabled}
                         key={child.id}
                         onClick={() => onAction(child.id)}
                         role="menuitem"
-                        type="button"
+                        separatorBefore={child.separatorBefore}
                       >
-                        {child.icon !== undefined ? <span className="gc-context-menu__icon">{child.icon}</span> : null}
-                        <span className="gc-context-menu__label">{child.label}</span>
-                      </button>
+                        {child.icon !== undefined ? <MenuIcon>{child.icon}</MenuIcon> : null}
+                        <MenuLabel>{child.label}</MenuLabel>
+                      </MenuItem>
                     ))}
-                  </div>
+                  </ContextSurface>
                 ) : null}
-              </div>
+              </MenuItemHost>
             );
           }
           return (
-            <button
-              className={`${action.separatorBefore ? "gc-context-menu__separator" : ""} ${action.danger ? "gc-context-menu__danger" : ""}`}
+            <MenuItem
+              danger={action.danger}
               disabled={action.disabled}
               key={action.id}
               onClick={() => onAction(action.id)}
               onMouseEnter={() => setOpenSubmenu(null)}
               ref={(node) => { buttonRefs.current[index] = node; }}
               role="menuitem"
-              type="button"
+              separatorBefore={action.separatorBefore}
             >
-              {action.icon !== undefined ? <span className="gc-context-menu__icon">{action.icon}</span> : null}
-              <span className="gc-context-menu__label">{action.label}</span>
-            </button>
+              {action.icon !== undefined ? <MenuIcon>{action.icon}</MenuIcon> : null}
+              <MenuLabel>{action.label}</MenuLabel>
+            </MenuItem>
           );
         })}
-      </div>
+      </ContextSurface>
     </div>
   );
 }

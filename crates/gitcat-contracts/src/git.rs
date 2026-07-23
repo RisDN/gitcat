@@ -117,6 +117,12 @@ pub enum ChangeKind {
     Ignored,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LineStats {
+    pub additions: u64,
+    pub deletions: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StatusEntry {
     pub path: String,
@@ -128,6 +134,10 @@ pub struct StatusEntry {
     pub worktree: Option<ChangeKind>,
     pub conflicted: bool,
     pub submodule: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index_stats: Option<LineStats>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree_stats: Option<LineStats>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
