@@ -11,6 +11,12 @@ export interface FileTreeItem<T> {
   deletions?: number | null;
 }
 
+export interface FileChangeCounts {
+  added: number;
+  deleted: number;
+  modified: number;
+}
+
 interface MutableFolder<T> {
   name: string;
   path: string;
@@ -23,8 +29,7 @@ export interface FolderNode<T> {
   name: string;
   path: string;
   count: number;
-  additions: number;
-  deletions: number;
+  changeCounts: FileChangeCounts;
   children: TreeNode<T>[];
 }
 
@@ -52,8 +57,28 @@ function compareNames(left: { name: string }, right: { name: string }): number {
 interface FolderTotals<T> {
   children: TreeNode<T>[];
   count: number;
-  additions: number;
-  deletions: number;
+  changeCounts: FileChangeCounts;
+}
+
+export function fileChangeCounts(status: string): FileChangeCounts {
+  if (status === "added" || status === "untracked" || status === "copied") {
+    return { added: 1, deleted: 0, modified: 0 };
+  }
+  if (status === "deleted") {
+    return { added: 0, deleted: 1, modified: 0 };
+  }
+  return { added: 0, deleted: 0, modified: 1 };
+}
+
+function sumChangeCounts(...counts: readonly FileChangeCounts[]): FileChangeCounts {
+  return counts.reduce<FileChangeCounts>(
+    (total, count) => ({
+      added: total.added + count.added,
+      deleted: total.deleted + count.deleted,
+      modified: total.modified + count.modified,
+    }),
+    { added: 0, deleted: 0, modified: 0 },
+  );
 }
 
 function finalizeFolder<T>(folder: MutableFolder<T>): FolderTotals<T> {
@@ -65,8 +90,7 @@ function finalizeFolder<T>(folder: MutableFolder<T>): FolderTotals<T> {
         name: child.name,
         path: child.path,
         count: finalized.count,
-        additions: finalized.additions,
-        deletions: finalized.deletions,
+        changeCounts: finalized.changeCounts,
         children: finalized.children,
       };
     })
@@ -79,17 +103,13 @@ function finalizeFolder<T>(folder: MutableFolder<T>): FolderTotals<T> {
       item,
     }));
 
-  const sum = (
-    pick: (item: FileTreeItem<T>) => number | null | undefined,
-    folderPick: (child: FolderNode<T>) => number,
-  ) => fileNodes.reduce((total, node) => total + (pick(node.item) ?? 0), 0)
-    + folderNodes.reduce((total, child) => total + folderPick(child), 0);
-
   return {
     children: [...folderNodes, ...fileNodes],
     count: fileNodes.length + folderNodes.reduce((total, child) => total + child.count, 0),
-    additions: sum((item) => item.additions, (child) => child.additions),
-    deletions: sum((item) => item.deletions, (child) => child.deletions),
+    changeCounts: sumChangeCounts(
+      ...fileNodes.map((node) => fileChangeCounts(node.item.status)),
+      ...folderNodes.map((child) => child.changeCounts),
+    ),
   };
 }
 

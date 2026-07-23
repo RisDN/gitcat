@@ -1,4 +1,4 @@
-import { Minus, Plus } from "lucide-react";
+import { Minus, Pencil, Plus } from "lucide-react";
 import type { ComponentPropsWithRef } from "react";
 
 import { cx } from "../../lib";
@@ -70,6 +70,15 @@ export function ChangeCount({ tone, children }: { tone: "add" | "remove"; childr
         size={10}
         strokeWidth={3}
       />
+      {children}
+    </small>
+  );
+}
+
+export function ModifiedCount({ children }: { children: number }) {
+  return (
+    <small className="flex shrink-0 items-center gap-px font-mono text-[9px] leading-none text-foreground">
+      <Pencil aria-hidden="true" className="shrink-0 text-warning" size={10} strokeWidth={3} />
       {children}
     </small>
   );

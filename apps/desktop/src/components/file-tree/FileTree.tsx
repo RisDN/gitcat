@@ -5,15 +5,17 @@ import type { LucideIcon } from "lucide-react";
 
 import { cx } from "../../lib";
 import type { FileViewMode } from "../../lib/types";
-import { ChangeCount, EntryName, RowAction, TreeEntry, TreeRow, fileStatusClass } from "./TreeRow";
+import { ChangeCount, EntryName, ModifiedCount, RowAction, TreeEntry, TreeRow, fileStatusClass } from "./TreeRow";
 import {
   buildTree,
   collectFolderItems,
   collectFolderPaths,
+  fileChangeCounts,
   normalizePath,
   pathCollator,
   treeIndent,
 } from "./tree";
+import type { FileChangeCounts } from "./tree";
 import type { FileTreeItem, TreeNode } from "./tree";
 
 const STATUS_ICON: Record<string, LucideIcon> = {
@@ -26,6 +28,16 @@ const STATUS_ICON: Record<string, LucideIcon> = {
   type_changed: FileType,
   unmerged: TriangleAlert,
 };
+
+function renderFileCountSummary(counts: FileChangeCounts, showModified: boolean): ReactNode {
+  return (
+    <>
+      {showModified && counts.modified ? <ModifiedCount>{counts.modified}</ModifiedCount> : null}
+      {counts.added ? <ChangeCount tone="add">{counts.added}</ChangeCount> : null}
+      {counts.deleted ? <ChangeCount tone="remove">{counts.deleted}</ChangeCount> : null}
+    </>
+  );
+}
 
 interface FileTreeProps<T> {
   ariaLabel: string;
@@ -136,8 +148,7 @@ export function FileTree<T>({
             <StatusIcon aria-hidden="true" size={12} strokeWidth={2.6} />
           </b>
           <EntryName>{label}</EntryName>
-          {item.additions ? <ChangeCount tone="add">{item.additions}</ChangeCount> : null}
-          {item.deletions ? <ChangeCount tone="remove">{item.deletions}</ChangeCount> : null}
+          {renderFileCountSummary(fileChangeCounts(item.status), false)}
           {item.binary ? <small className="text-[9px] text-warning">binary</small> : null}
         </TreeEntry>
         {renderAction ? <RowAction pinned={unmerged}>{renderAction(item.data)}</RowAction> : null}
@@ -165,12 +176,7 @@ export function FileTree<T>({
           {expanded ? <ChevronDown aria-hidden="true" size={13} /> : <ChevronRight aria-hidden="true" size={13} />}
           <Folder aria-hidden="true" size={14} />
           <EntryName>{node.name}</EntryName>
-          <Pencil aria-hidden="true" className="shrink-0 text-warning" size={10} strokeWidth={3} />
-          <small className="text-right font-mono text-[9px] leading-none text-foreground">
-            {node.count}
-          </small>
-          {node.additions ? <ChangeCount tone="add">{node.additions}</ChangeCount> : null}
-          {node.deletions ? <ChangeCount tone="remove">{node.deletions}</ChangeCount> : null}
+          {!expanded ? renderFileCountSummary(node.changeCounts, true) : null}
         </TreeEntry>
         {expanded ? (
           <div className="flex min-w-0 flex-col gap-0.75" role="list" style={treeIndent(depth)}>
