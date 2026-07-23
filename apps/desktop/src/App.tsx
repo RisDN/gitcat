@@ -132,7 +132,7 @@ const EMPTY_STATE: PersistedState = {
   workspace: { version: 2, ungrouped_tabs: [], groups: [], active_tab_id: null },
 };
 
-const EMPTY_COMMIT_DRAFT: CommitDraft = { message: "", amend: false, signoff: false };
+const EMPTY_COMMIT_DRAFT: CommitDraft = { message: "", description: "", amend: false, signoff: false };
 
 interface RuntimeRepository {
   repository_id: string;

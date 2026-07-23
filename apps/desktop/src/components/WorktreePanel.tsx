@@ -49,8 +49,15 @@ interface WorktreePanelProps {
 
 export interface CommitDraft {
   message: string;
+  description: string;
   amend: boolean;
   signoff: boolean;
+}
+
+function buildCommitMessage(draft: CommitDraft): string {
+  const summary = draft.message.trim();
+  const description = draft.description.trim();
+  return description ? `${summary}\n\n${description}` : summary;
 }
 
 export function WorktreePanel({
@@ -159,8 +166,8 @@ export function WorktreePanel({
 
   const submit = async () => {
     if (!canCommit) return;
-    if (await onCommit(draft.message, draft.amend, draft.signoff)) {
-      onDraftChange({ ...draft, message: "", amend: false });
+    if (await onCommit(buildCommitMessage(draft), draft.amend, draft.signoff)) {
+      onDraftChange({ ...draft, message: "", description: "", amend: false });
     }
   };
 
@@ -235,7 +242,8 @@ export function WorktreePanel({
 
       <div className="gc-commit-form">
         <label htmlFor="commit-message">Commit message</label>
-        <textarea
+        <input
+          className="gc-commit-form__summary"
           disabled={busy}
           id="commit-message"
           onChange={(event) => onDraftChange({ ...draft, message: event.target.value })}
@@ -244,11 +252,31 @@ export function WorktreePanel({
               event.preventDefault();
               event.stopPropagation();
               void submit();
+              return;
+            }
+            if (event.key === "Enter") {
+              event.preventDefault();
+              document.getElementById("commit-description")?.focus();
             }
           }}
-          placeholder={"Summary\n\nOptional description"}
-          rows={5}
+          placeholder="Summary"
+          type="text"
           value={draft.message}
+        />
+        <textarea
+          disabled={busy}
+          id="commit-description"
+          onChange={(event) => onDraftChange({ ...draft, description: event.target.value })}
+          onKeyDown={(event) => {
+            if (matchesKeybind(event.nativeEvent, commitKeybind)) {
+              event.preventDefault();
+              event.stopPropagation();
+              void submit();
+            }
+          }}
+          placeholder="Description (optional)"
+          rows={4}
+          value={draft.description}
         />
         <div className="gc-commit-form__options">
           <label><input checked={draft.amend} disabled={busy} onChange={(event) => onDraftChange({ ...draft, amend: event.target.checked })} type="checkbox" /> Amend</label>
