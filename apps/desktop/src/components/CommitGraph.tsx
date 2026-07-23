@@ -77,6 +77,7 @@ interface CommitRowProps {
   index: number;
   selected: boolean;
   searchMatch: boolean;
+  searchDimmed: boolean;
   hideHeadDecoration: boolean;
   hasMultipleBranches: boolean;
   detachedHeadOid?: string | null;
@@ -472,6 +473,7 @@ const CommitRow = memo(function CommitRow({
   index,
   selected,
   searchMatch,
+  searchDimmed,
   hideHeadDecoration,
   hasMultipleBranches,
   detachedHeadOid,
@@ -508,6 +510,7 @@ const CommitRow = memo(function CommitRow({
     "gc-commit-row",
     selected ? "gc-commit-row--selected" : "",
     searchMatch ? "gc-commit-row--search-match" : "",
+    searchDimmed ? "gc-commit-row--search-dimmed" : "",
   ].filter(Boolean).join(" ");
   const accessibleLabel = [
     commit.subject,
@@ -620,6 +623,7 @@ export function CommitGraph({
     () => commits.findIndex((commit) => commit.oid === selectedOid),
     [commits, selectedOid],
   );
+  const searchActive = (searchMatchOids?.size ?? 0) > 0;
   const activeCommit = selectedIndex >= 0 ? commits[selectedIndex] : beforeFirstSelected ? undefined : commits[0];
   const activeDescendant = activeCommit ? `commit-row-${activeCommit.oid}` : undefined;
 
@@ -751,6 +755,11 @@ export function CommitGraph({
             onRefDoubleClick={onRefDoubleClick}
             onSelect={onSelect}
             remoteIconUrls={remoteIconUrls}
+            searchDimmed={
+              searchActive
+              && commit.oid !== selectedOid
+              && !searchMatchOids?.has(commit.oid)
+            }
             searchMatch={searchMatchOids?.has(commit.oid) ?? false}
             selected={commit.oid === selectedOid}
           />

@@ -537,8 +537,15 @@ kbd,
 .gc-commit-row--selected::before,
 .gc-commit-row--selected:hover::before { background: color-mix(in srgb, var(--gc-row-branch-color, var(--gc-accent)) 8%, color-mix(in srgb, var(--gc-panel) 74%, #2f4a74)); }
 .gc-commit-row > * { position: relative; z-index: 1; }
-.gc-commit-row--search-match:not(.gc-commit-row--selected) { background: color-mix(in srgb, var(--gc-warning) 8%, transparent); }
-.gc-commit-row--search-match:not(.gc-commit-row--selected)::after { position: absolute; top: 8px; right: 5px; bottom: 8px; width: 2px; background: var(--gc-warning); content: ""; }
+.gc-commit-row--search-dimmed .gc-commit-row__subject { color: color-mix(in srgb, var(--gc-muted) 62%, transparent); font-weight: 500; }
+.gc-commit-row--search-dimmed .gc-commit-row__author,
+.gc-commit-row--search-dimmed .gc-commit-row__time,
+.gc-commit-row--search-dimmed .gc-commit-row__oid-wrap { color: color-mix(in srgb, var(--gc-muted) 45%, transparent); }
+.gc-commit-row--search-dimmed .gc-commit-row__decorations { opacity: 0.42; }
+.gc-commit-row--search-dimmed .gc-commit-row__avatar { border-color: color-mix(in srgb, var(--gc-accent) 34%, var(--gc-panel)); color: color-mix(in srgb, var(--gc-muted) 62%, var(--gc-panel)); }
+.gc-commit-row--search-dimmed:hover .gc-commit-row__subject { color: color-mix(in srgb, var(--gc-muted) 88%, transparent); }
+.gc-commit-row--search-dimmed:hover .gc-commit-row__decorations { opacity: 0.72; }
+.gc-commit-row--search-dimmed:hover .gc-commit-row__avatar { border-color: color-mix(in srgb, var(--gc-accent) 62%, var(--gc-panel)); color: color-mix(in srgb, var(--gc-muted) 88%, var(--gc-panel)); }
 .gc-commit-row__graph-slot { --gc-graph-slot-color: var(--gc-lane-0); position: relative; height: 22px; overflow: hidden; border-right: 2px solid var(--gc-graph-slot-color); background: linear-gradient(to right, transparent 0 var(--gc-branch-origin, 24px), color-mix(in srgb, var(--gc-graph-slot-color) 18%, transparent) var(--gc-branch-origin, 24px) 100%); }
 .gc-commit-row__graph-slot::after { position: absolute; top: 0; right: 0; bottom: 0; left: var(--gc-branch-interactive-origin, 35px); cursor: pointer; content: ""; }
 .gc-commit-row--selected .gc-commit-row__graph-slot { background: linear-gradient(to right, transparent 0 var(--gc-branch-origin, 24px), color-mix(in srgb, var(--gc-graph-slot-color) 24%, var(--gc-panel)) var(--gc-branch-origin, 24px) 100%); }
