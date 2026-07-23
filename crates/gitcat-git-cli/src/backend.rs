@@ -98,6 +98,50 @@ impl GitCliBackend {
             .await
     }
 
+    async fn is_untracked_file(&self, path: &Path, relative: &str) -> ApiResult<bool> {
+        if !path.join(relative).is_file() {
+            return Ok(false);
+        }
+        let args = vec![
+            "ls-files".into(),
+            "-z".into(),
+            "--".into(),
+            OsString::from(relative),
+        ];
+        let listed = self.read(Some(path), args).await?;
+        Ok(listed.stdout.iter().all(|byte| *byte == 0))
+    }
+
+    async fn untracked_diff(&self, path: &Path, request: &DiffRequest) -> ApiResult<FileDiff> {
+        let mut args = os_args(&[
+            "diff",
+            "--no-index",
+            "--patch",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+        ]);
+        args.push(format!("--unified={}", request.context_lines.min(100)).into());
+        if request.ignore_whitespace {
+            args.push("--ignore-all-space".into());
+        }
+        args.push("--".into());
+        args.push("/dev/null".into());
+        args.push(request.path.as_str().into());
+        let mut options = GitRunOptions::read_only(request.max_bytes.clamp(1, MAX_DIFF_BYTES));
+        options.allow_stdout_truncation = true;
+        options.allow_failure = true;
+        options.timeout = Some(Duration::from_secs(60));
+        let output = self
+            .runner
+            .run(Some(path), &args, None, CancellationToken::new(), options)
+            .await?;
+        if !matches!(output.status.code(), Some(0 | 1)) {
+            return Err(self.runner.failure_error(&output));
+        }
+        parse_file_diff(&output.stdout, &request.path, output.stdout_truncated)
+    }
+
     async fn inspect_repository(&self, path: &Path) -> ApiResult<RepositoryInfo> {
         let selected = dunce::canonicalize(path).map_err(|error| {
             ApiError::new(
@@ -1466,6 +1510,13 @@ impl GitBackend for GitCliBackend {
 
     async fn diff(&self, path: &Path, request: &DiffRequest) -> ApiResult<FileDiff> {
         validate_relative_path(&request.path)?;
+        if matches!(
+            request.target,
+            DiffTarget::Worktree | DiffTarget::HeadToWorktree
+        ) && self.is_untracked_file(path, &request.path).await?
+        {
+            return self.untracked_diff(path, request).await;
+        }
         let mut args = match &request.target {
             DiffTarget::Worktree => os_args(&["diff"]),
             DiffTarget::Staged => os_args(&["diff", "--cached"]),
@@ -3922,6 +3973,30 @@ mod tests {
             .await
             .expect_err("hard reset needs confirmation");
         assert_eq!(error.code, ErrorCode::ProtectedOperation);
+    }
+
+    #[tokio::test]
+    async fn worktree_diff_reports_untracked_file_contents() {
+        let (directory, backend, _) = committed_repository().await;
+        fs::write(directory.path().join("fresh.txt"), "alpha\nbeta\n").expect("write new file");
+        let diff = backend
+            .diff(
+                directory.path(),
+                &DiffRequest {
+                    target: DiffTarget::Worktree,
+                    path: "fresh.txt".into(),
+                    context_lines: 3,
+                    ignore_whitespace: false,
+                    max_bytes: 1024 * 1024,
+                },
+            )
+            .await
+            .expect("untracked worktree diff");
+        assert_eq!(diff.status, ChangeKind::Added);
+        assert_eq!(diff.stats.additions, 2);
+        assert_eq!(diff.stats.deletions, 0);
+        assert_eq!(diff.hunks.len(), 1);
+        assert_eq!(diff.new_path, "fresh.txt");
     }
 
     #[tokio::test]
