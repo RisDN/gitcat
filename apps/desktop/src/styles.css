@@ -707,15 +707,15 @@ kbd,
 .gc-status-section > header b { color: var(--gc-text); }
 .gc-status-section > header button { padding: 4px 6px; border-radius: 3px; background: transparent; color: var(--gc-accent); cursor: pointer; font-size: 10px; text-transform: none; }
 .gc-status-section > header button:hover:not(:disabled) { background: var(--gc-row-hover); }
-.gc-status-section > div { max-height: 170px; padding: 0 5px 6px; overflow: auto; }
+.gc-status-section > div { padding: 0 5px 6px; overflow: auto; }
 .gc-status-row { display: flex; align-items: center; border-radius: 4px; }
 .gc-status-row:hover { background: var(--gc-row-hover); }
 .gc-status-row__file { display: flex; min-width: 0; min-height: 29px; flex: 1; align-items: center; gap: 7px; padding: 0 5px; background: transparent; color: var(--gc-muted); cursor: pointer; }
 .gc-status-row__file span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .gc-status-empty { display: flex; align-items: center; justify-content: center; gap: 5px; margin: 5px; padding: 7px; color: var(--gc-muted); font-size: 10px; }
-.gc-commit-form { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 8px; padding: 11px; }
+.gc-commit-form { display: flex; min-height: 0; flex: 0 0 auto; flex-direction: column; gap: 8px; padding: 11px; }
 .gc-commit-form > label { color: var(--gc-muted); font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
-.gc-commit-form textarea { width: 100%; min-height: 70px; flex: 1; resize: none; padding: 9px; border: 1px solid var(--gc-border); border-radius: 5px; outline: 0; background: var(--gc-background); line-height: 1.45; }
+.gc-commit-form textarea { width: 100%; height: 84px; min-height: 84px; flex: 0 0 auto; resize: none; padding: 6px 9px; border: 1px solid var(--gc-border); border-radius: 5px; outline: 0; background: var(--gc-background); line-height: 1.45; }
 .gc-commit-form__summary { width: 100%; padding: 7px 9px; border: 1px solid var(--gc-border); border-radius: 5px; outline: 0; background: var(--gc-background); line-height: 1.45; }
 .gc-commit-form textarea:focus, .gc-commit-form__summary:focus { border-color: var(--gc-accent); }
 .gc-commit-form__options { display: flex; gap: 14px; color: var(--gc-muted); font-size: 11px; }
@@ -855,7 +855,7 @@ kbd,
 
 /* Working-tree sections share one Path/Tree mode. */
 .gc-worktree > .gc-file-view-controls { flex: 0 0 39px; }
-.gc-status-section > header { height: 36px; padding: 0 8px 0 5px; }
+.gc-status-section > header { height: 36px; flex: 0 0 auto; padding: 0 8px 0 5px; }
 .gc-status-section > header .gc-status-section__toggle { display: flex; min-width: 0; flex: 1; align-items: center; gap: 4px; padding: 0 3px; background: transparent; color: var(--gc-muted); cursor: pointer; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-align: left; text-transform: uppercase; }
 .gc-status-section > header .gc-status-section__toggle:hover { color: var(--gc-text); }
 .gc-status-section > header .gc-status-section__toggle b { margin-left: 3px; }
@@ -864,8 +864,9 @@ kbd,
 .gc-status-section > header .gc-status-section__bulk:disabled { opacity: 1; cursor: default; }
 .gc-status-section > header .gc-status-section__bulk--priority { border-color: var(--gc-danger); background: color-mix(in srgb, var(--gc-danger) 16%, var(--gc-background)); font-weight: 700; }
 .gc-status-section > header .gc-status-section__bulk--priority:hover:not(:disabled) { background: var(--gc-danger); }
+.gc-status-section--open { display: flex; min-height: 96px; flex: 1 1 0; flex-direction: column; }
 .gc-status-section--open > .gc-file-tree,
-.gc-status-section--open > .gc-file-tree__empty { height: min(240px, 30vh); }
+.gc-status-section--open > .gc-file-tree__empty { min-height: 0; flex: 1 1 0; }
 .gc-status-section > .gc-file-tree { padding: 0 5px 7px; overflow: auto; }
 .gc-status-section:not(.gc-status-section--open) > header { border-bottom: 0; }
 
