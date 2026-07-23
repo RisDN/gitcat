@@ -353,14 +353,40 @@ kbd,
 .gc-conflict-menu__status--conflicting strong { color: var(--gc-warning); }
 .gc-conflict-menu__status--active strong { color: var(--gc-danger); }
 .gc-operation-chip { padding: 4px 8px; border: 1px solid color-mix(in srgb, var(--gc-warning) 55%, var(--gc-border)); border-radius: 4px; color: var(--gc-warning); font-size: 10px; font-weight: 700; text-transform: uppercase; }
-.gc-split-action { position: relative; display: flex; }
-.gc-split-action > .gc-button { border-radius: 5px 0 0 5px; }
-.gc-split-action > .gc-icon-button { width: 25px; height: 30px; border: 1px solid var(--gc-border); border-left: 0; border-radius: 0 5px 5px 0; background: color-mix(in srgb, var(--gc-panel) 88%, white 2%); }
+.gc-split-action { position: relative; display: flex; align-items: center; gap: 1px; }
+.gc-split-action > .gc-icon-button { width: 18px; height: 44px; border: 0; border-radius: 5px; background: transparent; color: var(--gc-muted); }
+.gc-split-action > .gc-icon-button:hover:not(:disabled) { background: var(--gc-row-hover); color: var(--gc-text); }
+
+.gc-toolbar-action {
+  display: flex;
+  min-width: 54px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--gc-text);
+  cursor: pointer;
+  transition: background 110ms ease, color 110ms ease, transform 80ms ease;
+}
+
+.gc-toolbar-action__label { font-size: 11px; font-weight: 600; letter-spacing: 0.01em; line-height: 1; }
+.gc-toolbar-action__icon { position: relative; display: grid; place-items: center; color: color-mix(in srgb, var(--gc-text) 78%, var(--gc-muted)); }
+.gc-toolbar-action__icon b { position: absolute; top: -5px; right: -9px; display: grid; min-width: 14px; height: 14px; place-items: center; padding: 0 3px; border-radius: 7px; background: var(--gc-accent); color: #07161b; font: 800 8px/1 "Cascadia Code", monospace; }
+.gc-toolbar-action:hover:not(:disabled) { background: var(--gc-row-hover); }
+.gc-toolbar-action:hover:not(:disabled) .gc-toolbar-action__icon { color: var(--gc-text); }
+.gc-toolbar-action:active:not(:disabled) { transform: translateY(1px); }
+.gc-toolbar-action:disabled { color: var(--gc-muted); cursor: default; opacity: 0.55; }
+.gc-toolbar-action--accent { color: var(--gc-accent); }
+.gc-toolbar-action--accent .gc-toolbar-action__icon { color: var(--gc-accent); }
 
 .gc-pull-menu {
   position: absolute;
   z-index: 120;
-  top: 35px;
+  top: 46px;
   left: 0;
   width: 242px;
   padding: 8px;
@@ -1054,8 +1080,8 @@ kbd,
 .gc-build-identity { padding-left: 11px; border-left: 1px solid var(--gc-border); color: color-mix(in srgb, var(--gc-text) 72%, var(--gc-muted)); }
 
 @media (max-width: 1080px) {
-  .gc-toolbar__actions .gc-button span:last-child { display: none; }
-  .gc-toolbar__actions .gc-button { width: 31px; padding: 0; }
+  .gc-toolbar-action__label { display: none; }
+  .gc-toolbar-action { min-width: 34px; padding: 0; }
   .gc-repository-switcher { min-width: 80px; }
   .gc-settings-grid { grid-template-columns: 1fr; }
   .gc-settings-keybinds { grid-column: 1; }

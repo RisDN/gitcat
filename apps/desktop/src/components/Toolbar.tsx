@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  Archive,
   ArchiveRestore,
   ChevronDown,
   Download,
@@ -10,17 +11,16 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
-  RefreshCw,
   Search,
   Settings,
   ShieldCheck,
   Upload,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 
 import type { PullMode, RepositoryOperationState } from "../lib/types";
-import { Button, IconButton, Spinner } from "./Primitives";
+import { IconButton, Spinner } from "./Primitives";
 
 export const PULL_LABELS: Record<PullMode, string> = {
   merge: "Pull (merge)",
@@ -61,12 +61,44 @@ function handleMenuKeyDown(
   }
 }
 
+interface ToolbarActionProps {
+  accent?: boolean;
+  count?: number;
+  disabled?: boolean;
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+  title?: string;
+}
+
+function ToolbarAction({ accent = false, count, disabled = false, icon, label, onClick, title }: ToolbarActionProps) {
+  return (
+    <button
+      className={`gc-toolbar-action${accent ? " gc-toolbar-action--accent" : ""}`}
+      disabled={disabled}
+      onClick={onClick}
+      title={title ?? label}
+      type="button"
+    >
+      <span className="gc-toolbar-action__label">{label}</span>
+      <span className="gc-toolbar-action__icon">
+        {icon}
+        {count ? <b>{count > 99 ? "99+" : count}</b> : null}
+      </span>
+    </button>
+  );
+}
+
 interface ToolbarProps {
   repositoryName: string;
   branchName: string;
   operation: RepositoryOperationState;
   busy: boolean;
   refreshing?: boolean;
+  ahead: number;
+  behind: number;
+  canStash: boolean;
+  canPop: boolean;
   pullMode: PullMode;
   leftPanelVisible: boolean;
   rightPanelVisible: boolean;
@@ -78,12 +110,11 @@ interface ToolbarProps {
   conflictTarget: string | null;
   conflictTargets: string[];
   onPullModeChange: (mode: PullMode) => void;
-  onRefresh: () => void;
-  onFetch: () => void;
   onPull: (mode: PullMode) => void;
   onPush: () => void;
   onCreateBranch: () => void;
   onStash: () => void;
+  onStashPop: () => void;
   onSearch: () => void;
   onSettings: () => void;
   onToggleLeftPanel: () => void;
@@ -98,6 +129,10 @@ export function Toolbar({
   operation,
   busy,
   refreshing = false,
+  ahead,
+  behind,
+  canStash,
+  canPop,
   pullMode,
   leftPanelVisible,
   rightPanelVisible,
@@ -109,12 +144,11 @@ export function Toolbar({
   conflictTarget,
   conflictTargets,
   onPullModeChange,
-  onRefresh,
-  onFetch,
   onPull,
   onPush,
   onCreateBranch,
   onStash,
+  onStashPop,
   onSearch,
   onSettings,
   onToggleLeftPanel,
@@ -179,12 +213,16 @@ export function Toolbar({
       </div>
 
       <div className="gc-toolbar__actions" aria-label="Repository actions">
-        <Button compact disabled={busy} icon={<RefreshCw size={16} />} onClick={onRefresh}>Refresh</Button>
-        <Button compact disabled={busy} icon={<Download size={16} />} onClick={onFetch}>Fetch</Button>
         <div className="gc-split-action" ref={menuRef}>
-          <Button compact disabled={busy} icon={<Download size={16} />} onClick={() => onPull(pullMode)}>
-            Pull
-          </Button>
+          <ToolbarAction
+            accent={behind > 0}
+            count={behind}
+            disabled={busy}
+            icon={<Download size={18} />}
+            label="Pull"
+            onClick={() => onPull(pullMode)}
+            title={PULL_LABELS[pullMode]}
+          />
           <IconButton
             aria-expanded={pullOpen}
             aria-haspopup="menu"
@@ -225,9 +263,35 @@ export function Toolbar({
             </div>
           ) : null}
         </div>
-        <Button compact disabled={busy} icon={<Upload size={16} />} onClick={onPush}>Push</Button>
-        <Button compact disabled={busy} icon={<GitBranchPlus size={16} />} onClick={onCreateBranch}>Branch</Button>
-        <Button compact disabled={busy} icon={<ArchiveRestore size={16} />} onClick={onStash}>Stash</Button>
+        <ToolbarAction
+          accent={ahead > 0}
+          count={ahead}
+          disabled={busy}
+          icon={<Upload size={18} />}
+          label="Push"
+          onClick={onPush}
+        />
+        <ToolbarAction
+          disabled={busy}
+          icon={<GitBranchPlus size={18} />}
+          label="Branch"
+          onClick={onCreateBranch}
+          title="Create branch at HEAD"
+        />
+        <ToolbarAction
+          disabled={busy || !canStash}
+          icon={<Archive size={18} />}
+          label="Stash"
+          onClick={onStash}
+          title={canStash ? "Stash uncommitted changes" : "Nothing to stash"}
+        />
+        <ToolbarAction
+          disabled={busy || !canPop}
+          icon={<ArchiveRestore size={18} />}
+          label="Pop"
+          onClick={onStashPop}
+          title={canPop ? "Pop latest stash" : "No stash to pop"}
+        />
       </div>
 
       <div className="gc-toolbar__tail">

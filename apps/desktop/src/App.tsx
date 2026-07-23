@@ -1132,6 +1132,11 @@ function App() {
     void runMutation("Changes stashed", (repository) => gitcatApi.stashPush(repository.repository_id, null, true));
   }, [runMutation]);
 
+  const popLatestStash = useCallback(() => {
+    if (!stashes.length) return;
+    void runMutation("Stash popped", (repository) => gitcatApi.stashApply(repository.repository_id, stashes[0].index, true));
+  }, [runMutation, stashes]);
+
   const continueActiveOperation = useCallback(() => {
     const operation = snapshot ? continuableOperation(snapshot.operation_state) : null;
     if (operation) void runMutation("Operation continued", (repository) => gitcatApi.continueOperation(repository.repository_id, operation));
@@ -2005,8 +2010,12 @@ function App() {
       ) : (
         <>
           <Toolbar
+            ahead={snapshot?.status.ahead ?? 0}
+            behind={snapshot?.status.behind ?? 0}
             branchName={currentBranch(snapshot)}
             busy={busy}
+            canPop={stashes.length > 0}
+            canStash={(snapshot?.status.entries.length ?? 0) > 0}
             conflictIndicator={conflictIndicator}
             conflictTarget={conflictTarget}
             conflictTargets={conflictTargets}
@@ -2015,14 +2024,13 @@ function App() {
             onCreateBranch={createBranchAtHead}
             onConflictIndicator={showConflictIndicator}
             onConflictTargetChange={selectConflictTarget}
-            onFetch={fetchActiveRepository}
             onPull={pullActiveRepository}
             onPullModeChange={(mode) => setPersisted((current) => ({ ...current, settings: { ...current.settings, default_pull_mode: mode } }))}
             onPush={pushActiveRepository}
-            onRefresh={refreshActiveRepository}
             onSearch={openSearch}
             onSettings={() => setSettingsOpen(true)}
             onStash={stashActiveRepository}
+            onStashPop={popLatestStash}
             onToggleLeftPanel={() => setLeftPanelVisible((visible) => !visible)}
             onToggleRightPanel={() => setRightPanelVisible((visible) => !visible)}
             operation={snapshot?.operation_state ?? "normal"}
