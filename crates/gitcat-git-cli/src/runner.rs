@@ -542,6 +542,16 @@ fn git_failure_error(output: &GitCommandOutput) -> ApiError {
             ErrorCode::RepositoryBusy,
             "The repository is locked by another Git process",
         )
+    } else if lower.contains("failed to remove")
+        && (lower.contains("invalid argument")
+            || lower.contains("access is denied")
+            || lower.contains("permission denied")
+            || lower.contains("being used by another process"))
+    {
+        (
+            ErrorCode::RepositoryBusy,
+            "Some files could not be removed because another process is using them",
+        )
     } else if lower.contains("no tracking information")
         || lower.contains("has no upstream branch")
         || lower.contains("no upstream configured")

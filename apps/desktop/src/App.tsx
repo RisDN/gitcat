@@ -494,7 +494,14 @@ function App() {
 
     const showError = useCallback((title: string, error: unknown) => {
         const apiError = getApiError(error);
-        addToast({ tone: "error", title, detail: apiError.details ?? apiError.message });
+        const details = apiError.details?.replace(/^(exit code \d+|terminated):\s*/i, "");
+        const fileRemovalBusy = apiError.message === "Some files could not be removed because another process is using them";
+        const detail = fileRemovalBusy
+            ? apiError.message
+            : apiError.details
+            ? `${apiError.message}\n${details}`
+            : apiError.message;
+        addToast({ tone: "error", title, detail });
     }, [addToast]);
 
     const openStoredRepositories = useCallback(async (state: PersistedState) => {
