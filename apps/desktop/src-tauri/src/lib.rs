@@ -110,12 +110,45 @@ fn repository_unwatch(watchers: State<'_, RepositoryWatchState>) {
     watchers.unwatch();
 }
 
+fn resolve_inside_root(root: &std::path::Path, relative: &str) -> ApiResult<std::path::PathBuf> {
+    let normalized = relative.replace('\\', "/");
+    let invalid = || ApiError::new(ErrorCode::InvalidPath, "invalid folder path");
+    if normalized.trim().is_empty() {
+        return Err(invalid());
+    }
+    let mut target = root.to_path_buf();
+    for segment in normalized.split('/').filter(|segment| !segment.is_empty()) {
+        if segment == "." || segment == ".." || segment.contains(':') {
+            return Err(invalid());
+        }
+        target.push(segment);
+    }
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|_| ApiError::new(ErrorCode::Internal, "could not resolve repository root"))?;
+    let canonical_target = target
+        .canonicalize()
+        .map_err(|_| ApiError::new(ErrorCode::InvalidPath, "folder does not exist"))?;
+    if !canonical_target.starts_with(&canonical_root) {
+        return Err(invalid());
+    }
+    if !canonical_target.is_dir() {
+        return Err(invalid());
+    }
+    Ok(canonical_target)
+}
+
 #[tauri::command]
 async fn repository_reveal(
     core: State<'_, Arc<CoreApi>>,
     repository_id: RepositoryId,
+    path: Option<String>,
 ) -> ApiResult<()> {
-    let root = core.repository_root(&repository_id).await?;
+    let worktree = core.repository_root(&repository_id).await?;
+    let root = match path.as_deref() {
+        Some(relative) => resolve_inside_root(std::path::Path::new(&worktree), relative)?,
+        None => std::path::PathBuf::from(&worktree),
+    };
     // Single-purpose file-manager launch for a known, open repository root.
     // No shell and no caller-supplied arguments: only the resolved worktree path.
     #[cfg(target_os = "windows")]

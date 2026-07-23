@@ -35,6 +35,7 @@ interface WorktreePanelProps {
   onStashFile: (paths: string[]) => void;
   onIgnore: (patterns: string[]) => void;
   onCreatePatch: (paths: string[], staged: boolean) => void;
+  onOpenFolder: (path: string) => void;
   onOpenDiff: (entry: StatusEntry, staged: boolean) => void;
   onCommit: (message: string, amend: boolean, signoff: boolean) => Promise<boolean>;
   onResolveConflict: (entry: StatusEntry, resolution: ConflictResolution) => void;
@@ -73,6 +74,7 @@ export function WorktreePanel({
   onStashFile,
   onIgnore,
   onCreatePatch,
+  onOpenFolder,
   onOpenDiff,
   onCommit,
   onResolveConflict,
@@ -118,10 +120,23 @@ export function WorktreePanel({
   }), [unstaged]);
 
   const [fileMenu, setFileMenu] = useState<{ entry: StatusEntry; staged: boolean; x: number; y: number } | null>(null);
+  const [folderMenu, setFolderMenu] = useState<{ path: string; entries: StatusEntry[]; staged: boolean; x: number; y: number } | null>(null);
 
   const openFileMenu = (entry: StatusEntry, staged: boolean, event: ReactMouseEvent) => {
     if (entry.conflicted) return;
+    setFolderMenu(null);
     setFileMenu({ entry, staged, x: event.clientX, y: event.clientY });
+  };
+
+  const openFolderMenu = (folder: { path: string; items: StatusEntry[] }, staged: boolean, event: ReactMouseEvent) => {
+    setFileMenu(null);
+    setFolderMenu({
+      path: folder.path,
+      entries: folder.items.filter((entry) => !entry.conflicted),
+      staged,
+      x: event.clientX,
+      y: event.clientY,
+    });
   };
 
   const fileMenuActions = useMemo<ContextAction[]>(() => {
@@ -164,6 +179,37 @@ export function WorktreePanel({
       case "patch": onCreatePatch([entry.path], staged); break;
     }
     setFileMenu(null);
+  };
+
+  const folderMenuActions = useMemo<ContextAction[]>(() => {
+    if (!folderMenu) return [];
+    const empty = !folderMenu.entries.length;
+    return [
+      folderMenu.staged
+        ? { id: "unstage", label: "Unstage folder", disabled: busy || empty }
+        : { id: "stage", label: "Stage folder", disabled: busy || empty },
+      { id: "discard", label: "Discard all changes in folder", danger: true, disabled: busy || empty },
+      { id: "ignore", label: `Ignore all files in '${folderMenu.path}/'`, disabled: busy },
+      { id: "stash", label: "Stash folder", disabled: busy || empty },
+      { id: "patch", label: "Create Patch from changes in directory", disabled: empty },
+      { id: "open", label: "Open folder", separatorBefore: true },
+    ];
+  }, [busy, folderMenu]);
+
+  const executeFolderAction = (id: string) => {
+    if (!folderMenu) return;
+    const { entries, path, staged } = folderMenu;
+    const paths = entries.map((entry) => entry.path);
+    switch (id) {
+      case "stage": onStage(paths); break;
+      case "unstage": onUnstage(paths); break;
+      case "discard": onDiscard(paths); break;
+      case "stash": onStashFile(paths); break;
+      case "ignore": onIgnore([`${path}/`]); break;
+      case "patch": onCreatePatch(paths, staged); break;
+      case "open": onOpenFolder(path); break;
+    }
+    setFolderMenu(null);
   };
 
   const submit = async () => {
@@ -229,6 +275,7 @@ export function WorktreePanel({
         onAction={() => onStage(stageable.map((entry) => entry.path))}
         onEntryAction={(entry) => onStage([entry.path])}
         onItemContextMenu={(entry, event) => openFileMenu(entry, false, event)}
+        onFolderContextMenu={(folder, event) => openFolderMenu(folder, false, event)}
         onOpenDiff={(entry) => onOpenDiff(entry, false)}
         onResolveConflict={onResolveConflict}
         onOpenConflict={onOpenConflict}
@@ -249,6 +296,7 @@ export function WorktreePanel({
         onAction={() => onUnstage(staged.map((entry) => entry.path))}
         onEntryAction={(entry) => onUnstage([entry.path])}
         onItemContextMenu={(entry, event) => openFileMenu(entry, true, event)}
+        onFolderContextMenu={(folder, event) => openFolderMenu(folder, true, event)}
         onOpenDiff={(entry) => onOpenDiff(entry, true)}
         onToggle={() => setStagedOpen((open) => !open)}
         open={stagedOpen}
@@ -317,6 +365,17 @@ export function WorktreePanel({
         />,
         document.body,
       ) : null}
+
+      {folderMenu ? createPortal(
+        <ContextMenu
+          actions={folderMenuActions}
+          onAction={executeFolderAction}
+          onClose={() => setFolderMenu(null)}
+          x={folderMenu.x}
+          y={folderMenu.y}
+        />,
+        document.body,
+      ) : null}
     </aside>
   );
 }
@@ -333,6 +392,7 @@ function StatusSection({
   onAction,
   onEntryAction,
   onItemContextMenu,
+  onFolderContextMenu,
   onOpenDiff,
   onResolveConflict,
   onOpenConflict,
@@ -354,6 +414,7 @@ function StatusSection({
   onAction: () => void;
   onEntryAction: (entry: StatusEntry) => void;
   onItemContextMenu?: (entry: StatusEntry, event: ReactMouseEvent) => void;
+  onFolderContextMenu?: (folder: { path: string; items: StatusEntry[] }, event: ReactMouseEvent) => void;
   onOpenDiff: (entry: StatusEntry) => void;
   onResolveConflict?: (entry: StatusEntry, resolution: ConflictResolution) => void;
   onOpenConflict?: (entry: StatusEntry) => void;
@@ -383,6 +444,7 @@ function StatusSection({
           items={items}
           mode={viewMode}
           onItemContextMenu={onItemContextMenu}
+          onFolderContextMenu={onFolderContextMenu}
           onSelect={onOpenDiff}
           renderAction={(entry) => (
             entry.conflicted && onResolveConflict ? (

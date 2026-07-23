@@ -2305,6 +2305,11 @@ function App() {
                     onStashFile={(paths) => void runMutation("File stashed", (repository) => gitcatApi.stashFile(repository.repository_id, paths, null))}
                     onIgnore={(patterns) => void runMutation("Updated .gitignore", (repository) => gitcatApi.appendGitignore(repository.repository_id, patterns))}
                     onCreatePatch={(paths, staged) => void createPatchFile(paths, staged)}
+                    onOpenFolder={(path) => {
+                      if (!activeRepository) return;
+                      void gitcatApi.openRepositoryFolder(activeRepository.repository_id, path)
+                        .catch((error) => showError("Could not open folder", error));
+                    }}
                     operation={snapshot.operation_state}
                     selectedFile={selectedWorktreeFile}
                     status={snapshot.status}

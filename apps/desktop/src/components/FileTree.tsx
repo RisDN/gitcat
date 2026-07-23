@@ -40,6 +40,7 @@ interface FileTreeProps<T> {
   mode: FileViewMode;
   onSelect: (item: T) => void;
   onItemContextMenu?: (item: T, event: ReactMouseEvent) => void;
+  onFolderContextMenu?: (folder: { path: string; items: T[] }, event: ReactMouseEvent) => void;
   renderAction?: (item: T) => ReactNode;
   selectedId?: string;
 }
@@ -161,6 +162,14 @@ function collectFolderPaths<T>(nodes: readonly TreeNode<T>[], paths: string[] = 
   return paths;
 }
 
+function collectFolderItems<T>(nodes: readonly TreeNode<T>[], items: T[] = []): T[] {
+  for (const node of nodes) {
+    if (node.kind === "file") items.push(node.item.data);
+    else collectFolderItems(node.children, items);
+  }
+  return items;
+}
+
 function treeIndent(depth: number): CSSProperties {
   return { "--gc-tree-depth": depth } as CSSProperties;
 }
@@ -209,6 +218,7 @@ export function FileTree<T>({
   mode,
   onSelect,
   onItemContextMenu,
+  onFolderContextMenu,
   renderAction,
   selectedId,
 }: FileTreeProps<T>) {
@@ -312,6 +322,10 @@ export function FileTree<T>({
           aria-expanded={expanded}
           className="gc-file-tree__folder"
           onClick={() => toggleFolder(node.path)}
+          onContextMenu={onFolderContextMenu ? (event) => {
+            event.preventDefault();
+            onFolderContextMenu({ path: node.path, items: collectFolderItems(node.children) }, event);
+          } : undefined}
           style={treeIndent(depth)}
           title={node.path}
           type="button"
