@@ -17,7 +17,9 @@ import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 
-export type FileViewMode = "path" | "tree";
+import type { FileViewMode } from "../lib/types";
+
+export type { FileViewMode };
 
 export interface FileTreeItem<T> {
   id: string;

@@ -413,6 +413,8 @@ export interface ThemeColors {
   graph_palette: string[];
 }
 
+export type FileViewMode = "path" | "tree";
+
 export interface AppSettings {
   default_pull_mode: PullMode;
   auto_fetch_interval_minutes: number;
@@ -420,6 +422,7 @@ export interface AppSettings {
   history_page_size: number;
   diff_context_lines: number;
   diff_max_bytes: number;
+  file_view_mode: FileViewMode;
   keybinds: KeybindSettings;
   theme: ThemeColors;
 }

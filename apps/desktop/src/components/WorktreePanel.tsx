@@ -26,6 +26,8 @@ const STATUS_LABEL: Record<string, string> = {
 interface WorktreePanelProps {
   status: WorktreeStatus;
   busy: boolean;
+  fileViewMode: FileViewMode;
+  onFileViewModeChange: (mode: FileViewMode) => void;
   onStage: (paths: string[]) => void;
   onUnstage: (paths: string[]) => void;
   onDiscard: (paths: string[]) => void;
@@ -54,6 +56,8 @@ export interface CommitDraft {
 export function WorktreePanel({
   status,
   busy,
+  fileViewMode,
+  onFileViewModeChange,
   onStage,
   onUnstage,
   onDiscard,
@@ -72,7 +76,6 @@ export function WorktreePanel({
   draft,
   onDraftChange,
 }: WorktreePanelProps) {
-  const [fileViewMode, setFileViewMode] = useState<FileViewMode>("path");
   const [unstagedOpen, setUnstagedOpen] = useState(true);
   const [stagedOpen, setStagedOpen] = useState(true);
   const staged = useMemo(() => status.entries.filter((entry) => entry.index && !entry.conflicted), [status.entries]);
@@ -192,7 +195,7 @@ export function WorktreePanel({
         </span>
       </header>
 
-      <FileTreeControls mode={fileViewMode} onModeChange={setFileViewMode} />
+      <FileTreeControls mode={fileViewMode} onModeChange={onFileViewModeChange} />
 
       <StatusSection
         actionLabel="Stage all"

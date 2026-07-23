@@ -10,6 +10,8 @@ interface CommitDetailsProps {
   details: CommitDetailsType;
   selectedPath?: string;
   busy?: boolean;
+  fileViewMode: FileViewMode;
+  onFileViewModeChange: (mode: FileViewMode) => void;
   onSelectFile: (file: ChangedFile) => void;
   onCopySha: () => void;
   onReword?: (message: string) => Promise<boolean>;
@@ -31,8 +33,7 @@ const STATUS_LABEL: Record<string, string> = {
   unmerged: "U",
 };
 
-export function CommitDetails({ details, selectedPath, busy = false, onSelectFile, onCopySha, onReword }: CommitDetailsProps) {
-  const [fileViewMode, setFileViewMode] = useState<FileViewMode>("path");
+export function CommitDetails({ details, selectedPath, busy = false, fileViewMode, onFileViewModeChange, onSelectFile, onCopySha, onReword }: CommitDetailsProps) {
   const [editing, setEditing] = useState(false);
   const [subject, setSubject] = useState(details.subject);
   const [body, setBody] = useState(details.body);
@@ -179,7 +180,7 @@ export function CommitDetails({ details, selectedPath, busy = false, onSelectFil
           <span>Changed files</span>
           <small>{details.files.length}</small>
         </div>
-        <FileTreeControls mode={fileViewMode} onModeChange={setFileViewMode} />
+        <FileTreeControls mode={fileViewMode} onModeChange={onFileViewModeChange} />
         <FileTree
           ariaLabel="Changed files"
           emptyState={<><Check aria-hidden="true" size={16} /> No changed files</>}

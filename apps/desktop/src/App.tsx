@@ -77,6 +77,7 @@ import type {
   DiffRequest,
   ExpectedState,
   FileDiff,
+  FileViewMode,
   HistoryPage,
   KeybindSettings,
   MutationResult,
@@ -99,6 +100,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   history_page_size: 200,
   diff_context_lines: 3,
   diff_max_bytes: 8 * 1024 * 1024,
+  file_view_mode: "path",
   keybinds: DEFAULT_KEYBINDS,
   theme: {
     background: "#17191f",
@@ -408,6 +410,14 @@ function App() {
   const historyLoadSequence = useRef(0);
   const searchSequence = useRef(0);
   const conflictPreflightSequence = useRef(0);
+
+  const changeFileViewMode = useCallback((mode: FileViewMode) => {
+    setPersisted((current) => (
+      current.settings.file_view_mode === mode
+        ? current
+        : { ...current, settings: { ...current.settings, file_view_mode: mode } }
+    ));
+  }, []);
 
   const activeTabId = persisted.workspace.active_tab_id;
   const activeRepository = activeTabId ? runtime[activeTabId] : undefined;
@@ -2091,6 +2101,8 @@ function App() {
                     branchName={currentBranch(snapshot)}
                     commitKeybind={persisted.settings.keybinds.commit}
                     draft={activeCommitDraft}
+                    fileViewMode={persisted.settings.file_view_mode}
+                    onFileViewModeChange={changeFileViewMode}
                     onAutoResolveConflicts={autoResolveActiveConflicts}
                     onCommit={(message, amend, signoff) => runMutation(amend ? "Commit amended" : "Commit created", (repository) => gitcatApi.createCommit(repository.repository_id, { message, amend, signoff }))}
                     onDraftChange={updateActiveCommitDraft}
@@ -2114,6 +2126,8 @@ function App() {
                   <CommitDetails
                     busy={busy || overviewLoading}
                     details={details}
+                    fileViewMode={persisted.settings.file_view_mode}
+                    onFileViewModeChange={changeFileViewMode}
                     onCopySha={() => void copySha(details.oid)}
                     onReword={snapshot ? (message) => runMutation("Commit message updated", (repository) => gitcatApi.rewordCommit(repository.repository_id, details.oid, message, expectedState(snapshot))) : undefined}
                     onSelectFile={openCommitFile}

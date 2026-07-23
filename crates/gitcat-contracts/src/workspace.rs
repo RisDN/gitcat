@@ -133,6 +133,14 @@ impl Default for ThemeColors {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileViewMode {
+    #[default]
+    Path,
+    Tree,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
@@ -142,6 +150,7 @@ pub struct AppSettings {
     pub history_page_size: usize,
     pub diff_context_lines: u16,
     pub diff_max_bytes: usize,
+    pub file_view_mode: FileViewMode,
     pub keybinds: KeybindSettings,
     pub theme: ThemeColors,
 }
@@ -155,6 +164,7 @@ impl Default for AppSettings {
             history_page_size: 200,
             diff_context_lines: 3,
             diff_max_bytes: 8 * 1024 * 1024,
+            file_view_mode: FileViewMode::default(),
             keybinds: KeybindSettings::default(),
             theme: ThemeColors::default(),
         }
