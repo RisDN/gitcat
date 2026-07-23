@@ -22,7 +22,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { PullMode, RepositoryOperationState } from "../lib/types";
 import { Button, IconButton, Spinner } from "./Primitives";
 
-const PULL_LABELS: Record<PullMode, string> = {
+export const PULL_LABELS: Record<PullMode, string> = {
   merge: "Pull (merge)",
   fast_forward_only: "Pull (fast-forward only)",
   rebase: "Pull (rebase)",

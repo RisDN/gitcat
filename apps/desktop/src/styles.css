@@ -455,10 +455,6 @@ kbd,
 .gc-ref-row--group > .gc-ref-row__static { color: color-mix(in srgb, var(--gc-text) 88%, var(--gc-muted)); }
 .gc-ref-row--group:hover { background: transparent; }
 .gc-ref-group + .gc-ref-group { margin-top: 4px; }
-.gc-ref-menu { position: absolute; z-index: 60; top: 26px; right: 2px; width: 128px; padding: 5px; border: 1px solid var(--gc-border); border-radius: 5px; background: var(--gc-panel); box-shadow: var(--gc-shadow); }
-.gc-ref-menu button { display: block; width: 100%; padding: 7px 8px; border-radius: 3px; background: transparent; color: var(--gc-text); cursor: pointer; text-align: left; }
-.gc-ref-menu button:hover { background: var(--gc-row-hover); }
-.gc-ref-menu button.danger { color: var(--gc-danger); }
 .gc-sidebar__empty { margin: 6px 20px; color: var(--gc-muted); font-size: 11px; }
 
 /* Center history and search */

@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   Copy,
+  Download,
   FolderInput,
   FolderPlus,
   FolderX,
@@ -14,6 +15,7 @@ import {
   RotateCcw,
   Tag,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import {
@@ -39,11 +41,17 @@ import { ContextMenu, type ContextAction } from "./components/ContextMenu";
 import { DiffViewer, type DiffViewMode } from "./components/DiffViewer";
 import { Button, IconButton, Spinner } from "./components/Primitives";
 import { PromptDialog } from "./components/PromptDialog";
-import { RefSidebar } from "./components/RefSidebar";
+import {
+  RefSidebar,
+  branchNameWithoutRemote,
+  remoteNameOf,
+  type BranchContextMenuRequest,
+  type BranchScope,
+} from "./components/RefSidebar";
 import { SearchBar } from "./components/SearchBar";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { ToastRegion, type ToastMessage } from "./components/ToastRegion";
-import { Toolbar, type ConflictIndicator } from "./components/Toolbar";
+import { PULL_LABELS, Toolbar, type ConflictIndicator } from "./components/Toolbar";
 import {
   TopTabs,
   type RepositoryTabContextMenuRequest,
@@ -154,8 +162,48 @@ interface TabMenuState {
   groupId: string | null;
 }
 
+interface BranchMenuState {
+  x: number;
+  y: number;
+  branch: BranchInfo;
+  scope: BranchScope;
+}
+
 function makeId(prefix: string): string {
   return `${prefix}-${crypto.randomUUID()}`;
+}
+
+// `git pull` always integrates into HEAD, so a branch row only offers it when
+// pulling that branch is the same thing as pulling the checked-out branch.
+function branchAcceptsPull(
+  snapshot: RepositorySnapshot | null,
+  branch: BranchInfo,
+  scope: BranchScope,
+): boolean {
+  const head = snapshot?.local_branches.find((candidate) => candidate.is_head);
+  if (!head?.upstream) return false;
+  return scope === "local" ? branch.is_head : head.upstream === branch.name;
+}
+
+// Pushing a row needs a concrete remote/branch pair: the branch upstream for
+// local rows, the matching local branch for remote rows.
+function branchPushTarget(
+  snapshot: RepositorySnapshot | null,
+  branch: BranchInfo,
+  scope: BranchScope,
+): { remote: string; branch: string; setUpstream: boolean } | null {
+  if (scope === "remote") {
+    const shortName = branchNameWithoutRemote(branch.name);
+    const local = snapshot?.local_branches.find((candidate) => candidate.name === shortName);
+    return local ? { remote: remoteNameOf(branch.name), branch: shortName, setUpstream: false } : null;
+  }
+  if (branch.upstream) {
+    return { remote: remoteNameOf(branch.upstream), branch: branch.name, setUpstream: false };
+  }
+  const remotes = snapshot?.remotes ?? [];
+  return remotes.length === 1
+    ? { remote: remotes[0].name, branch: branch.name, setUpstream: true }
+    : null;
 }
 
 function isMutationResult(value: unknown): value is MutationResult {
@@ -388,6 +436,7 @@ function App() {
     actions: CommitActionAvailability[];
   } | null>(null);
   const [tabMenu, setTabMenu] = useState<TabMenuState | null>(null);
+  const [branchMenu, setBranchMenu] = useState<BranchMenuState | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [sidebarWidth, setSidebarWidth] = useState(252);
   const [detailsWidth, setDetailsWidth] = useState(370);
@@ -433,6 +482,7 @@ function App() {
     setPrompt(null);
     setCommitMenu(null);
     setTabMenu(null);
+    setBranchMenu(null);
     setConflictEditor(null);
   }, [activeTabId]);
 
@@ -1342,6 +1392,7 @@ function App() {
         } else {
           setCommitMenu(null);
           setTabMenu(null);
+          setBranchMenu(null);
         }
       }
     };
@@ -1569,6 +1620,81 @@ function App() {
       closeTab(selectedTab.id);
     }
   }, [activateRepositoryTab, addToast, closeTab, moveRepositoryTab, persisted.workspace, showError, tabMenu]);
+
+  const branchContextActions = useMemo<ContextAction[]>(() => {
+    if (!branchMenu) return [];
+    const { branch, scope } = branchMenu;
+    const isLocal = scope === "local";
+    const displayName = isLocal ? branch.name : branchNameWithoutRemote(branch.name);
+    return [
+      {
+        id: "pull",
+        label: PULL_LABELS[persisted.settings.default_pull_mode],
+        icon: <Download size={15} />,
+        disabled: !branchAcceptsPull(snapshot, branch, scope),
+      },
+      {
+        id: "push",
+        label: "Push",
+        icon: <Upload size={15} />,
+        disabled: !branchPushTarget(snapshot, branch, scope),
+      },
+      { id: "create_branch", label: "Create branch here…", icon: <GitBranchPlus size={15} />, separatorBefore: true },
+      { id: "rename", label: `Rename ${displayName}…`, icon: <Pencil size={15} />, disabled: !isLocal, separatorBefore: true },
+      {
+        id: "delete",
+        label: `Delete ${displayName}…`,
+        icon: <Trash2 size={15} />,
+        danger: true,
+        disabled: !isLocal || branch.is_head,
+      },
+      { id: "copy", label: "Copy branch name", icon: <Copy size={15} />, separatorBefore: true },
+    ];
+  }, [branchMenu, persisted.settings.default_pull_mode, snapshot]);
+
+  const executeBranchAction = useCallback((action: string) => {
+    if (!branchMenu) return;
+    const { branch, scope } = branchMenu;
+    const isLocal = scope === "local";
+    const displayName = isLocal ? branch.name : branchNameWithoutRemote(branch.name);
+    setBranchMenu(null);
+    switch (action) {
+      case "pull":
+        pullActiveRepository();
+        break;
+      case "push": {
+        const target = branchPushTarget(snapshot, branch, scope);
+        if (!target) break;
+        void runMutation("Push complete", (repository) => gitcatApi.push(repository.repository_id, {
+          remote: target.remote,
+          branch: target.branch,
+          set_upstream: target.setUpstream,
+        }));
+        break;
+      }
+      case "create_branch":
+        setPrompt({ kind: "create_branch", startOid: branch.oid });
+        break;
+      case "rename":
+        if (isLocal) setPrompt({ kind: "rename_branch", branch });
+        break;
+      case "delete":
+        if (!isLocal || !snapshot || !window.confirm(`Delete local branch '${branch.name}'?`)) break;
+        void runMutation("Branch deleted", (repository) => gitcatApi.deleteBranch(
+          repository.repository_id,
+          branch.name,
+          false,
+          true,
+          expectedState(snapshot),
+        ));
+        break;
+      case "copy":
+        void navigator.clipboard.writeText(displayName)
+          .then(() => addToast({ tone: "success", title: "Branch name copied" }))
+          .catch((error) => showError("Could not copy branch name", error));
+        break;
+    }
+  }, [addToast, branchMenu, pullActiveRepository, runMutation, showError, snapshot]);
 
   const submitPrompt = useCallback((value: string) => {
     if (!prompt) return;
@@ -1940,16 +2066,21 @@ function App() {
             <div className="gc-panel-slot" hidden={!leftPanelVisible}>
                 <RefSidebar
                   localBranches={snapshot?.local_branches ?? []}
+                  onBranchContextMenu={(request: BranchContextMenuRequest) => {
+                    setCommitMenu(null);
+                    setTabMenu(null);
+                    setBranchMenu({
+                      x: request.clientX,
+                      y: request.clientY,
+                      branch: request.branch,
+                      scope: request.scope,
+                    });
+                  }}
                   onCheckout={(branch) => {
                     if (!branch.is_head) void runMutation(`Checked out ${branch.name}`, (repository) => gitcatApi.checkoutBranch(repository.repository_id, branch.name));
                   }}
                   onCheckoutRemote={(branch) => setPrompt({ kind: "remote_branch", branch })}
                   onCreateBranch={() => currentHeadOid ? setPrompt({ kind: "create_branch", startOid: currentHeadOid }) : undefined}
-                  onDeleteBranch={(branch) => {
-                    if (!snapshot || !window.confirm(`Delete local branch '${branch.name}'?`)) return;
-                    void runMutation("Branch deleted", (repository) => gitcatApi.deleteBranch(repository.repository_id, branch.name, false, true, expectedState(snapshot)));
-                  }}
-                  onRenameBranch={(branch) => setPrompt({ kind: "rename_branch", branch })}
                   remoteBranches={snapshot?.remote_branches ?? []}
                   remoteIconUrls={remoteIconUrls}
                   tags={snapshot?.tags ?? []}
@@ -2199,6 +2330,7 @@ function App() {
       ) : null}
       {commitMenu ? <ContextMenu actions={contextActions} onAction={executeCommitAction} onClose={() => setCommitMenu(null)} x={commitMenu.x} y={commitMenu.y} /> : null}
       {tabMenu ? <ContextMenu actions={tabContextActions} onAction={executeTabAction} onClose={() => setTabMenu(null)} x={tabMenu.x} y={tabMenu.y} /> : null}
+      {branchMenu ? <ContextMenu actions={branchContextActions} onAction={executeBranchAction} onClose={() => setBranchMenu(null)} x={branchMenu.x} y={branchMenu.y} /> : null}
       <ToastRegion onDismiss={(id) => setToasts((current) => current.filter((toast) => toast.id !== id))} toasts={toasts} />
     </div>
   );
