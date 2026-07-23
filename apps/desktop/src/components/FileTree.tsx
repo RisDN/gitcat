@@ -13,7 +13,7 @@ import {
   Plus,
   TriangleAlert,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 
@@ -34,6 +34,7 @@ export interface FileTreeItem<T> {
 
 interface FileTreeProps<T> {
   ariaLabel: string;
+  collapseSignal?: number;
   emptyState: ReactNode;
   items: readonly FileTreeItem<T>[];
   mode: FileViewMode;
@@ -202,6 +203,7 @@ export function FileTreeControls({
 
 export function FileTree<T>({
   ariaLabel,
+  collapseSignal = 0,
   emptyState,
   items,
   mode,
@@ -217,13 +219,25 @@ export function FileTree<T>({
   const tree = useMemo(() => buildTree(items), [items]);
   const folderPaths = useMemo(() => collectFolderPaths(tree), [tree]);
   const [folderExpansion, setFolderExpansion] = useState<Map<string, boolean>>(() => new Map());
+  const [defaultExpanded, setDefaultExpanded] = useState<boolean | null>(null);
   const isFolderExpanded = (path: string) => (
-    folderExpansion.get(path) ?? normalizePath(path).split("/").length <= 3
+    folderExpansion.get(path) ?? defaultExpanded ?? normalizePath(path).split("/").length <= 3
   );
   const allExpanded = folderPaths.every(isFolderExpanded);
+  const collapseSignalRef = useRef(collapseSignal);
+  const skipSelectionExpandRef = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (collapseSignalRef.current === collapseSignal) return;
+    collapseSignalRef.current = collapseSignal;
+    skipSelectionExpandRef.current = selectedId;
+    setFolderExpansion(new Map());
+    setDefaultExpanded(false);
+  }, [collapseSignal, selectedId]);
 
   useEffect(() => {
     if (mode !== "tree" || !selectedId) return;
+    if (skipSelectionExpandRef.current === selectedId) return;
     const selected = items.find((item) => item.id === selectedId);
     if (!selected) return;
     const segments = normalizePath(selected.path).split("/").slice(0, -1);
@@ -240,15 +254,17 @@ export function FileTree<T>({
   }, [items, mode, selectedId]);
 
   const toggleFolder = (path: string) => {
+    const expanded = isFolderExpanded(path);
     setFolderExpansion((current) => {
       const next = new Map(current);
-      next.set(path, !(current.get(path) ?? normalizePath(path).split("/").length <= 3));
+      next.set(path, !expanded);
       return next;
     });
   };
 
   const toggleAll = () => {
-    setFolderExpansion(new Map(folderPaths.map((path) => [path, !allExpanded])));
+    setFolderExpansion(new Map());
+    setDefaultExpanded(!allExpanded);
   };
 
   const renderFile = (item: FileTreeItem<T>, label: string, depth: number) => {

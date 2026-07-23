@@ -419,6 +419,7 @@ function App() {
   const [selectedPath, setSelectedPath] = useState<string | undefined>();
   const [selectedWorktreeFile, setSelectedWorktreeFile] = useState<{ path: string; staged: boolean } | null>(null);
   const [centerView, setCenterView] = useState<"graph" | "diff">("graph");
+  const [stageCollapseSignal, setStageCollapseSignal] = useState(0);
   const [busy, setBusy] = useState(false);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -787,6 +788,7 @@ function App() {
   }, [activeRepository, addToast, busy, loadOverview, overviewLoading, showError]);
 
   const stagePaths = useCallback((paths: string[]) => {
+    setStageCollapseSignal((value) => value + 1);
     void runMutation(
       "Files staged",
       (repository) => gitcatApi.stagePaths(repository.repository_id, paths),
@@ -798,6 +800,7 @@ function App() {
   }, [applyOptimisticWorktreeMutation, runMutation]);
 
   const unstagePaths = useCallback((paths: string[]) => {
+    setStageCollapseSignal((value) => value + 1);
     void runMutation(
       "Files unstaged",
       (repository) => gitcatApi.unstagePaths(repository.repository_id, paths),
@@ -2237,6 +2240,7 @@ function App() {
                   <WorktreePanel
                     busy={busy}
                     branchName={currentBranch(snapshot)}
+                    collapseSignal={stageCollapseSignal}
                     commitKeybind={persisted.settings.keybinds.commit}
                     draft={activeCommitDraft}
                     fileViewMode={persisted.settings.file_view_mode}

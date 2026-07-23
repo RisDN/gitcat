@@ -26,6 +26,7 @@ const STATUS_LABEL: Record<string, string> = {
 interface WorktreePanelProps {
   status: WorktreeStatus;
   busy: boolean;
+  collapseSignal?: number;
   fileViewMode: FileViewMode;
   onFileViewModeChange: (mode: FileViewMode) => void;
   onStage: (paths: string[]) => void;
@@ -63,6 +64,7 @@ function buildCommitMessage(draft: CommitDraft): string {
 export function WorktreePanel({
   status,
   busy,
+  collapseSignal,
   fileViewMode,
   onFileViewModeChange,
   onStage,
@@ -221,6 +223,7 @@ export function WorktreePanel({
         actionDisabled={!stageable.length}
         branchName={branchName}
         busy={busy}
+        collapseSignal={collapseSignal}
         items={unstagedItems}
         label="Unstaged"
         onAction={() => onStage(stageable.map((entry) => entry.path))}
@@ -240,6 +243,7 @@ export function WorktreePanel({
         actionLabel="Unstage all"
         actionPriority
         busy={busy}
+        collapseSignal={collapseSignal}
         items={stagedItems}
         label="Staged"
         onAction={() => onUnstage(staged.map((entry) => entry.path))}
@@ -325,6 +329,7 @@ function StatusSection({
   actionPriority = false,
   branchName = "current branch",
   busy,
+  collapseSignal,
   onAction,
   onEntryAction,
   onItemContextMenu,
@@ -345,6 +350,7 @@ function StatusSection({
   actionPriority?: boolean;
   branchName?: string;
   busy: boolean;
+  collapseSignal?: number;
   onAction: () => void;
   onEntryAction: (entry: StatusEntry) => void;
   onItemContextMenu?: (entry: StatusEntry, event: ReactMouseEvent) => void;
@@ -372,6 +378,7 @@ function StatusSection({
       {open ? (
         <FileTree
           ariaLabel={`${label} files`}
+          collapseSignal={collapseSignal}
           emptyState={<><Check aria-hidden="true" size={14} /> Nothing here</>}
           items={items}
           mode={viewMode}
