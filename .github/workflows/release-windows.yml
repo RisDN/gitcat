@@ -1,0 +1,77 @@
+name: windows-release-build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - name: Verify MSVC target
+        shell: pwsh
+        run: |
+          $hostLine = rustc -vV | Select-String '^host:'
+          if ($hostLine -notmatch 'x86_64-pc-windows-msvc') {
+            throw "Release must use x86_64-pc-windows-msvc; got $hostLine"
+          }
+      - name: Install frontend dependencies
+        working-directory: apps/desktop
+        run: npm ci
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --workspace
+      - name: Verify frontend
+        working-directory: apps/desktop
+        run: npm run typecheck
+      - name: Build NSIS installer
+        working-directory: apps/desktop
+        run: npm run tauri build -- --bundles nsis
+      - name: Verify WebView2 loader is self-contained
+        shell: pwsh
+        run: |
+          $binary = Resolve-Path 'target\release\gitcat-desktop.exe'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $dumpbin = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe' |
+            Select-Object -First 1
+          if (-not $dumpbin) {
+            throw 'dumpbin.exe not found'
+          }
+          $dependencies = & $dumpbin /DEPENDENTS $binary
+          if ($dependencies -match 'WebView2Loader\.dll') {
+            throw 'gitcat-desktop.exe still imports WebView2Loader.dll'
+          }
+          if (Test-Path 'target\release\WebView2Loader.dll') {
+            throw 'Unexpected dynamic WebView2Loader.dll in MSVC release output'
+          }
+          $installers = @(Get-ChildItem 'target\release\bundle\nsis\*-setup.exe')
+          if ($installers.Count -ne 1) {
+            throw "Expected one NSIS installer, found $($installers.Count)"
+          }
+          Get-FileHash -Algorithm SHA256 $installers[0].FullName
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gitcat-windows-msvc
+          if-no-files-found: error
+          path: |
+            target/release/bundle/nsis/*-setup.exe
+            target/release/gitcat-desktop.exe

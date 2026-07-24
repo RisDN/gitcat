@@ -4127,6 +4127,11 @@ mod tests {
             .init_repository(directory.path(), "main")
             .await
             .expect("initialize repository");
+        git(directory.path(), &["config", "user.name", "GitCat Test"]);
+        git(
+            directory.path(),
+            &["config", "user.email", "gitcat@example.test"],
+        );
         fs::write(directory.path().join("tracked.txt"), "one\ntwo\n").expect("write tracked file");
         backend
             .stage_paths(directory.path(), &["tracked.txt".into()])
