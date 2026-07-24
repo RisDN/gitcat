@@ -7,8 +7,8 @@
 //! shows up without a manual refresh.
 
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::Mutex;
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::time::Duration;
 
 use gitcat_contracts::RepositoryId;
@@ -63,15 +63,16 @@ impl RepositoryWatchState {
         }
 
         let (tx, rx) = mpsc::channel::<()>();
-        let mut watcher = notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
-            if let Ok(event) = result {
-                if paths_are_relevant(&event.paths) {
-                    // Sender error only happens once the debounce worker is gone,
-                    // which means this watcher is being torn down.
-                    let _ = tx.send(());
+        let mut watcher =
+            notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
+                if let Ok(event) = result {
+                    if paths_are_relevant(&event.paths) {
+                        // Sender error only happens once the debounce worker is gone,
+                        // which means this watcher is being torn down.
+                        let _ = tx.send(());
+                    }
                 }
-            }
-        })?;
+            })?;
         watcher.watch(&root, RecursiveMode::Recursive)?;
 
         let worker_repository_id = repository_id.clone();

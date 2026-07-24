@@ -5,7 +5,11 @@ use gitcat_contracts::{CommitSummary, GraphCell, GraphEdge, LaneState};
 /// Each lane head is the next commit expected in that lane. Keeping `lanes`
 /// between calls makes layout identical whether history is processed in one
 /// batch or several pages.
-pub fn layout_commits(commits: &mut [CommitSummary], lanes: &mut LaneState, head_oid: Option<&str>) {
+pub fn layout_commits(
+    commits: &mut [CommitSummary],
+    lanes: &mut LaneState,
+    head_oid: Option<&str>,
+) {
     reserve_head_lane(commits, lanes, head_oid);
 
     for commit in commits.iter_mut() {

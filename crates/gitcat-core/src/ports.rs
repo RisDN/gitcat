@@ -50,17 +50,9 @@ pub trait GitBackend: Send + Sync {
         paths: &[String],
         message: Option<&str>,
     ) -> ApiResult<MutationResult>;
-    async fn append_gitignore(
-        &self,
-        path: &Path,
-        patterns: &[String],
-    ) -> ApiResult<MutationResult>;
-    async fn create_patch(
-        &self,
-        path: &Path,
-        paths: &[String],
-        staged: bool,
-    ) -> ApiResult<String>;
+    async fn append_gitignore(&self, path: &Path, patterns: &[String])
+    -> ApiResult<MutationResult>;
+    async fn create_patch(&self, path: &Path, paths: &[String], staged: bool) -> ApiResult<String>;
     async fn resolve_conflict(
         &self,
         path: &Path,

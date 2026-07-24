@@ -1468,7 +1468,9 @@ impl GitBackend for GitCliBackend {
 
         let mut labels: HashMap<String, Vec<RefLabel>> = HashMap::new();
         for parsed_ref in parse_refs(&refs_output)? {
-            if matches!(parsed_ref.label.kind, RefKind::RemoteBranch) && parsed_ref.symbolic_target.is_some() {
+            if matches!(parsed_ref.label.kind, RefKind::RemoteBranch)
+                && parsed_ref.symbolic_target.is_some()
+            {
                 continue;
             }
             labels
@@ -1842,8 +1844,14 @@ impl GitBackend for GitCliBackend {
             .split('\0')
             .filter(|entry| !entry.is_empty())
             .collect();
-        let tracked_paths: Vec<&String> = paths.iter().filter(|p| tracked.contains(p.as_str())).collect();
-        let untracked_paths: Vec<&String> = paths.iter().filter(|p| !tracked.contains(p.as_str())).collect();
+        let tracked_paths: Vec<&String> = paths
+            .iter()
+            .filter(|p| tracked.contains(p.as_str()))
+            .collect();
+        let untracked_paths: Vec<&String> = paths
+            .iter()
+            .filter(|p| !tracked.contains(p.as_str()))
+            .collect();
 
         if !tracked_paths.is_empty() {
             let mut args = if self.head_oid(path).await?.is_some() {
@@ -1961,12 +1969,7 @@ impl GitBackend for GitCliBackend {
         self.mutation_result(path, before).await
     }
 
-    async fn create_patch(
-        &self,
-        path: &Path,
-        paths: &[String],
-        staged: bool,
-    ) -> ApiResult<String> {
+    async fn create_patch(&self, path: &Path, paths: &[String], staged: bool) -> ApiResult<String> {
         validate_paths(paths)?;
         let mut args = if staged {
             os_args(&["diff", "--cached", "--"])
@@ -3665,7 +3668,10 @@ mod tests {
     #[tokio::test]
     async fn reword_older_commit_preserves_author_and_replays_descendants() {
         let (directory, backend, base_oid) = committed_repository().await;
-        let author_before = git_stdout(directory.path(), &["show", "-s", "--format=%an <%ae> %aI", &base_oid]);
+        let author_before = git_stdout(
+            directory.path(),
+            &["show", "-s", "--format=%an <%ae> %aI", &base_oid],
+        );
         fs::write(directory.path().join("hello.txt"), "first\nsecond\n").expect("write second");
         backend
             .stage_paths(directory.path(), &["hello.txt".into()])
@@ -3674,7 +3680,11 @@ mod tests {
         backend
             .create_commit(
                 directory.path(),
-                &CommitOptions { message: "child commit".into(), amend: false, signoff: false },
+                &CommitOptions {
+                    message: "child commit".into(),
+                    amend: false,
+                    signoff: false,
+                },
             )
             .await
             .expect("commit child");
@@ -3689,7 +3699,10 @@ mod tests {
         // Authorship (including the author date) survives the rewrite.
         let root_oid = git_stdout(directory.path(), &["rev-list", "--max-parents=0", "HEAD"]);
         assert_eq!(
-            git_stdout(directory.path(), &["show", "-s", "--format=%an <%ae> %aI", &root_oid]),
+            git_stdout(
+                directory.path(),
+                &["show", "-s", "--format=%an <%ae> %aI", &root_oid]
+            ),
             author_before
         );
         // The working tree is unchanged by the replay (ignore platform CRLF).
@@ -3715,7 +3728,11 @@ mod tests {
         backend
             .create_commit(
                 directory.path(),
-                &CommitOptions { message: "side only".into(), amend: false, signoff: false },
+                &CommitOptions {
+                    message: "side only".into(),
+                    amend: false,
+                    signoff: false,
+                },
             )
             .await
             .expect("commit side");
