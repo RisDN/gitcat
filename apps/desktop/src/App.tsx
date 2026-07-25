@@ -436,6 +436,8 @@ function App() {
     const [overviewRepositoryId, setOverviewRepositoryId] = useState<string | null>(null);
     const activeRepositoryIdRef = useRef<string | null>(null);
     const autoRefreshRef = useRef<() => void>(() => { });
+    const autoReloadDiffRef = useRef<() => void>(() => { });
+    const openDiffRequestRef = useRef<{ sequence: number; request: DiffRequest } | null>(null);
     const autoFetchRef = useRef<() => void>(() => { });
     const lastAutoFetchRef = useRef<Map<string, number>>(new Map());
     const closedTabsRef = useRef<RepositoryTab[]>([]);
@@ -991,14 +993,17 @@ function App() {
         wipRowRef.current?.focus();
     }, [selectWip]);
 
-    const loadDiff = useCallback(async (request: DiffRequest) => {
+    const loadDiff = useCallback(async (request: DiffRequest, silent = false) => {
         if (!activeRepository) return;
         const repositoryId = activeRepository.repository_id;
         const sequence = ++diffLoadSequence.current;
-        setSelectedPath(request.path);
-        setCenterView("diff");
-        setDiff(null);
-        setDiffLoading(true);
+        openDiffRequestRef.current = { sequence, request };
+        if (!silent) {
+            setSelectedPath(request.path);
+            setCenterView("diff");
+            setDiff(null);
+            setDiffLoading(true);
+        }
         try {
             const nextDiff = await gitcatApi.diff(repositoryId, request);
             if (
@@ -1008,13 +1013,27 @@ function App() {
             setDiff(nextDiff);
         } catch (error) {
             if (
-                sequence === diffLoadSequence.current
+                !silent
+                && sequence === diffLoadSequence.current
                 && activeRepositoryIdRef.current === repositoryId
             ) showError("Diff could not be loaded", error);
         } finally {
-            if (sequence === diffLoadSequence.current) setDiffLoading(false);
+            if (!silent && sequence === diffLoadSequence.current) setDiffLoading(false);
         }
     }, [activeRepository, showError]);
+
+    const reloadOpenWorktreeDiff = useCallback(() => {
+        const open = openDiffRequestRef.current;
+        if (!activeRepository || !open || diffLoading) return;
+        if (open.sequence !== diffLoadSequence.current) return;
+        const target = open.request.target.kind;
+        if (target !== "worktree" && target !== "staged") return;
+        void loadDiff(open.request, true);
+    }, [activeRepository, diffLoading, loadDiff]);
+
+    useEffect(() => {
+        autoReloadDiffRef.current = reloadOpenWorktreeDiff;
+    }, [reloadOpenWorktreeDiff]);
 
     const openCommitFile = useCallback((file: ChangedFile) => {
         if (!selectedOid) return;
@@ -1164,9 +1183,10 @@ function App() {
 
     const refreshActiveRepository = useCallback(() => {
         if (!activeRepository || busy || overviewLoading) return;
+        reloadOpenWorktreeDiff();
         void loadOverview(activeRepository, true)
             .catch((error) => showError("Refresh failed", error));
-    }, [activeRepository, busy, loadOverview, overviewLoading, showError]);
+    }, [activeRepository, busy, loadOverview, overviewLoading, reloadOpenWorktreeDiff, showError]);
 
     const backgroundRefreshActiveRepository = useCallback(() => {
         if (!activeRepository || busy || overviewLoading) return;
@@ -1241,6 +1261,7 @@ function App() {
                 (event) => {
                     if (event.payload.repository_id === activeRepositoryIdRef.current) {
                         autoRefreshRef.current();
+                        autoReloadDiffRef.current();
                     }
                 },
             );
