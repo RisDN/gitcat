@@ -393,6 +393,7 @@ function App() {
     const [stashes, setStashes] = useState<StashEntry[]>([]);
     const [selectedOid, setSelectedOid] = useState<string | null>(null);
     const selectedOidRef = useRef<string | null>(null);
+    const pendingSelectionRef = useRef<{ index: number; subject: string } | null>(null);
     const [wipSelected, setWipSelected] = useState(false);
     const wipRowRef = useRef<HTMLButtonElement>(null);
     const [details, setDetails] = useState<Awaited<ReturnType<typeof gitcatApi.commitDetails>> | null>(null);
@@ -586,8 +587,20 @@ function App() {
                 setSnapshot(overview.snapshot);
                 setHistory(overview.history);
                 setStashes(overview.stashes);
+                const pending = pendingSelectionRef.current;
+                pendingSelectionRef.current = null;
+                // A reword rebuilds the commit under a new oid; re-find it by
+                // position (the replay keeps the order) and fall back to subject.
+                const rewritten = pending
+                    ? overview.history.commits[pending.index]?.subject === pending.subject
+                        ? overview.history.commits[pending.index]
+                        : overview.history.commits.find((commit) => commit.subject === pending.subject)
+                    : undefined;
                 const previous = preserveSelection ? selectedOidRef.current : null;
-                if (previous && overview.history.commits.some((commit) => commit.oid === previous)) {
+                if (rewritten) {
+                    setSelectedOid(rewritten.oid);
+                    setWipSelected(false);
+                } else if (previous && overview.history.commits.some((commit) => commit.oid === previous)) {
                     setSelectedOid(previous);
                     setWipSelected(false);
                 } else if (!overview.snapshot.status.clean) {
@@ -781,6 +794,18 @@ function App() {
             setBusy(false);
         }
     }, [activeRepository, addToast, busy, loadOverview, overviewLoading, showError]);
+
+    const rewordCommit = useCallback((oid: string, message: string) => {
+        if (!snapshot) return Promise.resolve(false);
+        const index = history?.commits.findIndex((commit) => commit.oid === oid) ?? -1;
+        const expected = expectedState(snapshot);
+        return runMutation("Commit message updated", (repository) => gitcatApi
+            .rewordCommit(repository.repository_id, oid, message, expected)
+            .then((result) => {
+                if (index >= 0) pendingSelectionRef.current = { index, subject: message.split("\n")[0].trim() };
+                return result;
+            }));
+    }, [history, runMutation, snapshot]);
 
     const stagePaths = useCallback((paths: string[]) => {
         setStageCollapseSignal((value) => value + 1);
@@ -2367,7 +2392,7 @@ function App() {
                                     fileViewMode={persisted.settings.file_view_mode}
                                     onFileViewModeChange={changeFileViewMode}
                                     onCopySha={() => void copySha(details.oid)}
-                                    onReword={snapshot ? (message) => runMutation("Commit message updated", (repository) => gitcatApi.rewordCommit(repository.repository_id, details.oid, message, expectedState(snapshot))) : undefined}
+                                    onReword={snapshot ? (message) => rewordCommit(details.oid, message) : undefined}
                                     onSelectFile={openCommitFile}
                                     selectedPath={selectedPath}
                                 />
