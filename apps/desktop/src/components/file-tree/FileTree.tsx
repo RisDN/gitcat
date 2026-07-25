@@ -111,9 +111,11 @@ export function FileTree<T>({
 
   const toggleFolder = (path: string) => {
     const expanded = isFolderExpanded(path);
+    const prefix = `${path}/`;
     setFolderExpansion((current) => {
       const next = new Map(current);
       next.set(path, !expanded);
+      folderPaths.filter((candidate) => candidate.startsWith(prefix)).forEach((candidate) => next.set(candidate, !expanded));
       return next;
     });
   };
