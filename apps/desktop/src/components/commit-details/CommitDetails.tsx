@@ -1,12 +1,13 @@
 import { CalendarClock, Check } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { identityInitials, parseCoAuthors } from "../../lib";
 import type { ChangedFile, CommitDetails as CommitDetailsType } from "../../lib/types";
 import type { FileTreeItem, FileViewMode } from "../file-tree";
 import { FileTree, FileTreeControls } from "../file-tree";
 import { Badge, SidePanel } from "../ui";
 import { MessageEditor, MessageView } from "./CommitMessage";
-import { Avatar, FilesHeader, FilesPanel, IdentityRow, StatsRow } from "./CommitSections";
+import { Avatar, CoAuthorRow, FilesHeader, FilesPanel, IdentityRow, StatsRow } from "./CommitSections";
 import { ShaBar, ShaCopy } from "./ShaBar";
 
 interface CommitDetailsProps {
@@ -63,11 +64,8 @@ export function CommitDetails({ details, selectedPath, busy = false, fileViewMod
         setBody(details.body);
     };
     const authored = new Date(details.authored_at.seconds * 1000);
-    const initials = details.author.name
-        .split(/\s+/)
-        .slice(0, 2)
-        .map((part) => part[0]?.toUpperCase())
-        .join("");
+    const initials = identityInitials(details.author.name);
+    const coAuthors = useMemo(() => parseCoAuthors(details.body), [details.body]);
     const fileItems = useMemo<FileTreeItem<ChangedFile>[]>(() => details.files.map((file) => ({
         id: file.new_path,
         path: file.new_path,
@@ -106,13 +104,13 @@ export function CommitDetails({ details, selectedPath, busy = false, fileViewMod
             <IdentityRow>
                 <Avatar initials={initials} />
                 <div className="flex min-w-0 flex-col gap-0.5">
-                    <strong className="overflow-hidden text-ellipsis whitespace-nowrap">{details.author.name}</strong>
-                    <span className="overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-muted">{details.author.email}</span>
+                    <strong className="overflow-hidden text-ellipsis whitespace-nowrap" title={details.author.email}>{details.author.name}</strong>
                     <small className="mt-0.75 flex items-center gap-1 text-[10px] text-muted">
                         <CalendarClock size={12} /> {authored.toLocaleString()}
                     </small>
                 </div>
             </IdentityRow>
+            <CoAuthorRow coAuthors={coAuthors} />
             <StatsRow>
                 <Badge tone="accent">{details.stats.files} files</Badge>
                 <span className="font-bold text-success">+{details.stats.additions}</span>
