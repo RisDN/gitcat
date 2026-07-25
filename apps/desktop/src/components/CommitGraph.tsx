@@ -267,6 +267,17 @@ function defaultFormatTimestamp(seconds: number): string {
   return date ? dateFormatter.format(date) : "Unknown date";
 }
 
+// The graph row is a single line, so the description body collapses onto it
+// with its line breaks rendered as pipes.
+function descriptionPreview(commit: CommitSummary): string {
+  const preview = commit.body_preview
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(" | ");
+  return preview === commit.subject.trim() ? "" : preview;
+}
+
 function plural(value: number, unit: string): string {
   return `${value} ${unit}${value === 1 ? "" : "s"} ago`;
 }
@@ -541,6 +552,10 @@ const CommitRow = memo(function CommitRow({
     ? formatTimestamp(commit.authored_at.seconds, commit.authored_at.offset_minutes)
     : defaultFormatTimestamp(commit.authored_at.seconds);
   const authoredDate = dateFromUnixSeconds(commit.authored_at.seconds);
+  const description = descriptionPreview(commit);
+  const rowTitle = commit.body_preview && commit.body_preview !== commit.subject
+    ? `${commit.subject}\n\n${commit.body_preview}`
+    : commit.subject;
   const initials = commit.author.name
     .split(/\s+/)
     .filter(Boolean)
@@ -617,8 +632,9 @@ const CommitRow = memo(function CommitRow({
           {commit.stash ? <Inbox size={11} strokeWidth={2.4} /> : initials.slice(0, 1) || "?"}
         </span>
       </span>
-      <span className="gc-commit-row__subject" role="cell" title={commit.body_preview || commit.subject}>
+      <span className="gc-commit-row__subject" role="cell" title={rowTitle}>
         {commit.subject || "(no commit message)"}
+        {description ? <span className="gc-commit-row__description">{description}</span> : null}
       </span>
       <span className="gc-commit-row__author" role="cell" title={commit.author.email}>
         {commit.author.name}

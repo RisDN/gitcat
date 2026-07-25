@@ -412,6 +412,10 @@
   @apply min-w-0 cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap px-[7px] text-[11px] font-[570] text-foreground;
 }
 
+.gc-commit-row__description {
+  @apply ml-[8px] font-[440] text-muted;
+}
+
 .gc-commit-row__decorations {
   @apply flex min-w-0 gap-[3px] overflow-visible px-[6px];
 }
