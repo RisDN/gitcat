@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, CheckCircle2, Copy, Download, FolderInput, FolderPlus, FolderX, GitBranchPlus, GitCommitHorizontal, GitPullRequestArrow, LoaderCircle, Minus, Pencil, Plus, RotateCcw, Tag, Trash2, Upload, X, } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, Download, FolderInput, FolderPlus, FolderX, GitBranchPlus, GitCommitHorizontal, GitPullRequestArrow, LoaderCircle, Minus, Pencil, Plus, RotateCcw, Tag, Trash2, Upload, X, } from "lucide-react";
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState, } from "react";
 
 import { CommitDetails, CommitDetailsSkeleton } from "./components/commit-details";
@@ -2155,11 +2155,13 @@ function App() {
                                 </ViewTabs>
                                 {centerView === "diff" ? (
                                     <button
-                                        className="inline-flex cursor-pointer items-center gap-1.5 rounded bg-transparent px-2 py-1.25 text-muted hover:bg-row-hover hover:text-foreground"
+                                        aria-label="Back to graph"
+                                        className="ml-auto inline-flex cursor-pointer items-center justify-center rounded bg-transparent p-1 text-muted hover:bg-row-hover hover:text-foreground"
                                         onClick={() => setCenterView("graph")}
+                                        title="Back to graph"
                                         type="button"
                                     >
-                                        <ArrowLeft size={14} /> Back to graph
+                                        <X size={14} />
                                     </button>
                                 ) : (
                                     <span className="ml-auto text-[10px] text-muted">{history?.commits.length ?? 0} commits loaded</span>
