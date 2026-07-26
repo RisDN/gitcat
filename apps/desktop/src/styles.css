@@ -16,6 +16,21 @@
   --gc-danger: #ef6b73;
   --gc-diff-add: #183d2b;
   --gc-diff-delete: #472329;
+  --gc-syntax-comment: #6b7583;
+  --gc-syntax-keyword: #c678dd;
+  --gc-syntax-string: #98c379;
+  --gc-syntax-number: #d19a66;
+  --gc-syntax-boolean: #d19a66;
+  --gc-syntax-function: #61afef;
+  --gc-syntax-type: #e5c07b;
+  --gc-syntax-variable: #dfe4ec;
+  --gc-syntax-property: #56b6c2;
+  --gc-syntax-operator: #56b6c2;
+  --gc-syntax-punctuation: #9aa3b2;
+  --gc-syntax-tag: #e06c75;
+  --gc-syntax-attribute: #d19a66;
+  --gc-syntax-regexp: #7ec9a8;
+  --gc-syntax-constant: #d19a66;
   --gc-lane-0: #22c3e6;
   --gc-lane-1: #9a63ff;
   --gc-lane-2: #f09b45;
@@ -29,7 +44,7 @@
 
 @theme inline {
   --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-  --font-mono: "Cascadia Code", "Cascadia Mono", Consolas, monospace;
+  --font-mono: "Cascadia Mono", "Cascadia Code", Consolas, monospace;
 
   --color-background: var(--gc-background);
   --color-surface: var(--gc-surface);
@@ -115,8 +130,11 @@
   }
 
   code,
-  kbd {
+  kbd,
+  .font-mono {
     @apply font-mono;
+    font-variant-ligatures: none;
+    font-feature-settings: "liga" 0, "clig" 0, "calt" 0;
   }
 
   ::-webkit-scrollbar {
@@ -555,6 +573,22 @@
 .gc-diff-line__code {
   color: color-mix(in srgb, var(--gc-text) 92%, var(--gc-muted));
 }
+
+.gc-tok--comment { color: var(--gc-syntax-comment); font-style: italic; }
+.gc-tok--keyword { color: var(--gc-syntax-keyword); }
+.gc-tok--string { color: var(--gc-syntax-string); }
+.gc-tok--number { color: var(--gc-syntax-number); }
+.gc-tok--boolean { color: var(--gc-syntax-boolean); }
+.gc-tok--function { color: var(--gc-syntax-function); }
+.gc-tok--type { color: var(--gc-syntax-type); }
+.gc-tok--variable { color: var(--gc-syntax-variable); }
+.gc-tok--property { color: var(--gc-syntax-property); }
+.gc-tok--operator { color: var(--gc-syntax-operator); }
+.gc-tok--punctuation { color: var(--gc-syntax-punctuation); }
+.gc-tok--tag { color: var(--gc-syntax-tag); }
+.gc-tok--attribute { color: var(--gc-syntax-attribute); }
+.gc-tok--regexp { color: var(--gc-syntax-regexp); }
+.gc-tok--constant { color: var(--gc-syntax-constant); }
 
 .gc-diff-line--addition .gc-diff-line__content,
 .gc-diff-line__content--addition {

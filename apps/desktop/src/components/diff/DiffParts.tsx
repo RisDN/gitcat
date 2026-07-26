@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { cx } from "../../lib";
 import type { DiffLine, DiffViewMode } from "../../lib/types";
+import { useHighlightedLine } from "./highlight";
 
 export type { DiffViewMode };
 
@@ -29,12 +30,22 @@ export function displayLineNumber(value: number | null): string {
 }
 
 export function LineContent({ line }: { line: DiffLine }) {
+  const tokens = useHighlightedLine(line);
+
   return (
     <>
       <span aria-hidden="true" className="gc-diff-line__prefix">
         {linePrefix(line.kind)}
       </span>
-      <code className="gc-diff-line__code">{line.content || " "}</code>
+      <code className="gc-diff-line__code">
+        {tokens === null
+          ? line.content || " "
+          : tokens.map((token, index) => (
+            <span className={`gc-tok gc-tok--${token.cls}`} key={index}>
+              {token.text}
+            </span>
+          ))}
+      </code>
     </>
   );
 }

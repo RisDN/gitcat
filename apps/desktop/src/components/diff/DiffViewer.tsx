@@ -6,6 +6,7 @@ import type { FileDiff } from "../../lib/types";
 import { DiffMinimap } from "./DiffMinimap";
 import { ChangeKind, DIFF_VIEW_MODES, DiffState, ModeButton, isWholeFileMode } from "./DiffParts";
 import type { DiffViewMode } from "./DiffParts";
+import { HighlightContext, useDiffHighlight } from "./highlight";
 import { InlineHunk } from "./InlineHunk";
 import { SplitHunk } from "./SplitHunk";
 import { buildDiffMap } from "./rows";
@@ -34,6 +35,7 @@ export function DiffViewer({
     () => buildDiffMap(diff?.hunks ?? [], mode),
     [diff, mode],
   );
+  const highlight = useDiffHighlight(diff);
 
   const setMode = (nextMode: DiffViewMode) => {
     if (nextMode === mode) return;
@@ -121,19 +123,21 @@ export function DiffViewer({
       ) : diff.hunks.length === 0 ? (
         <DiffState>No text changes to display.</DiffState>
       ) : (
-        <div className="flex min-h-0 min-w-0 flex-1">
-          <div
-            className={cx("min-w-0 flex-1 overflow-auto", showMinimap && "gc-diff-scroller--mapped")}
-            ref={scrollRef}
-          >
-            {diff.hunks.map((hunk, index) => (
-              mode === "split"
-                ? <SplitHunk hunk={hunk} index={index} key={`${hunk.header}:${index}`} showHeader={showHunkHeaders} />
-                : <InlineHunk hunk={hunk} index={index} key={`${hunk.header}:${index}`} showHeader={showHunkHeaders} />
-            ))}
+        <HighlightContext.Provider value={highlight}>
+          <div className="flex min-h-0 min-w-0 flex-1">
+            <div
+              className={cx("min-w-0 flex-1 overflow-auto", showMinimap && "gc-diff-scroller--mapped")}
+              ref={scrollRef}
+            >
+              {diff.hunks.map((hunk, index) => (
+                mode === "split"
+                  ? <SplitHunk hunk={hunk} index={index} key={`${hunk.header}:${index}`} showHeader={showHunkHeaders} />
+                  : <InlineHunk hunk={hunk} index={index} key={`${hunk.header}:${index}`} showHeader={showHunkHeaders} />
+              ))}
+            </div>
+            {showMinimap ? <DiffMinimap map={diffMap} scrollRef={scrollRef} /> : null}
           </div>
-          {showMinimap ? <DiffMinimap map={diffMap} scrollRef={scrollRef} /> : null}
-        </div>
+        </HighlightContext.Provider>
       )}
     </section>
   );
