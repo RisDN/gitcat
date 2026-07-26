@@ -3,7 +3,13 @@ import type { ReactNode } from "react";
 import { cx } from "../../lib";
 import type { DiffLine } from "../../lib/types";
 
-export type DiffViewMode = "inline" | "split";
+export type DiffViewMode = "hunk" | "inline" | "split";
+
+export const DIFF_VIEW_MODES: readonly DiffViewMode[] = ["hunk", "inline", "split"];
+
+export function isWholeFileMode(mode: DiffViewMode): boolean {
+  return mode !== "hunk";
+}
 
 export function linePrefix(kind: DiffLine["kind"]): string {
   switch (kind) {
@@ -34,8 +40,20 @@ export function LineContent({ line }: { line: DiffLine }) {
 }
 
 // One hunk of a file diff; the label ties the table to its @@ range for AT.
-export function HunkSection({ label, children }: { label: string; children: ReactNode }) {
-  return <section aria-labelledby={label} className="w-full min-w-full">{children}</section>;
+export function HunkSection({ label, fallbackLabel, children }: {
+  label?: string;
+  fallbackLabel?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      aria-label={label ? undefined : fallbackLabel}
+      aria-labelledby={label}
+      className="w-full min-w-full"
+    >
+      {children}
+    </section>
+  );
 }
 
 // Sticks to the top of the scroller so the @@ range stays visible while reading

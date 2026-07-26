@@ -200,6 +200,7 @@ async fn commit_is_searchable_and_readable_through_public_core_api() {
                 context_lines: 3,
                 ignore_whitespace: false,
                 max_bytes: 1024 * 1024,
+                whole_file: false,
             },
         )
         .await

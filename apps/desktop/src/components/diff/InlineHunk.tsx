@@ -3,10 +3,17 @@ import { memo } from "react";
 import type { DiffHunk } from "../../lib/types";
 import { HunkHeader, HunkSection, LineContent, displayLineNumber } from "./DiffParts";
 
-export const InlineHunk = memo(function InlineHunk({ hunk, index }: { hunk: DiffHunk; index: number }) {
+export const InlineHunk = memo(function InlineHunk({ hunk, index, showHeader = true }: {
+  hunk: DiffHunk;
+  index: number;
+  showHeader?: boolean;
+}) {
   return (
-    <HunkSection label={`gc-inline-hunk-${index}`}>
-      <HunkHeader id={`gc-inline-hunk-${index}`}>{hunk.header}</HunkHeader>
+    <HunkSection
+      fallbackLabel="Whole file, unified"
+      label={showHeader ? `gc-inline-hunk-${index}` : undefined}
+    >
+      {showHeader ? <HunkHeader id={`gc-inline-hunk-${index}`}>{hunk.header}</HunkHeader> : null}
       <table className="gc-diff-table gc-diff-table--inline">
         <colgroup>
           <col className="gc-diff-table__line-column" />

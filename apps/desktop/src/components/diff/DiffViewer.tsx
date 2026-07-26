@@ -3,7 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import { cx } from "../../lib";
 import type { FileDiff } from "../../lib/types";
-import { ChangeKind, DiffState, ModeButton } from "./DiffParts";
+import { ChangeKind, DIFF_VIEW_MODES, DiffState, ModeButton } from "./DiffParts";
 import type { DiffViewMode } from "./DiffParts";
 import { InlineHunk } from "./InlineHunk";
 import { SplitHunk } from "./SplitHunk";
@@ -20,7 +20,7 @@ export interface DiffViewerProps {
 export function DiffViewer({
   diff,
   mode: controlledMode,
-  defaultMode = "inline",
+  defaultMode = "hunk",
   loading = false,
   className,
   onModeChange,
@@ -38,7 +38,10 @@ export function DiffViewer({
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
 
     event.preventDefault();
-    const nextMode = event.key === "ArrowLeft" ? "inline" : "split";
+    const step = event.key === "ArrowLeft" ? -1 : 1;
+    const current = DIFF_VIEW_MODES.indexOf(mode);
+    const nextIndex = (current + step + DIFF_VIEW_MODES.length) % DIFF_VIEW_MODES.length;
+    const nextMode = DIFF_VIEW_MODES[nextIndex];
     setMode(nextMode);
     event.currentTarget
       .querySelector<HTMLButtonElement>(`[data-diff-mode="${nextMode}"]`)
@@ -65,6 +68,7 @@ export function DiffViewer({
 
   const oldPath = diff.old_path ?? diff.new_path;
   const renamed = diff.old_path !== null && diff.old_path !== diff.new_path;
+  const showHunkHeaders = mode === "hunk" || diff.hunks.length > 1;
 
   return (
     <section aria-label={`Diff for ${diff.new_path}`} className={rootClass}>
@@ -92,6 +96,7 @@ export function DiffViewer({
           onKeyDown={handleModeKeys}
           role="group"
         >
+          <ModeButton active={mode === "hunk"} mode="hunk" onSelect={setMode}>Hunk</ModeButton>
           <ModeButton active={mode === "inline"} mode="inline" onSelect={setMode}>Inline</ModeButton>
           <ModeButton active={mode === "split"} mode="split" onSelect={setMode}>Split</ModeButton>
         </div>
@@ -110,9 +115,9 @@ export function DiffViewer({
       ) : (
         <div className="min-w-0 flex-1 overflow-auto">
           {diff.hunks.map((hunk, index) => (
-            mode === "inline"
-              ? <InlineHunk hunk={hunk} index={index} key={`${hunk.header}:${index}`} />
-              : <SplitHunk hunk={hunk} index={index} key={`${hunk.header}:${index}`} />
+            mode === "split"
+              ? <SplitHunk hunk={hunk} index={index} key={`${hunk.header}:${index}`} showHeader={showHunkHeaders} />
+              : <InlineHunk hunk={hunk} index={index} key={`${hunk.header}:${index}`} showHeader={showHunkHeaders} />
           ))}
         </div>
       )}

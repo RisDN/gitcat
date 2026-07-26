@@ -259,6 +259,7 @@ export interface DiffRequest {
   context_lines: number;
   ignore_whitespace: boolean;
   max_bytes: number;
+  whole_file: boolean;
 }
 
 export type DiffLineKind = "context" | "addition" | "deletion" | "no_newline";

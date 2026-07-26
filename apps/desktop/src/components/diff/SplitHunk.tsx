@@ -74,13 +74,20 @@ function SplitCell({ line, side }: { line: DiffLine | null; side: "old" | "new" 
   );
 }
 
-export const SplitHunk = memo(function SplitHunk({ hunk, index }: { hunk: DiffHunk; index: number }) {
+export const SplitHunk = memo(function SplitHunk({ hunk, index, showHeader = true }: {
+  hunk: DiffHunk;
+  index: number;
+  showHeader?: boolean;
+}) {
   const rows = toSplitRows(hunk.lines);
 
   return (
-    <HunkSection label={`gc-split-hunk-${index}`}>
-      <HunkHeader id={`gc-split-hunk-${index}`}>{hunk.header}</HunkHeader>
-      <table className="gc-diff-table gc-diff-table--split">
+    <HunkSection
+      fallbackLabel="Whole file, side by side"
+      label={showHeader ? `gc-split-hunk-${index}` : undefined}
+    >
+      {showHeader ? <HunkHeader id={`gc-split-hunk-${index}`}>{hunk.header}</HunkHeader> : null}
+      <table className={`gc-diff-table gc-diff-table--split${showHeader ? "" : " gc-diff-table--headless"}`}>
         <caption className="sr-only">
           Side-by-side diff hunk: old lines {hunk.old_start}–{hunk.old_start + Math.max(0, hunk.old_count - 1)}, new lines {hunk.new_start}–{hunk.new_start + Math.max(0, hunk.new_count - 1)}
         </caption>

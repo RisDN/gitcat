@@ -1394,6 +1394,7 @@ mod tests {
             context_lines: 3,
             ignore_whitespace: false,
             max_bytes: 1024,
+            whole_file: false,
         };
         assert_eq!(
             validate_diff_request(&unsafe_diff).unwrap_err().code,

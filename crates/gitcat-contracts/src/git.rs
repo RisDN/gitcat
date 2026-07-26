@@ -366,6 +366,8 @@ pub struct DiffRequest {
     pub context_lines: u16,
     pub ignore_whitespace: bool,
     pub max_bytes: usize,
+    #[serde(default)]
+    pub whole_file: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

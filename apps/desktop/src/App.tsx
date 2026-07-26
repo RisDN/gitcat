@@ -5,7 +5,7 @@ import { CommitDetails, CommitDetailsSkeleton } from "./components/commit-detail
 import { CommitGraph, getCommitGraphWidth, getCommitLaneColorVariable, getCommitLaneX, getCommitRowBranchOrigin, getWipLane, type CommitContextMenuRequest, } from "./components/CommitGraph";
 import { ConflictResolverDialog } from "./components/conflict";
 import { ContextMenu, type ContextAction } from "./components/ContextMenu";
-import { DiffViewer, type DiffViewMode } from "./components/diff";
+import { DiffViewer, isWholeFileMode, type DiffViewMode } from "./components/diff";
 import { fileChangeCounts, orderedFilePaths } from "./components/file-tree";
 import type { FolderCollapseTarget } from "./components/file-tree";
 import { PromptDialog } from "./components/PromptDialog";
@@ -424,7 +424,7 @@ function App() {
     const [commitActions, setCommitActions] = useState<CommitActionAvailability[]>([]);
     const [diff, setDiff] = useState<FileDiff | null>(null);
     const [diffLoading, setDiffLoading] = useState(false);
-    const [diffMode, setDiffMode] = useState<DiffViewMode>("inline");
+    const [diffMode, setDiffMode] = useState<DiffViewMode>("hunk");
     const [selectedPath, setSelectedPath] = useState<string | undefined>();
     const [selectedWorktreeFile, setSelectedWorktreeFile] = useState<{ path: string; staged: boolean } | null>(null);
     const [centerView, setCenterView] = useState<"graph" | "diff">("graph");
@@ -465,6 +465,7 @@ function App() {
     const openWorktreeDiffRef = useRef<(path: string, staged: boolean) => void>(() => { });
     const swapWorktreeDiffSideRef = useRef<(path: string, staged: boolean) => void>(() => { });
     const openDiffRequestRef = useRef<{ sequence: number; request: DiffRequest } | null>(null);
+    const diffWholeFileRef = useRef(false);
     const autoFetchRef = useRef<() => void>(() => { });
     const lastAutoFetchRef = useRef<Map<string, number>>(new Map());
     const closedTabsRef = useRef<RepositoryTab[]>([]);
@@ -1122,6 +1123,15 @@ function App() {
         autoReloadDiffRef.current = reloadOpenWorktreeDiff;
     }, [reloadOpenWorktreeDiff]);
 
+    useEffect(() => {
+        const wholeFile = isWholeFileMode(diffMode);
+        diffWholeFileRef.current = wholeFile;
+        const open = openDiffRequestRef.current;
+        if (!open || open.sequence !== diffLoadSequence.current) return;
+        if (open.request.whole_file === wholeFile) return;
+        void loadDiff({ ...open.request, whole_file: wholeFile }, true);
+    }, [diffMode, loadDiff]);
+
     const openCommitFile = useCallback((file: ChangedFile) => {
         if (!selectedOid) return;
         setSelectedWorktreeFile(null);
@@ -1131,6 +1141,7 @@ function App() {
             context_lines: persisted.settings.diff_context_lines,
             ignore_whitespace: false,
             max_bytes: persisted.settings.diff_max_bytes,
+            whole_file: diffWholeFileRef.current,
         });
     }, [loadDiff, persisted.settings.diff_context_lines, persisted.settings.diff_max_bytes, selectedOid]);
 
@@ -1142,6 +1153,7 @@ function App() {
             context_lines: persisted.settings.diff_context_lines,
             ignore_whitespace: false,
             max_bytes: persisted.settings.diff_max_bytes,
+            whole_file: diffWholeFileRef.current,
         });
     }, [loadDiff, persisted.settings.diff_context_lines, persisted.settings.diff_max_bytes]);
 

@@ -514,6 +514,10 @@
   @apply sticky top-[29px] z-[2] bg-panel text-left text-[9px] text-muted;
 }
 
+.gc-diff-table--headless .gc-diff-table__head {
+  @apply top-0;
+}
+
 .gc-diff-table__head th {
   @apply border-b border-border px-[7px] py-1 font-semibold;
 }

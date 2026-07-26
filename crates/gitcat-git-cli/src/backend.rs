@@ -34,6 +34,7 @@ const MAX_COMMIT_MESSAGE_BYTES: usize = 1024 * 1024;
 const MAX_CONFLICT_TEXT_BYTES: usize = 1024 * 1024;
 const MAX_UNTRACKED_STAT_BYTES: u64 = 1024 * 1024;
 const MAX_UNTRACKED_STAT_FILES: usize = 2000;
+const WHOLE_FILE_CONTEXT_LINES: u32 = 1_000_000_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct UnmergedIndexEntry {
@@ -124,7 +125,7 @@ impl GitCliBackend {
             "--no-textconv",
             "--no-color",
         ]);
-        args.push(format!("--unified={}", request.context_lines.min(100)).into());
+        args.push(format!("--unified={}", unified_context(request)).into());
         if request.ignore_whitespace {
             args.push("--ignore-all-space".into());
         }
@@ -1680,7 +1681,7 @@ impl GitBackend for GitCliBackend {
             "--no-textconv",
             "--no-color",
         ]));
-        args.push(format!("--unified={}", request.context_lines.min(100)).into());
+        args.push(format!("--unified={}", unified_context(request)).into());
         if request.ignore_whitespace {
             args.push("--ignore-all-space".into());
         }
@@ -2707,6 +2708,14 @@ impl GitBackend for GitCliBackend {
             false,
         )
         .await
+    }
+}
+
+fn unified_context(request: &DiffRequest) -> u32 {
+    if request.whole_file {
+        WHOLE_FILE_CONTEXT_LINES
+    } else {
+        u32::from(request.context_lines.min(100))
     }
 }
 
@@ -4022,6 +4031,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn whole_file_diff_keeps_every_line_as_context() {
+        let (directory, backend, _oid) = committed_repository().await;
+        let mut lines: Vec<String> = (1..=40).map(|number| format!("line {number}")).collect();
+        fs::write(
+            directory.path().join("hello.txt"),
+            format!("{}\n", lines.join("\n")),
+        )
+        .expect("write long fixture");
+        backend
+            .stage_paths(directory.path(), &["hello.txt".into()])
+            .await
+            .expect("stage long fixture");
+        backend
+            .create_commit(
+                directory.path(),
+                &CommitOptions {
+                    message: "long fixture".into(),
+                    amend: false,
+                    signoff: false,
+                },
+            )
+            .await
+            .expect("commit long fixture");
+
+        lines[19] = "line 20 changed".into();
+        fs::write(
+            directory.path().join("hello.txt"),
+            format!("{}\n", lines.join("\n")),
+        )
+        .expect("modify long fixture");
+
+        let request = |whole_file| DiffRequest {
+            target: DiffTarget::Worktree,
+            path: "hello.txt".into(),
+            context_lines: 3,
+            ignore_whitespace: false,
+            max_bytes: 1024 * 1024,
+            whole_file,
+        };
+
+        let hunked = backend
+            .diff(directory.path(), &request(false))
+            .await
+            .expect("hunk diff");
+        let hunked_lines: usize = hunked.hunks.iter().map(|hunk| hunk.lines.len()).sum();
+        assert!(hunked_lines < 20);
+
+        let whole = backend
+            .diff(directory.path(), &request(true))
+            .await
+            .expect("whole file diff");
+        assert_eq!(whole.hunks.len(), 1);
+        assert_eq!(whole.hunks[0].lines.len(), 41);
+        assert_eq!(whole.hunks[0].old_start, 1);
+        assert_eq!(whole.hunks[0].new_start, 1);
+    }
+
+    #[tokio::test]
     async fn worktree_diff_branch_and_stash_workflow() {
         let (directory, backend, oid) = committed_repository().await;
         fs::write(directory.path().join("hello.txt"), "first\nsecond\n").expect("modify fixture");
@@ -4034,6 +4101,7 @@ mod tests {
                     context_lines: 3,
                     ignore_whitespace: false,
                     max_bytes: 1024 * 1024,
+                    whole_file: false,
                 },
             )
             .await
@@ -4049,6 +4117,7 @@ mod tests {
                     context_lines: 3,
                     ignore_whitespace: false,
                     max_bytes: 1024 * 1024,
+                    whole_file: false,
                 },
             )
             .await
@@ -4108,6 +4177,7 @@ mod tests {
                     context_lines: 3,
                     ignore_whitespace: false,
                     max_bytes: 1024 * 1024,
+                    whole_file: false,
                 },
             )
             .await
