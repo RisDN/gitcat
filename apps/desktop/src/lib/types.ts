@@ -429,6 +429,8 @@ export interface ThemeColors {
 
 export type FileViewMode = "path" | "tree";
 
+export type DiffViewMode = "hunk" | "inline" | "split";
+
 export interface AppSettings {
   default_pull_mode: PullMode;
   auto_fetch_interval_minutes: number;
@@ -437,6 +439,7 @@ export interface AppSettings {
   diff_context_lines: number;
   diff_max_bytes: number;
   file_view_mode: FileViewMode;
+  diff_view_mode: DiffViewMode;
   keybinds: KeybindSettings;
   theme: ThemeColors;
 }

@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 
 import { cx } from "../../lib";
-import type { DiffLine } from "../../lib/types";
+import type { DiffLine, DiffViewMode } from "../../lib/types";
 
-export type DiffViewMode = "hunk" | "inline" | "split";
+export type { DiffViewMode };
 
 export const DIFF_VIEW_MODES: readonly DiffViewMode[] = ["hunk", "inline", "split"];
 

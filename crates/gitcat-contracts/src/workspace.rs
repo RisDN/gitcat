@@ -141,6 +141,15 @@ pub enum FileViewMode {
     Tree,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DiffViewMode {
+    #[default]
+    Hunk,
+    Inline,
+    Split,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
@@ -151,6 +160,7 @@ pub struct AppSettings {
     pub diff_context_lines: u16,
     pub diff_max_bytes: usize,
     pub file_view_mode: FileViewMode,
+    pub diff_view_mode: DiffViewMode,
     pub keybinds: KeybindSettings,
     pub theme: ThemeColors,
 }
@@ -165,6 +175,7 @@ impl Default for AppSettings {
             diff_context_lines: 3,
             diff_max_bytes: 8 * 1024 * 1024,
             file_view_mode: FileViewMode::default(),
+            diff_view_mode: DiffViewMode::default(),
             keybinds: KeybindSettings::default(),
             theme: ThemeColors::default(),
         }

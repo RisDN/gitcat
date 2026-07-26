@@ -324,6 +324,7 @@ const defaultState = (): PersistedState => ({
     diff_context_lines: 3,
     diff_max_bytes: 8 * 1024 * 1024,
     file_view_mode: "path",
+    diff_view_mode: "hunk",
     keybinds: { ...DEFAULT_KEYBINDS },
     theme: {
       background: "#17191f",
