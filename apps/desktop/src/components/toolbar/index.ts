@@ -1,2 +1,3 @@
+export { ConfirmBar } from "./ConfirmBar";
 export { PULL_LABELS, Toolbar } from "./Toolbar";
 export type { ConflictIndicator } from "./ConflictIndicatorButton";

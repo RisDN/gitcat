@@ -29,7 +29,7 @@ import {
     ViewTabs,
 } from "./components/shell";
 import { ToastRegion, type ToastMessage } from "./components/ToastRegion";
-import { PULL_LABELS, Toolbar, type ConflictIndicator } from "./components/toolbar";
+import { ConfirmBar, PULL_LABELS, Toolbar, type ConflictIndicator } from "./components/toolbar";
 import {
     TopTabs,
     type RepositoryTabContextMenuRequest,
@@ -88,6 +88,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     diff_context_lines: 3,
     diff_max_bytes: 8 * 1024 * 1024,
     file_view_mode: "path",
+    diff_view_mode: "hunk",
     keybinds: DEFAULT_KEYBINDS,
     theme: {
         background: "#17191f",
@@ -126,6 +127,10 @@ type PromptState =
     | { kind: "remote_branch"; branch: BranchInfo }
     | { kind: "rename_branch"; branch: BranchInfo }
     | { kind: "create_tag"; oid: string }
+    | null;
+
+type ConfirmState =
+    | { kind: "delete_branch"; name: string; force: boolean }
     | null;
 
 interface CommitMenuState {
@@ -189,6 +194,11 @@ function isMutationResult(value: unknown): value is MutationResult {
     if (typeof value !== "object" || value === null) return false;
     return Array.isArray((value as Partial<MutationResult>).conflicts)
         && typeof (value as Partial<MutationResult>).needs_user_action === "boolean";
+}
+
+function isNotFullyMerged(error: unknown): boolean {
+    const apiError = getApiError(error);
+    return /not fully merged/i.test(`${apiError.message} ${apiError.details ?? ""}`);
 }
 
 function workspaceTabs(state: PersistedState["workspace"]): RepositoryTab[] {
@@ -424,7 +434,6 @@ function App() {
     const [commitActions, setCommitActions] = useState<CommitActionAvailability[]>([]);
     const [diff, setDiff] = useState<FileDiff | null>(null);
     const [diffLoading, setDiffLoading] = useState(false);
-    const [diffMode, setDiffMode] = useState<DiffViewMode>("hunk");
     const [selectedPath, setSelectedPath] = useState<string | undefined>();
     const [selectedWorktreeFile, setSelectedWorktreeFile] = useState<{ path: string; staged: boolean } | null>(null);
     const [centerView, setCenterView] = useState<"graph" | "diff">("graph");
@@ -441,6 +450,7 @@ function App() {
     const [searchBusy, setSearchBusy] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [prompt, setPrompt] = useState<PromptState>(null);
+    const [confirmRequest, setConfirmRequest] = useState<ConfirmState>(null);
     const [commitMenu, setCommitMenu] = useState<CommitMenuState | null>(null);
     const [commitMenuActions, setCommitMenuActions] = useState<{
         oid: string;
@@ -486,6 +496,15 @@ function App() {
         ));
     }, []);
 
+    const diffMode = persisted.settings.diff_view_mode;
+    const setDiffMode = useCallback((mode: DiffViewMode) => {
+        setPersisted((current) => (
+            current.settings.diff_view_mode === mode
+                ? current
+                : { ...current, settings: { ...current.settings, diff_view_mode: mode } }
+        ));
+    }, []);
+
     const activeTabId = persisted.workspace.active_tab_id;
     const activeRepository = activeTabId ? runtime[activeTabId] : undefined;
     const activeTab = activeTabId
@@ -498,6 +517,7 @@ function App() {
 
     useEffect(() => {
         setPrompt(null);
+        setConfirmRequest(null);
         setCommitMenu(null);
         setTabMenu(null);
         setBranchMenu(null);
@@ -792,7 +812,11 @@ function App() {
     const runMutation = useCallback(async (
         title: string,
         operation: (repository: RuntimeRepository) => Promise<unknown>,
-        options?: { silent?: boolean; optimistic?: () => (() => void) | undefined },
+        options?: {
+            silent?: boolean;
+            optimistic?: () => (() => void) | undefined;
+            onError?: (error: unknown) => boolean;
+        },
     ): Promise<boolean> => {
         if (!activeRepository || busy || overviewLoading) return false;
         let rollbackOptimistic: (() => void) | undefined;
@@ -819,7 +843,7 @@ function App() {
             return true;
         } catch (error) {
             if (!operationCompleted) rollbackOptimistic?.();
-            showError(`${title} failed`, error);
+            if (!options?.onError?.(error)) showError(`${title} failed`, error);
             return false;
         } finally {
             setBusy(false);
@@ -1855,14 +1879,7 @@ function App() {
                 if (isLocal) setPrompt({ kind: "rename_branch", branch });
                 break;
             case "delete":
-                if (!isLocal || !snapshot || !window.confirm(`Delete local branch '${branch.name}'?`)) break;
-                void runMutation("Branch deleted", (repository) => gitcatApi.deleteBranch(
-                    repository.repository_id,
-                    branch.name,
-                    false,
-                    true,
-                    expectedState(snapshot),
-                ));
+                if (isLocal) setConfirmRequest({ kind: "delete_branch", name: branch.name, force: false });
                 break;
             case "copy":
                 void navigator.clipboard.writeText(displayName)
@@ -1950,7 +1967,45 @@ function App() {
         }
     }, [prompt]);
 
-    const activeConflictCount = snapshot?.status.entries.filter((entry) => entry.conflicted).length ?? 0;
+    const submitConfirm = useCallback(() => {
+        if (!confirmRequest || !snapshot) return;
+        const request = confirmRequest;
+        setConfirmRequest(null);
+        switch (request.kind) {
+            case "delete_branch":
+                void runMutation("Branch deleted", (repository) => gitcatApi.deleteBranch(
+                    repository.repository_id,
+                    request.name,
+                    request.force,
+                    true,
+                    expectedState(snapshot),
+                ), {
+                    onError: (error) => {
+                        if (request.force || !isNotFullyMerged(error)) return false;
+                        setConfirmRequest({ kind: "delete_branch", name: request.name, force: true });
+                        return true;
+                    },
+                });
+                break;
+        }
+    }, [confirmRequest, runMutation, snapshot]);
+
+    const confirmConfig = useMemo(() => {
+        if (!confirmRequest) return null;
+        switch (confirmRequest.kind) {
+            case "delete_branch": return confirmRequest.force
+                ? {
+                    message: `"${confirmRequest.name}" is not fully merged. Force deleting it discards commits that exist only on this branch.`,
+                    confirmLabel: "Force delete",
+                }
+                : {
+                    message: `This is a destructive operation, are you sure you want to delete "${confirmRequest.name}"?`,
+                    confirmLabel: "Delete",
+                };
+        }
+    }, [confirmRequest]);
+
+    const activeConflictCount =snapshot?.status.entries.filter((entry) => entry.conflicted).length ?? 0;
     const wipStats = useMemo(() => {
         const entries = snapshot?.status.entries ?? [];
         return entries.reduce(
@@ -2199,36 +2254,45 @@ function App() {
                 />
             ) : (
                 <>
-                    <Toolbar
-                        ahead={snapshot?.status.ahead ?? 0}
-                        behind={snapshot?.status.behind ?? 0}
-                        branchName={currentBranch(snapshot)}
-                        busy={busy}
-                        canPop={stashes.length > 0}
-                        canStash={(snapshot?.status.entries.length ?? 0) > 0}
-                        conflictIndicator={conflictIndicator}
-                        conflictTarget={conflictTarget}
-                        conflictTargets={conflictTargets}
-                        onCreateBranch={createBranchAtHead}
-                        onConflictIndicator={showConflictIndicator}
-                        onConflictTargetChange={selectConflictTarget}
-                        onPull={pullActiveRepository}
-                        onPullModeChange={(mode) => setPersisted((current) => ({ ...current, settings: { ...current.settings, default_pull_mode: mode } }))}
-                        onPush={pushActiveRepository}
-                        onSearch={openSearch}
-                        onSettings={() => setSettingsOpen(true)}
-                        onStash={stashActiveRepository}
-                        onStashPop={popLatestStash}
-                        onToggleRightPanel={() => setRightPanelVisible((visible) => !visible)}
-                        operation={snapshot?.operation_state ?? "normal"}
-                        pullMode={persisted.settings.default_pull_mode}
-                        refreshing={overviewLoading}
-                        repositoryName={activeRepository.info.name}
-                        rightPanelKeybind={persisted.settings.keybinds.toggle_right_panel}
-                        rightPanelVisible={rightPanelVisible}
-                        searchKeybind={persisted.settings.keybinds.search_commits}
-                        settingsKeybind={persisted.settings.keybinds.open_settings}
-                    />
+                    {confirmRequest && confirmConfig ? (
+                        <ConfirmBar
+                            confirmLabel={confirmConfig.confirmLabel}
+                            message={confirmConfig.message}
+                            onCancel={() => setConfirmRequest(null)}
+                            onConfirm={submitConfirm}
+                        />
+                    ) : (
+                        <Toolbar
+                            ahead={snapshot?.status.ahead ?? 0}
+                            behind={snapshot?.status.behind ?? 0}
+                            branchName={currentBranch(snapshot)}
+                            busy={busy}
+                            canPop={stashes.length > 0}
+                            canStash={(snapshot?.status.entries.length ?? 0) > 0}
+                            conflictIndicator={conflictIndicator}
+                            conflictTarget={conflictTarget}
+                            conflictTargets={conflictTargets}
+                            onCreateBranch={createBranchAtHead}
+                            onConflictIndicator={showConflictIndicator}
+                            onConflictTargetChange={selectConflictTarget}
+                            onPull={pullActiveRepository}
+                            onPullModeChange={(mode) => setPersisted((current) => ({ ...current, settings: { ...current.settings, default_pull_mode: mode } }))}
+                            onPush={pushActiveRepository}
+                            onSearch={openSearch}
+                            onSettings={() => setSettingsOpen(true)}
+                            onStash={stashActiveRepository}
+                            onStashPop={popLatestStash}
+                            onToggleRightPanel={() => setRightPanelVisible((visible) => !visible)}
+                            operation={snapshot?.operation_state ?? "normal"}
+                            pullMode={persisted.settings.default_pull_mode}
+                            refreshing={overviewLoading}
+                            repositoryName={activeRepository.info.name}
+                            rightPanelKeybind={persisted.settings.keybinds.toggle_right_panel}
+                            rightPanelVisible={rightPanelVisible}
+                            searchKeybind={persisted.settings.keybinds.search_commits}
+                            settingsKeybind={persisted.settings.keybinds.open_settings}
+                        />
+                    )}
 
                     {snapshot && snapshot.operation_state !== "normal" ? (
                         <div
