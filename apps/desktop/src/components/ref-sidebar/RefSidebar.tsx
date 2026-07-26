@@ -1,12 +1,20 @@
-import { Check, Cloud, GitBranch, Monitor, PanelLeftClose, Plus, Search, Tag } from "lucide-react";
+import { Check, Cloud, FolderGit, GitBranch, Monitor, PanelLeftClose, Plus, Search, Tag } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  ReactNode,
+} from "react";
 
 import { cx } from "../../lib";
 import type { BranchInfo, RefLabel } from "../../lib/types";
 import { IconButton, Input, SidePanel } from "../ui";
+import type { BranchTreeNode } from "./branchTree";
+import { branchIndent, buildBranchTree } from "./branchTree";
 import { RefButton, RefCounter, RefName, RefRow, RefStatic, RemoteIcon, TagNode } from "./RefRow";
 import { RefSection, SidebarEmpty } from "./RefSection";
+
+const REF_INDENT = "pl-[calc(6px+var(--gc-ref-depth)*13px)]";
 
 export type BranchScope = "local" | "remote";
 
@@ -63,6 +71,7 @@ export function RefSidebar({
     () => remoteBranches.filter((branch) => branch.name.toLocaleLowerCase().includes(needle)),
     [remoteBranches, needle],
   );
+  const localTree = useMemo(() => buildBranchTree(filteredLocal), [filteredLocal]);
   const remoteGroups = useMemo(() => {
     const groups = new Map<string, BranchInfo[]>();
     for (const branch of filteredRemote) {
@@ -93,6 +102,63 @@ export function RefSidebar({
     const bounds = event.currentTarget.getBoundingClientRect();
     onBranchContextMenu({ branch, scope, clientX: bounds.left + 12, clientY: bounds.bottom - 2 });
   };
+
+  const renderLocalNodes = (nodes: readonly BranchTreeNode[], depth: number): ReactNode =>
+    nodes.map((node) => {
+      if (node.kind === "folder") {
+        return (
+          <div key={`folder:${node.path}`}>
+            <RefRow hoverable={false}>
+              <RefStatic
+                className={cx(
+                  REF_INDENT,
+                  "gap-1.5 text-[color-mix(in_srgb,var(--gc-text)_88%,var(--gc-muted))]",
+                )}
+                style={branchIndent(depth)}
+              >
+                <span className="w-3.25 shrink-0" />
+                <FolderGit className="shrink-0 text-muted" size={13} />
+                {node.name}
+              </RefStatic>
+            </RefRow>
+            {renderLocalNodes(node.children, depth + 1)}
+          </div>
+        );
+      }
+
+      const branch = node.branch;
+      return (
+        <RefRow
+          current={branch.is_head}
+          key={branch.full_name}
+          onContextMenu={(event) => openBranchMenu(branch, "local", event)}
+        >
+          <RefButton
+            className={cx(REF_INDENT, "gap-1.5")}
+            onClick={() => onCheckout(branch)}
+            onKeyDown={(event) => openBranchMenuFromKeyboard(branch, "local", event)}
+            style={branchIndent(depth)}
+            title={branch.name}
+          >
+            <span className="inline-flex w-3.25 shrink-0 items-center justify-center text-success">
+              {branch.is_head ? <Check aria-label="Current branch" size={12} strokeWidth={3} /> : null}
+            </span>
+            <GitBranch
+              className={cx(
+                "shrink-0",
+                branch.is_head
+                  ? "text-[color-mix(in_srgb,var(--gc-success)_70%,var(--gc-text))]"
+                  : "text-muted",
+              )}
+              size={13}
+            />
+            <RefName>{node.name}</RefName>
+            {branch.ahead ? <RefCounter>{`↑${branch.ahead}`}</RefCounter> : null}
+            {branch.behind ? <RefCounter>{`↓${branch.behind}`}</RefCounter> : null}
+          </RefButton>
+        </RefRow>
+      );
+    });
 
   return (
     <SidePanel className="overflow-x-hidden" aria-label="References">
@@ -129,35 +195,7 @@ export function RefSidebar({
           </IconButton>
         }
       >
-        {filteredLocal.map((branch) => (
-          <RefRow
-            current={branch.is_head}
-            key={branch.full_name}
-            onContextMenu={(event) => openBranchMenu(branch, "local", event)}
-          >
-            <RefButton
-              className="gap-1.5 pl-1.5"
-              onClick={() => onCheckout(branch)}
-              onKeyDown={(event) => openBranchMenuFromKeyboard(branch, "local", event)}
-            >
-              <span className="inline-flex w-3.25 shrink-0 items-center justify-center text-success">
-                {branch.is_head ? <Check aria-label="Current branch" size={12} strokeWidth={3} /> : null}
-              </span>
-              <GitBranch
-                className={cx(
-                  "shrink-0",
-                  branch.is_head
-                    ? "text-[color-mix(in_srgb,var(--gc-success)_70%,var(--gc-text))]"
-                    : "text-muted",
-                )}
-                size={13}
-              />
-              <RefName>{branch.name}</RefName>
-              {branch.ahead ? <RefCounter>{`↑${branch.ahead}`}</RefCounter> : null}
-              {branch.behind ? <RefCounter>{`↓${branch.behind}`}</RefCounter> : null}
-            </RefButton>
-          </RefRow>
-        ))}
+        {renderLocalNodes(localTree, 0)}
         {!filteredLocal.length ? <SidebarEmpty>No matching local branch</SidebarEmpty> : null}
       </RefSection>
 
