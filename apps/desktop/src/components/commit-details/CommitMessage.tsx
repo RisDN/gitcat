@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { cx } from "../../lib";
 import { Button, Input, TextArea } from "../ui";
 
-const CARD = "m-2.5 rounded-[5px] border border-border bg-background p-3.25";
+const CARD = "m-2.5 rounded-[5px] border border-border bg-background p-3.25 text-left";
 
 const HEADING = "text-[16px] font-[560] leading-[1.42] text-foreground";
 
