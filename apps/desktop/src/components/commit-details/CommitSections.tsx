@@ -9,13 +9,13 @@ export function IdentityRow({ children }: { children: ReactNode }) {
 
 // Renders the shimmer placeholder when no initials are known yet.
 export function Avatar({ initials }: { initials?: string }) {
-  const shape = "size-9.75 shrink-0 rounded-[5px_11px_5px_11px]";
+  const shape = "size-9.75 shrink-0 rounded";
   if (initials === undefined) return <span className={cx("skeleton", shape)} />;
   return (
     <span
       className={cx(
         shape,
-        "grid place-items-center border border-[color-mix(in_srgb,var(--gc-accent)_48%,var(--gc-border))] bg-[linear-gradient(145deg,color-mix(in_srgb,var(--gc-accent)_22%,var(--gc-panel)),var(--gc-background))] font-extrabold text-accent",
+        "grid place-items-center border font-extrabold text-accent",
       )}
     >
       {initials || "?"}
