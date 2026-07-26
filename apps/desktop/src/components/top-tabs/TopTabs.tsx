@@ -1,7 +1,6 @@
 import { FolderPlus, Plus } from "lucide-react";
 
 import { IconButton } from "../ui";
-import { Brand } from "./Brand";
 import { RepositoryTab } from "./RepositoryTab";
 import type { RepositoryTabContextMenuRequest, TabView } from "./RepositoryTab";
 import { TabGroupLabel, TabStrip } from "./TabGroup";
@@ -54,7 +53,7 @@ export function TopTabs({
       className="z-20 flex h-11.5 flex-[0_0_46px] select-none items-stretch border-b border-border bg-[color-mix(in_srgb,var(--gc-surface)_94%,black)]"
       aria-label="Repositories"
     >
-      <Brand />
+
       <div
         className="flex min-w-0 flex-1 items-stretch overflow-x-auto overflow-y-hidden [&::-webkit-scrollbar]:h-0.75"
         role="navigation"
