@@ -111,7 +111,7 @@ export function DiffMinimap({ map, scrollRef }: {
   return (
     <div
       aria-hidden="true"
-      className="relative w-3.5 shrink-0 cursor-grab touch-none border-l border-border bg-[color-mix(in_srgb,var(--gc-panel)_55%,var(--gc-background))] active:cursor-grabbing"
+      className="relative w-3.5 shrink-0 touch-none border-l border-border bg-[color-mix(in_srgb,var(--gc-panel)_55%,var(--gc-background))]"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       ref={trackRef}
