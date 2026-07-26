@@ -1,5 +1,7 @@
 import type { CSSProperties } from "react";
 
+import type { FileViewMode } from "../../lib/types";
+
 export interface FileTreeItem<T> {
   id: string;
   path: string;
@@ -152,6 +154,20 @@ export function buildTree<T>(items: readonly FileTreeItem<T>[]): TreeNode<T>[] {
   }
 
   return finalizeFolder(root).children;
+}
+
+export function orderedFilePaths(paths: readonly string[], mode: FileViewMode): string[] {
+  const items = paths.map((path): FileTreeItem<string> => ({
+    id: path,
+    path,
+    data: path,
+    status: "modified",
+    statusLabel: "M",
+  }));
+  if (mode === "tree") return collectFolderItems(buildTree(items));
+  return items
+    .sort((left, right) => pathCollator.compare(normalizePath(left.path), normalizePath(right.path)))
+    .map((item) => item.data);
 }
 
 export function collectFolderPaths<T>(nodes: readonly TreeNode<T>[], paths: string[] = []): string[] {

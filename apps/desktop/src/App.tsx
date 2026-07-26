@@ -6,7 +6,7 @@ import { CommitGraph, getCommitGraphWidth, getCommitLaneColorVariable, getCommit
 import { ConflictResolverDialog } from "./components/conflict";
 import { ContextMenu, type ContextAction } from "./components/ContextMenu";
 import { DiffViewer, type DiffViewMode } from "./components/diff";
-import { fileChangeCounts } from "./components/file-tree";
+import { fileChangeCounts, orderedFilePaths } from "./components/file-tree";
 import type { FolderCollapseTarget } from "./components/file-tree";
 import { PromptDialog } from "./components/PromptDialog";
 import {
@@ -362,6 +362,29 @@ function optimisticWorktreeSelection(
     return { ...current, staged: action === "stage" };
 }
 
+function worktreeSectionPaths(entries: StatusEntry[], staged: boolean): string[] {
+    return entries
+        .filter((entry) => (staged ? Boolean(entry.index) && !entry.conflicted : Boolean(entry.worktree) || entry.conflicted))
+        .map((entry) => entry.path);
+}
+
+function nextWorktreeSelection(
+    entries: StatusEntry[],
+    current: { path: string; staged: boolean },
+    action: WorktreeStageAction,
+    paths: string[],
+    mode: FileViewMode,
+): { path: string; staged: boolean } {
+    const ordered = orderedFilePaths(worktreeSectionPaths(entries, current.staged), mode);
+    const index = ordered.indexOf(current.path);
+    const moved = new Set(paths);
+    const following = ordered.slice(index + 1).find((path) => !moved.has(path));
+    if (following) return { path: following, staged: current.staged };
+    const preceding = ordered.slice(0, Math.max(index, 0)).filter((path) => !moved.has(path)).at(-1);
+    if (preceding) return { path: preceding, staged: current.staged };
+    return { path: current.path, staged: action === "stage" };
+}
+
 function applyTheme(settings: AppSettings): void {
     const root = document.documentElement;
     const theme = settings.theme;
@@ -439,6 +462,8 @@ function App() {
     const activeRepositoryIdRef = useRef<string | null>(null);
     const autoRefreshRef = useRef<() => void>(() => { });
     const autoReloadDiffRef = useRef<() => void>(() => { });
+    const openWorktreeDiffRef = useRef<(path: string, staged: boolean) => void>(() => { });
+    const swapWorktreeDiffSideRef = useRef<(path: string, staged: boolean) => void>(() => { });
     const openDiffRequestRef = useRef<{ sequence: number; request: DiffRequest } | null>(null);
     const autoFetchRef = useRef<() => void>(() => { });
     const lastAutoFetchRef = useRef<Map<string, number>>(new Map());
@@ -737,7 +762,11 @@ function App() {
         return () => window.clearTimeout(timer);
     }, [activeRepository, searchOpen, searchQuery, showError]);
 
-    const applyOptimisticWorktreeMutation = useCallback((action: WorktreeStageAction, paths: string[]) => {
+    const applyOptimisticWorktreeMutation = useCallback((
+        action: WorktreeStageAction,
+        paths: string[],
+        selection?: { path: string; staged: boolean } | null,
+    ) => {
         if (!activeRepository || !snapshot || !paths.length) return undefined;
         const repositoryId = activeRepository.repository_id;
         const previousSnapshot = snapshot;
@@ -749,7 +778,7 @@ function App() {
         });
         setSelectedWorktreeFile((current) => {
             if (activeRepositoryIdRef.current !== repositoryId) return current;
-            return optimisticWorktreeSelection(current, action, paths);
+            return selection ?? optimisticWorktreeSelection(current, action, paths);
         });
 
         return () => {
@@ -808,29 +837,61 @@ function App() {
             }));
     }, [history, runMutation, snapshot]);
 
+    const worktreeDiffFollowUp = useCallback((action: WorktreeStageAction, paths: string[]) => {
+        if (!activeRepository || busy || overviewLoading) return null;
+        if (!snapshot || centerView !== "diff" || !selectedWorktreeFile) return null;
+        if (selectedWorktreeFile.staged !== (action === "unstage")) return null;
+        if (!paths.includes(selectedWorktreeFile.path)) return null;
+        return nextWorktreeSelection(
+            snapshot.status.entries,
+            selectedWorktreeFile,
+            action,
+            paths,
+            persisted.settings.file_view_mode,
+        );
+    }, [
+        activeRepository,
+        busy,
+        centerView,
+        overviewLoading,
+        persisted.settings.file_view_mode,
+        selectedWorktreeFile,
+        snapshot,
+    ]);
+
     const stagePaths = useCallback((paths: string[], collapse?: FolderCollapseTarget) => {
         if (collapse) setStageCollapse((current) => ({ target: collapse, staged: true, token: (current?.token ?? 0) + 1 }));
+        const followUp = worktreeDiffFollowUp("stage", paths);
+        const crossed = followUp?.staged === true;
+        if (followUp && !crossed) openWorktreeDiffRef.current(followUp.path, followUp.staged);
         void runMutation(
             "Files staged",
             (repository) => gitcatApi.stagePaths(repository.repository_id, paths),
             {
                 silent: true,
-                optimistic: () => applyOptimisticWorktreeMutation("stage", paths),
+                optimistic: () => applyOptimisticWorktreeMutation("stage", paths, followUp),
             },
-        );
-    }, [applyOptimisticWorktreeMutation, runMutation]);
+        ).then((done) => {
+            if (done && followUp && crossed) swapWorktreeDiffSideRef.current(followUp.path, followUp.staged);
+        });
+    }, [applyOptimisticWorktreeMutation, runMutation, worktreeDiffFollowUp]);
 
     const unstagePaths = useCallback((paths: string[], collapse?: FolderCollapseTarget) => {
         if (collapse) setStageCollapse((current) => ({ target: collapse, staged: false, token: (current?.token ?? 0) + 1 }));
+        const followUp = worktreeDiffFollowUp("unstage", paths);
+        const crossed = followUp?.staged === false;
+        if (followUp && !crossed) openWorktreeDiffRef.current(followUp.path, followUp.staged);
         void runMutation(
             "Files unstaged",
             (repository) => gitcatApi.unstagePaths(repository.repository_id, paths),
             {
                 silent: true,
-                optimistic: () => applyOptimisticWorktreeMutation("unstage", paths),
+                optimistic: () => applyOptimisticWorktreeMutation("unstage", paths, followUp),
             },
-        );
-    }, [applyOptimisticWorktreeMutation, runMutation]);
+        ).then((done) => {
+            if (done && followUp && crossed) swapWorktreeDiffSideRef.current(followUp.path, followUp.staged);
+        });
+    }, [applyOptimisticWorktreeMutation, runMutation, worktreeDiffFollowUp]);
 
     const createPatchFile = useCallback(async (paths: string[], staged: boolean) => {
         if (!activeRepository) return;
@@ -1073,16 +1134,34 @@ function App() {
         });
     }, [loadDiff, persisted.settings.diff_context_lines, persisted.settings.diff_max_bytes, selectedOid]);
 
-    const openWorktreeDiff = useCallback((entry: StatusEntry, staged: boolean) => {
-        setSelectedWorktreeFile({ path: entry.path, staged });
+    const openWorktreeFileDiff = useCallback((path: string, staged: boolean) => {
+        setSelectedWorktreeFile({ path, staged });
         void loadDiff({
             target: { kind: staged ? "staged" : "worktree" },
-            path: entry.path,
+            path,
             context_lines: persisted.settings.diff_context_lines,
             ignore_whitespace: false,
             max_bytes: persisted.settings.diff_max_bytes,
         });
     }, [loadDiff, persisted.settings.diff_context_lines, persisted.settings.diff_max_bytes]);
+
+    const openWorktreeDiff = useCallback((entry: StatusEntry, staged: boolean) => {
+        openWorktreeFileDiff(entry.path, staged);
+    }, [openWorktreeFileDiff]);
+
+    const swapWorktreeDiffSide = useCallback((path: string, staged: boolean) => {
+        const open = openDiffRequestRef.current;
+        if (!open || open.sequence !== diffLoadSequence.current || open.request.path !== path) return;
+        const kind = open.request.target.kind;
+        if (kind !== "worktree" && kind !== "staged") return;
+        setSelectedWorktreeFile({ path, staged });
+        void loadDiff({ ...open.request, target: { kind: staged ? "staged" : "worktree" } }, true);
+    }, [loadDiff]);
+
+    useEffect(() => {
+        openWorktreeDiffRef.current = openWorktreeFileDiff;
+        swapWorktreeDiffSideRef.current = swapWorktreeDiffSide;
+    }, [openWorktreeFileDiff, swapWorktreeDiffSide]);
 
     const openConflictEditor = useCallback(async (entry: StatusEntry) => {
         if (!activeRepository || busy) return;
