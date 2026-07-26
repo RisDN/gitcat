@@ -518,6 +518,10 @@
   @apply top-0;
 }
 
+.gc-diff-scroller--mapped::-webkit-scrollbar:vertical {
+  width: 0;
+}
+
 .gc-diff-table__head th {
   @apply border-b border-border px-[7px] py-1 font-semibold;
 }

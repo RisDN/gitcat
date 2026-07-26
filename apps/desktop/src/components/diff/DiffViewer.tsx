@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import { cx } from "../../lib";
 import type { FileDiff } from "../../lib/types";
-import { ChangeKind, DIFF_VIEW_MODES, DiffState, ModeButton } from "./DiffParts";
+import { DiffMinimap } from "./DiffMinimap";
+import { ChangeKind, DIFF_VIEW_MODES, DiffState, ModeButton, isWholeFileMode } from "./DiffParts";
 import type { DiffViewMode } from "./DiffParts";
 import { InlineHunk } from "./InlineHunk";
 import { SplitHunk } from "./SplitHunk";
+import { buildDiffMap } from "./rows";
 
 export interface DiffViewerProps {
   diff: FileDiff | null;
@@ -27,6 +29,11 @@ export function DiffViewer({
 }: DiffViewerProps) {
   const [internalMode, setInternalMode] = useState<DiffViewMode>(defaultMode);
   const mode = controlledMode ?? internalMode;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const diffMap = useMemo(
+    () => buildDiffMap(diff?.hunks ?? [], mode),
+    [diff, mode],
+  );
 
   const setMode = (nextMode: DiffViewMode) => {
     if (nextMode === mode) return;
@@ -69,6 +76,7 @@ export function DiffViewer({
   const oldPath = diff.old_path ?? diff.new_path;
   const renamed = diff.old_path !== null && diff.old_path !== diff.new_path;
   const showHunkHeaders = mode === "hunk" || diff.hunks.length > 1;
+  const showMinimap = isWholeFileMode(mode) && !diff.binary && diffMap.marks.length > 0;
 
   return (
     <section aria-label={`Diff for ${diff.new_path}`} className={rootClass}>
@@ -113,12 +121,18 @@ export function DiffViewer({
       ) : diff.hunks.length === 0 ? (
         <DiffState>No text changes to display.</DiffState>
       ) : (
-        <div className="min-w-0 flex-1 overflow-auto">
-          {diff.hunks.map((hunk, index) => (
-            mode === "split"
-              ? <SplitHunk hunk={hunk} index={index} key={`${hunk.header}:${index}`} showHeader={showHunkHeaders} />
-              : <InlineHunk hunk={hunk} index={index} key={`${hunk.header}:${index}`} showHeader={showHunkHeaders} />
-          ))}
+        <div className="flex min-h-0 min-w-0 flex-1">
+          <div
+            className={cx("min-w-0 flex-1 overflow-auto", showMinimap && "gc-diff-scroller--mapped")}
+            ref={scrollRef}
+          >
+            {diff.hunks.map((hunk, index) => (
+              mode === "split"
+                ? <SplitHunk hunk={hunk} index={index} key={`${hunk.header}:${index}`} showHeader={showHunkHeaders} />
+                : <InlineHunk hunk={hunk} index={index} key={`${hunk.header}:${index}`} showHeader={showHunkHeaders} />
+            ))}
+          </div>
+          {showMinimap ? <DiffMinimap map={diffMap} scrollRef={scrollRef} /> : null}
         </div>
       )}
     </section>

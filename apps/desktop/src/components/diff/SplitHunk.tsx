@@ -2,58 +2,7 @@ import { memo } from "react";
 
 import type { DiffHunk, DiffLine } from "../../lib/types";
 import { HunkHeader, HunkSection, LineContent, displayLineNumber } from "./DiffParts";
-
-interface SplitRow {
-  left: DiffLine | null;
-  right: DiffLine | null;
-  marker: DiffLine | null;
-}
-
-// Pairs each run of deletions with the additions that replaced it, so the two
-// sides line up even when the runs have different lengths.
-function toSplitRows(lines: readonly DiffLine[]): SplitRow[] {
-  const rows: SplitRow[] = [];
-  let index = 0;
-
-  while (index < lines.length) {
-    const line = lines[index];
-
-    if (line.kind === "context") {
-      rows.push({ left: line, right: line, marker: null });
-      index += 1;
-      continue;
-    }
-
-    if (line.kind === "no_newline") {
-      rows.push({ left: null, right: null, marker: line });
-      index += 1;
-      continue;
-    }
-
-    const deletions: DiffLine[] = [];
-    const additions: DiffLine[] = [];
-    while (
-      index < lines.length
-      && (lines[index].kind === "deletion" || lines[index].kind === "addition")
-    ) {
-      const changedLine = lines[index];
-      if (changedLine.kind === "deletion") deletions.push(changedLine);
-      else additions.push(changedLine);
-      index += 1;
-    }
-
-    const rowCount = Math.max(deletions.length, additions.length);
-    for (let pairIndex = 0; pairIndex < rowCount; pairIndex += 1) {
-      rows.push({
-        left: deletions[pairIndex] ?? null,
-        right: additions[pairIndex] ?? null,
-        marker: null,
-      });
-    }
-  }
-
-  return rows;
-}
+import { toSplitRows } from "./rows";
 
 function SplitCell({ line, side }: { line: DiffLine | null; side: "old" | "new" }) {
   const number = side === "old" ? line?.old_line : line?.new_line;
