@@ -16,7 +16,7 @@ import {
   treeIndent,
 } from "./tree";
 import type { FileChangeCounts } from "./tree";
-import type { FileTreeItem, TreeNode } from "./tree";
+import type { FileTreeItem, FolderCollapse, TreeNode } from "./tree";
 
 const STATUS_ICON: Record<string, LucideIcon> = {
   added: Plus,
@@ -28,6 +28,15 @@ const STATUS_ICON: Record<string, LucideIcon> = {
   type_changed: FileType,
   unmerged: TriangleAlert,
 };
+
+function collapseTargetPath(target: FolderCollapse["target"]): string {
+  return target === "all" ? "" : normalizePath(target.path);
+}
+
+function isForcedCollapsed(forced: string | null, path: string): boolean {
+  if (forced === null) return false;
+  return !forced || path === forced || path.startsWith(`${forced}/`);
+}
 
 function renderFileCountSummary(counts: FileChangeCounts, showModified: boolean): ReactNode {
   return (
@@ -42,7 +51,7 @@ function renderFileCountSummary(counts: FileChangeCounts, showModified: boolean)
 interface FileTreeProps<T> {
   ariaLabel: string;
   className?: string;
-  collapseSignal?: number;
+  collapse?: FolderCollapse;
   emptyClassName?: string;
   emptyState: ReactNode;
   items: readonly FileTreeItem<T>[];
@@ -57,7 +66,7 @@ interface FileTreeProps<T> {
 export function FileTree<T>({
   ariaLabel,
   className = "",
-  collapseSignal = 0,
+  collapse,
   emptyClassName = "",
   emptyState,
   items,
@@ -74,28 +83,57 @@ export function FileTree<T>({
   );
   const tree = useMemo(() => buildTree(items), [items]);
   const folderPaths = useMemo(() => collectFolderPaths(tree), [tree]);
+  const initialForcedCollapse = () => (collapse ? collapseTargetPath(collapse.target) : null);
   const [folderExpansion, setFolderExpansion] = useState<Map<string, boolean>>(() => new Map());
   const [defaultExpanded, setDefaultExpanded] = useState<boolean | null>(null);
-  const isFolderExpanded = (path: string) => (
-    folderExpansion.get(path) ?? defaultExpanded ?? normalizePath(path).split("/").length <= 3
-  );
+  const [forcedCollapse, setForcedCollapse] = useState<string | null>(initialForcedCollapse);
+  const isFolderExpanded = (path: string) => {
+    const normalized = normalizePath(path);
+    if (isForcedCollapsed(forcedCollapse, normalized)) return false;
+    return folderExpansion.get(path) ?? defaultExpanded ?? normalized.split("/").length <= 3;
+  };
   const allExpanded = folderPaths.every(isFolderExpanded);
-  const collapseSignalRef = useRef(collapseSignal);
+  const collapseTokenRef = useRef(collapse?.token ?? 0);
   const skipSelectionExpandRef = useRef<string | undefined>(undefined);
+  const forcedCollapseRef = useRef<string | null>(initialForcedCollapse());
+
+  const forceCollapse = (target: string) => {
+    const previous = forcedCollapseRef.current;
+    forcedCollapseRef.current = target;
+    setForcedCollapse(target);
+    setFolderExpansion((current) => {
+      const next = new Map(current);
+      if (previous) next.set(previous, false);
+      if (target) next.set(target, false);
+      return next;
+    });
+  };
+
+  const releaseForcedCollapse = () => {
+    forcedCollapseRef.current = null;
+    setForcedCollapse(null);
+  };
 
   useEffect(() => {
-    if (collapseSignalRef.current === collapseSignal) return;
-    collapseSignalRef.current = collapseSignal;
-    skipSelectionExpandRef.current = selectedId;
-    setFolderExpansion(new Map());
-    setDefaultExpanded(false);
-  }, [collapseSignal, selectedId]);
+    if (!collapse || collapseTokenRef.current === collapse.token) return;
+    collapseTokenRef.current = collapse.token;
+    forceCollapse(collapseTargetPath(collapse.target));
+    if (collapse.target === "all") {
+      skipSelectionExpandRef.current = selectedId;
+      setFolderExpansion(new Map());
+      setDefaultExpanded(false);
+    }
+  }, [collapse, selectedId]);
 
   useEffect(() => {
     if (mode !== "tree" || !selectedId) return;
     if (skipSelectionExpandRef.current === selectedId) return;
     const selected = items.find((item) => item.id === selectedId);
     if (!selected) return;
+    if (isForcedCollapsed(forcedCollapseRef.current, normalizePath(selected.path))) {
+      skipSelectionExpandRef.current = selectedId;
+      return;
+    }
     const segments = normalizePath(selected.path).split("/").slice(0, -1);
     const ancestors = segments.map((_, index) => segments.slice(0, index + 1).join("/"));
     setFolderExpansion((current) => {
@@ -112,6 +150,7 @@ export function FileTree<T>({
   const toggleFolder = (path: string) => {
     const expanded = isFolderExpanded(path);
     const prefix = `${path}/`;
+    releaseForcedCollapse();
     setFolderExpansion((current) => {
       const next = new Map(current);
       next.set(path, !expanded);
@@ -121,6 +160,8 @@ export function FileTree<T>({
   };
 
   const toggleAll = () => {
+    forcedCollapseRef.current = null;
+    setForcedCollapse(null);
     setFolderExpansion(new Map());
     setDefaultExpanded(!allExpanded);
   };

@@ -11,6 +11,13 @@ export interface FileTreeItem<T> {
   deletions?: number | null;
 }
 
+export type FolderCollapseTarget = "all" | { path: string };
+
+export interface FolderCollapse {
+  target: FolderCollapseTarget;
+  token: number;
+}
+
 export interface FileChangeCounts {
   added: number;
   deleted: number;

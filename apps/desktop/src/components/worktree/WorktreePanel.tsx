@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import type { ConflictResolution, RepositoryOperationState, StatusEntry, WorktreeStatus } from "../../lib/types";
 import { ContextMenu, type ContextAction } from "../ContextMenu";
 import { FileTreeControls } from "../file-tree";
-import type { FileTreeItem, FileViewMode } from "../file-tree";
+import type { FileTreeItem, FileViewMode, FolderCollapse, FolderCollapseTarget } from "../file-tree";
 import { SidePanel } from "../ui";
 import { CommitForm } from "./CommitForm";
 import type { CommitDraft } from "./CommitForm";
@@ -29,11 +29,11 @@ const STATUS_LABEL: Record<string, string> = {
 interface WorktreePanelProps {
   status: WorktreeStatus;
   busy: boolean;
-  collapseSignal?: number;
+  collapse?: FolderCollapse & { staged: boolean };
   fileViewMode: FileViewMode;
   onFileViewModeChange: (mode: FileViewMode) => void;
-  onStage: (paths: string[]) => void;
-  onUnstage: (paths: string[]) => void;
+  onStage: (paths: string[], collapse?: FolderCollapseTarget) => void;
+  onUnstage: (paths: string[], collapse?: FolderCollapseTarget) => void;
   onDiscard: (paths: string[]) => void;
   onStashFile: (paths: string[]) => void;
   onIgnore: (patterns: string[]) => void;
@@ -77,7 +77,7 @@ function toTreeItems(entries: StatusEntry[], side: "index" | "worktree"): FileTr
 export function WorktreePanel({
   status,
   busy,
-  collapseSignal,
+  collapse,
   fileViewMode,
   onFileViewModeChange,
   onStage,
@@ -195,8 +195,8 @@ export function WorktreePanel({
     const { entries, path, staged } = folderMenu;
     const paths = entries.map((entry) => entry.path);
     switch (id) {
-      case "stage": onStage(paths); break;
-      case "unstage": onUnstage(paths); break;
+      case "stage": onStage(paths, { path }); break;
+      case "unstage": onUnstage(paths, { path }); break;
       case "discard": onDiscard(paths); break;
       case "stash": onStashFile(paths); break;
       case "ignore": onIgnore([`${path}/`]); break;
@@ -239,10 +239,10 @@ export function WorktreePanel({
         actionDisabled={!stageable.length}
         branchName={branchName}
         busy={busy}
-        collapseSignal={collapseSignal}
+        collapse={collapse && !collapse.staged ? collapse : undefined}
         items={unstagedItems}
         label="Unstaged"
-        onAction={() => onStage(stageable.map((entry) => entry.path))}
+        onAction={() => onStage(stageable.map((entry) => entry.path), "all")}
         onEntryAction={(entry) => onStage([entry.path])}
         onItemContextMenu={(entry, event) => openFileMenu(entry, false, event)}
         onFolderContextMenu={(folder, event) => openFolderMenu(folder, false, event)}
@@ -260,10 +260,10 @@ export function WorktreePanel({
         actionLabel="Unstage all"
         actionPriority
         busy={busy}
-        collapseSignal={collapseSignal}
+        collapse={collapse?.staged ? collapse : undefined}
         items={stagedItems}
         label="Staged"
-        onAction={() => onUnstage(staged.map((entry) => entry.path))}
+        onAction={() => onUnstage(staged.map((entry) => entry.path), "all")}
         onEntryAction={(entry) => onUnstage([entry.path])}
         onItemContextMenu={(entry, event) => openFileMenu(entry, true, event)}
         onFolderContextMenu={(folder, event) => openFolderMenu(folder, true, event)}

@@ -4,7 +4,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { cx } from "../../lib";
 import type { ConflictResolution, RepositoryOperationState, StatusEntry } from "../../lib/types";
 import { FileTree } from "../file-tree";
-import type { FileTreeItem, FileViewMode } from "../file-tree";
+import type { FileTreeItem, FileViewMode, FolderCollapse } from "../file-tree";
 import { ConflictQuickActions } from "./ConflictQuickActions";
 import { BulkButton, StageButton } from "./StageButtons";
 
@@ -16,7 +16,7 @@ export function StatusSection({
   actionPriority = false,
   branchName = "current branch",
   busy,
-  collapseSignal,
+  collapse,
   onAction,
   onEntryAction,
   onItemContextMenu,
@@ -38,7 +38,7 @@ export function StatusSection({
   actionPriority?: boolean;
   branchName?: string;
   busy: boolean;
-  collapseSignal?: number;
+  collapse?: FolderCollapse;
   onAction: () => void;
   onEntryAction: (entry: StatusEntry) => void;
   onItemContextMenu?: (entry: StatusEntry, event: ReactMouseEvent) => void;
@@ -73,7 +73,7 @@ export function StatusSection({
         <FileTree
           ariaLabel={`${label} files`}
           className="min-h-0 flex-1 px-1.25 pb-1.75"
-          collapseSignal={collapseSignal}
+          collapse={collapse}
           emptyClassName="min-h-0 flex-1"
           emptyState={<><Check aria-hidden="true" size={14} /> Nothing here</>}
           items={items}

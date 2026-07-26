@@ -7,6 +7,7 @@ import { ConflictResolverDialog } from "./components/conflict";
 import { ContextMenu, type ContextAction } from "./components/ContextMenu";
 import { DiffViewer, type DiffViewMode } from "./components/diff";
 import { fileChangeCounts } from "./components/file-tree";
+import type { FolderCollapseTarget } from "./components/file-tree";
 import { PromptDialog } from "./components/PromptDialog";
 import {
     RefSidebar,
@@ -404,7 +405,7 @@ function App() {
     const [selectedPath, setSelectedPath] = useState<string | undefined>();
     const [selectedWorktreeFile, setSelectedWorktreeFile] = useState<{ path: string; staged: boolean } | null>(null);
     const [centerView, setCenterView] = useState<"graph" | "diff">("graph");
-    const [stageCollapseSignal, setStageCollapseSignal] = useState(0);
+    const [stageCollapse, setStageCollapse] = useState<{ target: FolderCollapseTarget; staged: boolean; token: number } | null>(null);
     const [busy, setBusy] = useState(false);
     const [overviewLoading, setOverviewLoading] = useState(false);
     const [historyLoading, setHistoryLoading] = useState(false);
@@ -807,8 +808,8 @@ function App() {
             }));
     }, [history, runMutation, snapshot]);
 
-    const stagePaths = useCallback((paths: string[]) => {
-        setStageCollapseSignal((value) => value + 1);
+    const stagePaths = useCallback((paths: string[], collapse?: FolderCollapseTarget) => {
+        if (collapse) setStageCollapse((current) => ({ target: collapse, staged: true, token: (current?.token ?? 0) + 1 }));
         void runMutation(
             "Files staged",
             (repository) => gitcatApi.stagePaths(repository.repository_id, paths),
@@ -819,8 +820,8 @@ function App() {
         );
     }, [applyOptimisticWorktreeMutation, runMutation]);
 
-    const unstagePaths = useCallback((paths: string[]) => {
-        setStageCollapseSignal((value) => value + 1);
+    const unstagePaths = useCallback((paths: string[], collapse?: FolderCollapseTarget) => {
+        if (collapse) setStageCollapse((current) => ({ target: collapse, staged: false, token: (current?.token ?? 0) + 1 }));
         void runMutation(
             "Files unstaged",
             (repository) => gitcatApi.unstagePaths(repository.repository_id, paths),
@@ -1450,7 +1451,7 @@ function App() {
                     const paths = snapshot.status.entries
                         .filter((entry) => entry.worktree && !entry.conflicted)
                         .map((entry) => entry.path);
-                    if (paths.length) stagePaths(paths);
+                    if (paths.length) stagePaths(paths, "all");
                 }
             } else if (
                 matches(keybinds.unstage_all)
@@ -1458,7 +1459,7 @@ function App() {
                 event.preventDefault();
                 if (activeRepository && snapshot && wipSelected) {
                     const paths = snapshot.status.entries.filter((entry) => entry.index && !entry.conflicted).map((entry) => entry.path);
-                    if (paths.length) unstagePaths(paths);
+                    if (paths.length) unstagePaths(paths, "all");
                 }
             } else if (matches(keybinds.focus_commit_message)) {
                 event.preventDefault();
@@ -2356,7 +2357,7 @@ function App() {
                                 <WorktreePanel
                                     busy={busy}
                                     branchName={currentBranch(snapshot)}
-                                    collapseSignal={stageCollapseSignal}
+                                    collapse={stageCollapse ?? undefined}
                                     commitKeybind={persisted.settings.keybinds.commit}
                                     draft={activeCommitDraft}
                                     fileViewMode={persisted.settings.file_view_mode}
