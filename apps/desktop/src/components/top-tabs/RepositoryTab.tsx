@@ -91,8 +91,6 @@ export function RepositoryTab({
             <AlertTriangle size={13} />
             <b className="font-mono text-[9px] font-bold leading-none">{tab.conflictCount}</b>
           </span>
-        ) : tab.dirty ? (
-          <span className="size-1.5 shrink-0 rounded-full bg-warning" title="Uncommitted changes" />
         ) : null}
       </button>
       <IconButton
