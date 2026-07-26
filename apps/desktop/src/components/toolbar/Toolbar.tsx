@@ -4,8 +4,6 @@ import {
   ChevronDown,
   Download,
   GitBranchPlus,
-  PanelLeftClose,
-  PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
   Search,
@@ -44,9 +42,7 @@ interface ToolbarProps {
   canStash: boolean;
   canPop: boolean;
   pullMode: PullMode;
-  leftPanelVisible: boolean;
   rightPanelVisible: boolean;
-  leftPanelKeybind: string;
   rightPanelKeybind: string;
   searchKeybind: string;
   settingsKeybind: string;
@@ -61,7 +57,6 @@ interface ToolbarProps {
   onStashPop: () => void;
   onSearch: () => void;
   onSettings: () => void;
-  onToggleLeftPanel: () => void;
   onToggleRightPanel: () => void;
   onConflictIndicator: () => void;
   onConflictTargetChange: (target: string | null) => void;
@@ -78,9 +73,7 @@ export function Toolbar({
   canStash,
   canPop,
   pullMode,
-  leftPanelVisible,
   rightPanelVisible,
-  leftPanelKeybind,
   rightPanelKeybind,
   searchKeybind,
   settingsKeybind,
@@ -95,7 +88,6 @@ export function Toolbar({
   onStashPop,
   onSearch,
   onSettings,
-  onToggleLeftPanel,
   onToggleRightPanel,
   onConflictIndicator,
   onConflictTargetChange,
@@ -299,13 +291,6 @@ export function Toolbar({
             </MenuSurface>
           ) : null}
         </div>
-        <IconButton
-          aria-label={`${leftPanelVisible ? "Hide" : "Show"} left panel`}
-          onClick={onToggleLeftPanel}
-          title={`${leftPanelVisible ? "Hide" : "Show"} left panel (${leftPanelKeybind})`}
-        >
-          {leftPanelVisible ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
-        </IconButton>
         <IconButton
           aria-label={`${rightPanelVisible ? "Hide" : "Show"} commit panel`}
           onClick={onToggleRightPanel}

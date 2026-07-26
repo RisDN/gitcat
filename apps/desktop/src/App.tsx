@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Copy, Download, FolderInput, FolderPlus, FolderX, GitBranchPlus, GitCommitHorizontal, GitPullRequestArrow, LoaderCircle, Minus, Pencil, Plus, RotateCcw, Tag, Trash2, Upload, X, } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, Download, FolderInput, FolderPlus, FolderX, GitBranchPlus, GitCommitHorizontal, GitPullRequestArrow, LoaderCircle, Minus, PanelLeftOpen, Pencil, Plus, RotateCcw, Tag, Trash2, Upload, X, } from "lucide-react";
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState, } from "react";
 
 import { CommitDetails, CommitDetailsSkeleton } from "./components/commit-details";
@@ -36,7 +36,7 @@ import {
     type TabGroupView,
     type TabView,
 } from "./components/top-tabs";
-import { Button, SidePanel, Spinner } from "./components/ui";
+import { Button, IconButton, SidePanel, Spinner } from "./components/ui";
 import { WelcomeView } from "./components/WelcomeView";
 import { WorktreePanel, type CommitDraft } from "./components/worktree";
 import { getApiError, gitcatApi } from "./lib/api";
@@ -2197,8 +2197,6 @@ function App() {
                         conflictIndicator={conflictIndicator}
                         conflictTarget={conflictTarget}
                         conflictTargets={conflictTargets}
-                        leftPanelKeybind={persisted.settings.keybinds.toggle_left_panel}
-                        leftPanelVisible={leftPanelVisible}
                         onCreateBranch={createBranchAtHead}
                         onConflictIndicator={showConflictIndicator}
                         onConflictTargetChange={selectConflictTarget}
@@ -2209,7 +2207,6 @@ function App() {
                         onSettings={() => setSettingsOpen(true)}
                         onStash={stashActiveRepository}
                         onStashPop={popLatestStash}
-                        onToggleLeftPanel={() => setLeftPanelVisible((visible) => !visible)}
                         onToggleRightPanel={() => setRightPanelVisible((visible) => !visible)}
                         operation={snapshot?.operation_state ?? "normal"}
                         pullMode={persisted.settings.default_pull_mode}
@@ -2248,9 +2245,11 @@ function App() {
                             gridTemplateColumns: `${leftPanelVisible ? sidebarWidth : 0}px ${leftPanelVisible ? 5 : 0}px minmax(0, 1fr) ${rightPanelVisible ? 5 : 0}px ${rightPanelVisible ? detailsWidth : 0}px`,
                         }}
                     >
-                        <div className="min-h-0 min-w-0 overflow-hidden" hidden={!leftPanelVisible}>
+                        <div className="min-h-0 min-w-0 overflow-hidden" hidden={!leftPanelVisible} style={{ gridColumn: 1 }}>
                             <RefSidebar
+                                collapseKeybind={persisted.settings.keybinds.toggle_left_panel}
                                 localBranches={snapshot?.local_branches ?? []}
+                                onCollapse={() => setLeftPanelVisible(false)}
                                 onBranchContextMenu={(request: BranchContextMenuRequest) => {
                                     setCommitMenu(null);
                                     setTabMenu(null);
@@ -2271,10 +2270,19 @@ function App() {
                                 tags={snapshot?.tags ?? []}
                             />
                         </div>
-                        <Resizer hidden={!leftPanelVisible} onPointerDown={(event) => beginResize("left", event)} />
+                        <Resizer hidden={!leftPanelVisible} onPointerDown={(event) => beginResize("left", event)} style={{ gridColumn: 2 }} />
 
-                        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background" aria-label="Repository history">
+                        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background" aria-label="Repository history" style={{ gridColumn: 3 }}>
                             <header className="flex h-8.75 flex-[0_0_35px] items-center gap-3 border-b border-border bg-[color-mix(in_srgb,var(--gc-surface)_80%,var(--gc-background))] px-2.25">
+                                {leftPanelVisible ? null : (
+                                    <IconButton
+                                        aria-label="Show branches panel"
+                                        onClick={() => setLeftPanelVisible(true)}
+                                        title={`Show branches panel (${persisted.settings.keybinds.toggle_left_panel})`}
+                                    >
+                                        <PanelLeftOpen size={16} />
+                                    </IconButton>
+                                )}
                                 <ViewTabs>
                                     <ViewTab active={centerView === "graph"} onClick={() => setCenterView("graph")}>Graph</ViewTab>
                                     <ViewTab active={centerView === "diff"} disabled={!diff && !diffLoading} onClick={() => setCenterView("diff")}>Diff</ViewTab>
@@ -2430,8 +2438,8 @@ function App() {
                             )}
                         </section>
 
-                        <Resizer hidden={!rightPanelVisible} onPointerDown={(event) => beginResize("right", event)} />
-                        <div className="min-h-0 min-w-0 overflow-hidden" hidden={!rightPanelVisible}>
+                        <Resizer hidden={!rightPanelVisible} onPointerDown={(event) => beginResize("right", event)} style={{ gridColumn: 4 }} />
+                        <div className="min-h-0 min-w-0 overflow-hidden" hidden={!rightPanelVisible} style={{ gridColumn: 5 }}>
                             {wipSelected && snapshot ? (
                                 <WorktreePanel
                                     busy={busy}

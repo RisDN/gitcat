@@ -1,4 +1,4 @@
-import { Check, Cloud, GitBranch, Monitor, Plus, Search, Tag } from "lucide-react";
+import { Check, Cloud, GitBranch, Monitor, PanelLeftClose, Plus, Search, Tag } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 
@@ -22,6 +22,8 @@ interface RefSidebarProps {
   remoteBranches: BranchInfo[];
   remoteIconUrls?: ReadonlyMap<string, string>;
   tags: RefLabel[];
+  collapseKeybind: string;
+  onCollapse: () => void;
   onCheckout: (branch: BranchInfo) => void;
   onCreateBranch: () => void;
   onCheckoutRemote: (branch: BranchInfo) => void;
@@ -43,6 +45,8 @@ export function RefSidebar({
   remoteBranches,
   remoteIconUrls,
   tags,
+  collapseKeybind,
+  onCollapse,
   onCheckout,
   onCreateBranch,
   onCheckoutRemote,
@@ -92,7 +96,17 @@ export function RefSidebar({
 
   return (
     <SidePanel className="overflow-x-hidden" aria-label="References">
-      <div className="m-2.25 flex h-9.75 flex-[0_0_39px] items-center gap-2 rounded-[5px] border border-border bg-background px-2.25 text-muted focus-within:border-accent focus-within:text-accent">
+      <header className="flex h-8.75 flex-[0_0_35px] items-center px-1.25">
+        <IconButton
+          aria-label="Hide branches panel"
+          onClick={onCollapse}
+          title={`Hide branches panel (${collapseKeybind})`}
+        >
+          <PanelLeftClose size={16} />
+        </IconButton>
+      </header>
+
+      <div className="mx-2.25 mb-2.25 flex h-9.75 flex-[0_0_39px] items-center gap-2 rounded-[5px] border border-border bg-background px-2.25 text-muted focus-within:border-accent focus-within:text-accent">
         <Search size={14} />
         <Input
           aria-label="Filter branches"
