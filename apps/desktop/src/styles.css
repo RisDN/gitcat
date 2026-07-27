@@ -116,13 +116,9 @@
     @apply bg-background text-foreground text-[13px];
   }
 
-  button:focus-visible,
-  input:focus-visible,
-  textarea:focus-visible,
-  select:focus-visible,
-  [tabindex]:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--gc-accent) 88%, white);
-    outline-offset: -2px;
+  *:focus,
+  *:focus-visible {
+    outline: none;
   }
 
   button:disabled {
@@ -200,10 +196,6 @@
 
 .gc-commit-graph {
   @apply relative min-w-[780px];
-}
-
-.gc-commit-graph:focus-visible {
-  outline: none;
 }
 
 .gc-commit-graph--empty {
@@ -304,10 +296,6 @@
 .gc-commit-row > *,
 .gc-wip-row > * {
   @apply relative z-[1];
-}
-
-.gc-wip-row:focus-visible {
-  outline: none;
 }
 
 .gc-wip-row__refs {
