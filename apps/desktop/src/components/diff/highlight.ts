@@ -49,15 +49,41 @@ async function buildHighlightMap(diff: FileDiff): Promise<HighlightMap | null> {
   return map.size === 0 ? null : map;
 }
 
+function carryOverHighlight(diff: FileDiff, previous: HighlightMap | null): HighlightMap | null {
+  if (!previous || previous.size === 0) return null;
+
+  const byContent = new Map<string, SyntaxToken[]>();
+  for (const [line, tokens] of previous) {
+    if (!byContent.has(line.content)) byContent.set(line.content, tokens);
+  }
+
+  const seeded = new Map<DiffLine, SyntaxToken[]>();
+  for (const hunk of diff.hunks) {
+    for (const line of hunk.lines) {
+      const tokens = byContent.get(line.content);
+      if (tokens) seeded.set(line, tokens);
+    }
+  }
+
+  return seeded.size === 0 ? null : seeded;
+}
+
 export function useDiffHighlight(diff: FileDiff | null): HighlightMap | null {
   const [map, setMap] = useState<HighlightMap | null>(null);
 
   useEffect(() => {
-    setMap(null);
-    if (!diff || diff.binary) return;
+    if (!diff || diff.binary) {
+      setMap(null);
+      return;
+    }
 
     const lineCount = diff.hunks.reduce((total, hunk) => total + hunk.lines.length, 0);
-    if (lineCount === 0 || lineCount > MAX_HIGHLIGHT_LINES) return;
+    if (lineCount === 0 || lineCount > MAX_HIGHLIGHT_LINES) {
+      setMap(null);
+      return;
+    }
+
+    setMap((previous) => carryOverHighlight(diff, previous));
 
     let cancelled = false;
     void buildHighlightMap(diff).then((result) => {

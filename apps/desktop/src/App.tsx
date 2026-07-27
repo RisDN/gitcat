@@ -41,6 +41,7 @@ import { WelcomeView } from "./components/WelcomeView";
 import { WorktreePanel, type CommitDraft } from "./components/worktree";
 import { getApiError, gitcatApi } from "./lib/api";
 import { conflictOperationLabel } from "./lib/conflicts";
+import { sameFileDiff } from "./lib/diffs";
 import {
     DEFAULT_KEYBINDS,
     duplicateKeybinds,
@@ -1121,7 +1122,7 @@ function App() {
                 sequence !== diffLoadSequence.current
                 || activeRepositoryIdRef.current !== repositoryId
             ) return;
-            setDiff(nextDiff);
+            setDiff((current) => (current && sameFileDiff(current, nextDiff) ? current : nextDiff));
         } catch (error) {
             if (
                 !silent
