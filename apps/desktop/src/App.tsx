@@ -18,6 +18,7 @@ import {
 } from "./components/ref-sidebar";
 import { SearchBar } from "./components/SearchBar";
 import { SettingsDialog } from "./components/settings";
+import { CloneDialog, CreateDialog, StartPage } from "./components/start-page";
 import {
     AppShell,
     BuildIdentity,
@@ -40,6 +41,7 @@ import { Button, IconButton, SidePanel, Spinner } from "./components/ui";
 import { WelcomeView } from "./components/WelcomeView";
 import { WorktreePanel, type CommitDraft } from "./components/worktree";
 import { getApiError, gitcatApi } from "./lib/api";
+import { chooseDirectory } from "./lib/platform";
 import { conflictOperationLabel } from "./lib/conflicts";
 import { sameFileDiff } from "./lib/diffs";
 import {
@@ -56,6 +58,7 @@ import type {
     BranchInfo,
     ChangeKind,
     ChangedFile,
+    CloneOptions,
     CommitActionAvailability,
     CommitSummary,
     ConflictFileDetails,
@@ -72,6 +75,7 @@ import type {
     OpenedRepository,
     PersistedState,
     PullMode,
+    RecentRepository,
     RemoteInfo,
     RepositoryInfo,
     RepositorySnapshot,
@@ -111,7 +115,10 @@ const DEFAULT_SETTINGS: AppSettings = {
 const EMPTY_STATE: PersistedState = {
     settings: DEFAULT_SETTINGS,
     workspace: { version: 2, ungrouped_tabs: [], groups: [], active_tab_id: null },
+    recents: [],
 };
+
+const RECENT_LIMIT = 30;
 
 const EMPTY_COMMIT_DRAFT: CommitDraft = { message: "", description: "", amend: false, signoff: false };
 
@@ -228,6 +235,17 @@ function normalizePersistedKeybinds(
 }
 
 function normalizePersistedState(state: PersistedState): PersistedState {
+    const workspace: PersistedState["workspace"] = {
+        version: 2,
+        active_tab_id: state.workspace?.active_tab_id ?? null,
+        groups: state.workspace?.groups ?? [],
+        ungrouped_tabs: state.workspace?.ungrouped_tabs ?? [],
+    };
+    const recents = state.recents?.length
+        ? state.recents
+        : workspaceTabs(workspace)
+            .filter((tab) => tab.kind !== "start")
+            .map((tab) => ({ path: tab.repository_path, name: tab.display_name, opened_at: 0 }));
     return {
         settings: {
             ...DEFAULT_SETTINGS,
@@ -235,12 +253,8 @@ function normalizePersistedState(state: PersistedState): PersistedState {
             keybinds: normalizePersistedKeybinds(state.settings?.keybinds),
             theme: { ...DEFAULT_SETTINGS.theme, ...state.settings?.theme },
         },
-        workspace: {
-            version: 2,
-            active_tab_id: state.workspace?.active_tab_id ?? null,
-            groups: state.workspace?.groups ?? [],
-            ungrouped_tabs: state.workspace?.ungrouped_tabs ?? [],
-        },
+        workspace,
+        recents: recents.slice(0, RECENT_LIMIT),
     };
 }
 
@@ -252,7 +266,7 @@ function expectedState(snapshot: RepositorySnapshot): ExpectedState {
 }
 
 function currentBranch(snapshot: RepositorySnapshot | null): string {
-    if (!snapshot) return "—";
+    if (!snapshot) return "-";
     if (snapshot.head.kind === "branch") return snapshot.head.name;
     if (snapshot.head.kind === "detached") return `detached @ ${snapshot.head.oid.slice(0, 7)}`;
     return snapshot.head.intended_branch;
@@ -450,6 +464,7 @@ function App() {
     const [searchBusy, setSearchBusy] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [prompt, setPrompt] = useState<PromptState>(null);
+    const [startDialog, setStartDialog] = useState<"clone" | "create" | null>(null);
     const [confirmRequest, setConfirmRequest] = useState<ConfirmState>(null);
     const [commitMenu, setCommitMenu] = useState<CommitMenuState | null>(null);
     const [commitMenuActions, setCommitMenuActions] = useState<{
@@ -517,6 +532,7 @@ function App() {
 
     useEffect(() => {
         setPrompt(null);
+        setStartDialog(null);
         setConfirmRequest(null);
         setCommitMenu(null);
         setTabMenu(null);
@@ -555,7 +571,7 @@ function App() {
     }, [addToast]);
 
     const openStoredRepositories = useCallback(async (state: PersistedState) => {
-        const tabs = workspaceTabs(state.workspace);
+        const tabs = workspaceTabs(state.workspace).filter((tab) => tab.kind !== "start");
         if (!tabs.length) return;
         const opened = await Promise.allSettled(tabs.map(async (tab) => [tab.id, await gitcatApi.openRepository(tab.repository_path)] as const));
         const next: Record<string, RuntimeRepository> = {};
@@ -567,7 +583,9 @@ function App() {
         }
         setRuntime(next);
         const preferred = state.workspace.active_tab_id;
-        if (!preferred || !next[preferred]) {
+        const preferredIsStartTab = workspaceTabs(state.workspace)
+            .some((tab) => tab.id === preferred && tab.kind === "start");
+        if (!preferred || (!next[preferred] && !preferredIsStartTab)) {
             const fallback = Object.keys(next)[0] ?? null;
             setPersisted((current) => ({ ...current, workspace: { ...current.workspace, active_tab_id: fallback } }));
         }
@@ -940,47 +958,173 @@ function App() {
         }
     }, [activeRepository, addToast, showError]);
 
-    const chooseRepository = useCallback(async () => {
-        if (busy) return;
-        try {
-            let path = "C:\\Users\\demo\\aurora-engine";
-            if (gitcatApi.runtime === "tauri") {
-                const { open } = await import("@tauri-apps/plugin-dialog");
-                const selected = await open({ directory: true, multiple: false, title: "Open Git repository" });
-                if (!selected || Array.isArray(selected)) return;
-                path = selected;
-            }
-            const existing = workspaceTabs(persisted.workspace).find((tab) => tab.repository_path === path);
-            if (existing) {
-                setPersisted((current) => ({ ...current, workspace: { ...current.workspace, active_tab_id: existing.id } }));
-                return;
-            }
-            setBusy(true);
-            const opened: OpenedRepository = await gitcatApi.openRepository(path);
-            const tab: RepositoryTab = {
-                id: makeId("tab"),
-                repository_path: opened.info.root,
-                display_name: opened.info.name,
-                order: 0,
+    const adoptRepository = useCallback((opened: OpenedRepository, targetTabId: string | null) => {
+        const tabId = targetTabId ?? makeId("tab");
+        setRuntime((current) => ({ ...current, [tabId]: opened }));
+        setPersisted((current) => {
+            const filled = (tab: RepositoryTab): RepositoryTab => (
+                tab.id === tabId
+                    ? {
+                        ...tab,
+                        kind: "repository",
+                        repository_path: opened.info.root,
+                        display_name: opened.info.name,
+                    }
+                    : tab
+            );
+            const reused = workspaceTabs(current.workspace).some((tab) => tab.id === tabId);
+            const workspace = reused
+                ? {
+                    ...current.workspace,
+                    ungrouped_tabs: current.workspace.ungrouped_tabs.map(filled),
+                    groups: current.workspace.groups.map((group) => ({ ...group, tabs: group.tabs.map(filled) })),
+                    active_tab_id: tabId,
+                }
+                : {
+                    ...current.workspace,
+                    ungrouped_tabs: [
+                        ...current.workspace.ungrouped_tabs,
+                        {
+                            id: tabId,
+                            repository_path: opened.info.root,
+                            display_name: opened.info.name,
+                            order: current.workspace.ungrouped_tabs.length,
+                            kind: "repository" as const,
+                        },
+                    ],
+                    active_tab_id: tabId,
+                };
+            const recent: RecentRepository = {
+                path: opened.info.root,
+                name: opened.info.name,
+                opened_at: Date.now(),
             };
-            setRuntime((current) => ({ ...current, [tab.id]: opened }));
+            return {
+                ...current,
+                workspace,
+                recents: [recent, ...current.recents.filter((entry) => entry.path !== recent.path)]
+                    .slice(0, RECENT_LIMIT),
+            };
+        });
+    }, []);
+
+    const forgetRecentRepository = useCallback((path: string) => {
+        setPersisted((current) => ({
+            ...current,
+            recents: current.recents.filter((entry) => entry.path !== path),
+        }));
+    }, []);
+
+    const openRepositoryPath = useCallback(async (path: string, targetTabId: string | null = null) => {
+        if (busy) return;
+        const existing = workspaceTabs(persisted.workspace)
+            .find((tab) => tab.kind !== "start" && tab.repository_path === path);
+        if (existing) {
             setPersisted((current) => {
-                const ungrouped_tabs = [
-                    ...current.workspace.ungrouped_tabs,
-                    { ...tab, order: current.workspace.ungrouped_tabs.length },
-                ];
-                return { ...current, workspace: { ...current.workspace, ungrouped_tabs, active_tab_id: tab.id } };
+                const drop = (tabs: RepositoryTab[]) => tabs.filter((tab) => tab.id !== targetTabId);
+                return {
+                    ...current,
+                    workspace: {
+                        ...current.workspace,
+                        ungrouped_tabs: drop(current.workspace.ungrouped_tabs),
+                        groups: current.workspace.groups.map((group) => ({
+                            ...group,
+                            collapsed: group.tabs.some((tab) => tab.id === existing.id) ? false : group.collapsed,
+                            tabs: drop(group.tabs),
+                        })),
+                        active_tab_id: existing.id,
+                    },
+                };
             });
+            return;
+        }
+        setBusy(true);
+        try {
+            adoptRepository(await gitcatApi.openRepository(path), targetTabId);
         } catch (error) {
             showError("Repository could not be opened", error);
         } finally {
             setBusy(false);
         }
-    }, [busy, persisted.workspace, showError]);
+    }, [adoptRepository, busy, persisted.workspace, showError]);
+
+    const chooseRepository = useCallback(async (targetTabId: string | null = null) => {
+        if (busy) return;
+        try {
+            let path = "C:\\Users\\demo\\aurora-engine";
+            if (gitcatApi.runtime === "tauri") {
+                const selected = await chooseDirectory("Open Git repository");
+                if (!selected) return;
+                path = selected;
+            }
+            await openRepositoryPath(path, targetTabId);
+        } catch (error) {
+            showError("Repository could not be opened", error);
+        }
+    }, [busy, openRepositoryPath, showError]);
+
+    const cloneRepository = useCallback(async (options: CloneOptions, targetTabId: string | null) => {
+        if (busy) return;
+        setBusy(true);
+        try {
+            const opened = await gitcatApi.cloneRepository(options);
+            adoptRepository(opened, targetTabId);
+            addToast({ tone: "success", title: "Repository cloned", detail: opened.info.root });
+        } catch (error) {
+            showError("Clone failed", error);
+        } finally {
+            setBusy(false);
+        }
+    }, [addToast, adoptRepository, busy, showError]);
+
+    const createRepository = useCallback(async (
+        path: string,
+        defaultBranch: string,
+        ignorePatterns: string[],
+        targetTabId: string | null,
+    ) => {
+        if (busy) return;
+        setBusy(true);
+        try {
+            const opened = await gitcatApi.initRepository(path, defaultBranch);
+            if (ignorePatterns.length) {
+                await gitcatApi.appendGitignore(opened.repository_id, ignorePatterns);
+            }
+            adoptRepository(opened, targetTabId);
+            addToast({ tone: "success", title: "Repository created", detail: opened.info.root });
+        } catch (error) {
+            showError("Create repository failed", error);
+        } finally {
+            setBusy(false);
+        }
+    }, [addToast, adoptRepository, busy, showError]);
+
+    const openStartTab = useCallback(() => {
+        if (busy) return;
+        const tabId = makeId("tab");
+        setPersisted((current) => ({
+            ...current,
+            workspace: {
+                ...current.workspace,
+                ungrouped_tabs: [
+                    ...current.workspace.ungrouped_tabs,
+                    {
+                        id: tabId,
+                        repository_path: "",
+                        display_name: "New Tab",
+                        order: current.workspace.ungrouped_tabs.length,
+                        kind: "start" as const,
+                    },
+                ],
+                active_tab_id: tabId,
+            },
+        }));
+    }, [busy]);
 
     const closeTab = useCallback((tabId: string) => {
         if (busy) return;
-        const closedTab = workspaceTabs(workspaceRef.current).find((tab) => tab.id === tabId);
+        const closedTab = workspaceTabs(workspaceRef.current)
+            .find((tab) => tab.id === tabId && tab.kind !== "start");
         if (closedTab) {
             closedTabsRef.current = [
                 ...closedTabsRef.current.filter((tab) => tab.repository_path !== closedTab.repository_path),
@@ -1417,8 +1561,8 @@ function App() {
 
     const orderedTabIds = useMemo(
         () => workspaceTabs(persisted.workspace)
-            .map((tab) => tab.id)
-            .filter((tabId) => runtime[tabId] !== undefined),
+            .filter((tab) => tab.kind === "start" || runtime[tab.id] !== undefined)
+            .map((tab) => tab.id),
         [persisted.workspace, runtime],
     );
 
@@ -1452,7 +1596,7 @@ function App() {
                 matchesKeybind(event, binding)
                 && !(editable && isPlainTypingKeybind(binding))
             );
-            if (settingsOpen || conflictEditor || prompt || commitMenu || tabMenu) {
+            if (settingsOpen || conflictEditor || prompt || startDialog || commitMenu || tabMenu) {
                 if (Object.values(keybinds).some((binding) => matches(binding))) event.preventDefault();
                 return;
             }
@@ -1488,7 +1632,7 @@ function App() {
                 activateRepositoryTab(orderedTabIds[directBindings.findIndex(matches)]);
             } else if (matches(keybinds.new_repository_tab)) {
                 event.preventDefault();
-                if (!busy) void chooseRepository();
+                openStartTab();
             } else if (matches(keybinds.close_repository)) {
                 event.preventDefault();
                 if (activeTabId) closeTab(activeTabId);
@@ -1623,6 +1767,7 @@ function App() {
         orderedTabIds.length,
         orderedTabIds,
         openSearch,
+        openStartTab,
         persisted.settings.keybinds,
         prompt,
         pullActiveRepository,
@@ -1632,6 +1777,7 @@ function App() {
         runMutation,
         settingsOpen,
         showError,
+        startDialog,
         selectWip,
         selectedWorktreeFile,
         snapshot,
@@ -2149,7 +2295,7 @@ function App() {
         path: tab.repository_path,
         dirty: tab.id === activeTabId && snapshot ? !snapshot.status.clean : false,
         conflictCount: tab.id === activeTabId ? activeConflictCount : 0,
-        unavailable: !runtime[tab.id],
+        unavailable: tab.kind !== "start" && !runtime[tab.id],
     }), [activeConflictCount, activeTabId, runtime, snapshot]);
     const ungroupedTabs = useMemo(
         () => persisted.workspace.ungrouped_tabs.map(toTabView),
@@ -2230,7 +2376,7 @@ function App() {
                 onClose={closeTab}
                 onCreateGroup={() => setPrompt({ kind: "create_group" })}
                 onMoveTab={moveRepositoryTab}
-                onOpen={() => void chooseRepository()}
+                onOpen={openStartTab}
                 onRenameGroup={(groupId) => {
                     const group = persisted.workspace.groups.find((item) => item.id === groupId);
                     if (group) setPrompt({ kind: "rename_group", groupId, current: group.name });
@@ -2249,10 +2395,22 @@ function App() {
             />
 
             {!activeRepository ? (
-                <WelcomeView
-                    onOpen={() => void chooseRepository()}
-                    openKeybind={persisted.settings.keybinds.open_repository}
-                />
+                activeTab?.kind === "start" ? (
+                    <StartPage
+                        busy={busy}
+                        onClone={() => setStartDialog("clone")}
+                        onCreate={() => setStartDialog("create")}
+                        onForgetRecent={forgetRecentRepository}
+                        onOpen={() => void chooseRepository(activeTab.id)}
+                        onSelectRecent={(recent) => void openRepositoryPath(recent.path, activeTab.id)}
+                        recents={persisted.recents}
+                    />
+                ) : (
+                    <WelcomeView
+                        onStart={openStartTab}
+                        startKeybind={persisted.settings.keybinds.new_repository_tab}
+                    />
+                )
             ) : (
                 <>
                     {confirmRequest && confirmConfig ? (
@@ -2604,6 +2762,31 @@ function App() {
                 />
             ) : null}
             {prompt && promptConfig ? <PromptDialog {...promptConfig} onClose={() => setPrompt(null)} onConfirm={submitPrompt} /> : null}
+            {startDialog === "clone" ? (
+                <CloneDialog
+                    busy={busy}
+                    onClose={() => { if (!busy) setStartDialog(null); }}
+                    onSubmit={(options) => {
+                        setStartDialog(null);
+                        void cloneRepository(options, activeTab?.kind === "start" ? activeTab.id : null);
+                    }}
+                />
+            ) : null}
+            {startDialog === "create" ? (
+                <CreateDialog
+                    busy={busy}
+                    onClose={() => { if (!busy) setStartDialog(null); }}
+                    onSubmit={(path, defaultBranch, ignorePatterns) => {
+                        setStartDialog(null);
+                        void createRepository(
+                            path,
+                            defaultBranch,
+                            ignorePatterns,
+                            activeTab?.kind === "start" ? activeTab.id : null,
+                        );
+                    }}
+                />
+            ) : null}
             {conflictEditor && snapshot ? (
                 <ConflictResolverDialog
                     branchName={currentBranch(snapshot)}

@@ -1,6 +1,6 @@
 //! Filesystem watcher for the active repository.
 //!
-//! GitCat watches one repository at a time — the one the user is looking at —
+//! GitCat watches one repository at a time - the one the user is looking at -
 //! and pushes a `repository:changed` event to the frontend whenever its
 //! worktree or `.git` metadata changes. The UI reacts by reloading its
 //! overview, so a commit, checkout, or stray editor save made outside the app
@@ -113,7 +113,7 @@ impl RepositoryWatchState {
 
 /// Whether a filesystem event touches anything worth a refresh. Object and LFS
 /// stores under `.git` churn heavily during fetch/gc without changing anything
-/// the UI shows on their own — the accompanying ref/index updates (which live
+/// the UI shows on their own - the accompanying ref/index updates (which live
 /// elsewhere under `.git`) drive the refresh instead.
 fn paths_are_relevant(paths: &[PathBuf]) -> bool {
     // An event with no paths carries no location to filter on; treat it as real.

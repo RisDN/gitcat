@@ -548,11 +548,14 @@ export interface AppMetadata {
   commit: string;
 }
 
+export type TabKind = "repository" | "start";
+
 export interface RepositoryTab {
   id: string;
   repository_path: string;
   display_name: string;
   order: number;
+  kind?: TabKind;
   conflict_target?: string | null;
   conflict_target_disabled?: boolean;
 }
@@ -572,9 +575,16 @@ export interface WorkspaceState {
   active_tab_id: string | null;
 }
 
+export interface RecentRepository {
+  path: string;
+  name: string;
+  opened_at: number;
+}
+
 export interface PersistedState {
   settings: AppSettings;
   workspace: WorkspaceState;
+  recents: RecentRepository[];
 }
 
 export interface RepositoryOverview {

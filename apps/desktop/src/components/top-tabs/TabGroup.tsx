@@ -45,8 +45,8 @@ export function TabGroupLabel({ collapsed, containsActiveTab, group, onRename, o
       onClick={() => { if (!containsActiveTab) onToggle(); }}
       onDoubleClick={onRename}
       title={containsActiveTab
-        ? `${group.name} — contains the active repository; double-click to rename`
-        : `${group.name} — double-click to rename`}
+        ? `${group.name} - contains the active repository; double-click to rename`
+        : `${group.name} - double-click to rename`}
       type="button"
     >
       {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}

@@ -372,6 +372,9 @@ const defaultState = (): PersistedState => ({
     ],
     active_tab_id: "tab-gitcat",
   },
+  recents: [
+    { path: "C:\\Projects\\GitCat", name: "GitCat", opened_at: Date.now() },
+  ],
 });
 
 function clone<T>(value: T): T {

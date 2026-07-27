@@ -182,12 +182,22 @@ impl Default for AppSettings {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TabKind {
+    #[default]
+    Repository,
+    Start,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepositoryTab {
     pub id: String,
     pub repository_path: String,
     pub display_name: String,
     pub order: i32,
+    #[serde(default)]
+    pub kind: TabKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub conflict_target: Option<String>,
     #[serde(default)]
@@ -223,11 +233,19 @@ impl Default for WorkspaceState {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecentRepository {
+    pub path: String,
+    pub name: String,
+    pub opened_at: i64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct PersistedState {
     pub settings: AppSettings,
     pub workspace: WorkspaceState,
+    pub recents: Vec<RecentRepository>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

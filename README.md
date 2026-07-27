@@ -165,7 +165,7 @@ The web build is written to `apps/desktop/dist`; native artifacts are written un
 - Auto-fetch is the only unattended network operation, it only ever runs `git fetch` on the active repository, and it is turned off by setting the interval to `0`.
 - `reset --hard`, discarding changes, forced branch deletion, and stash drop require explicit confirmation plus a current matching snapshot. The core rejects stale dialogs.
 - Rewording a commit is guarded by the same snapshot check, so it is rejected if the branch moved underneath the panel.
-- The filesystem watcher observes one repository — the active one — ignores `.git/objects` and `.git/lfs` churn, debounces bursts, and only asks the UI to reload. It never runs Git on its own.
+- The filesystem watcher observes one repository - the active one - ignores `.git/objects` and `.git/lfs` churn, debounces bursts, and only asks the UI to reload. It never runs Git on its own.
 - GitCat does not modify the global `safe.directory` value or delete `.git/index.lock`.
 - The Tauri main window receives only core and directory-open permissions; CSP blocks external object/frame/form content.
 

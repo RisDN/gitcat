@@ -16,6 +16,13 @@ export function getGitCatRuntime(): GitCatRuntime {
   return isTauriEnvironment() ? "tauri" : "browser";
 }
 
+export async function chooseDirectory(title: string): Promise<string | null> {
+  if (!isTauriEnvironment()) return null;
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const selected = await open({ directory: true, multiple: false, title });
+  return typeof selected === "string" ? selected : null;
+}
+
 export async function invokeTauri<T>(
   command: string,
   args: Record<string, unknown> = {},

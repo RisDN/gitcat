@@ -8,7 +8,7 @@ function RailDot({ className }: { className: string }) {
   );
 }
 
-export function WelcomeView({ onOpen, openKeybind }: { onOpen: () => void; openKeybind: string }) {
+export function WelcomeView({ onStart, startKeybind }: { onStart: () => void; startKeybind: string }) {
   return (
     <main className="relative grid min-h-0 flex-1 grid-cols-[minmax(80px,1fr)_minmax(460px,740px)_minmax(80px,1fr)] items-center overflow-hidden before:absolute before:inset-0 before:bg-[linear-gradient(color-mix(in_srgb,var(--gc-border)_24%,transparent)_1px,transparent_1px),linear-gradient(90deg,color-mix(in_srgb,var(--gc-border)_24%,transparent)_1px,transparent_1px)] before:bg-size-[42px_42px] before:opacity-45 before:content-[''] before:mask-[radial-gradient(circle_at_50%_50%,black,transparent_72%)]">
       <div
@@ -27,10 +27,11 @@ export function WelcomeView({ onOpen, openKeybind }: { onOpen: () => void; openK
           Repository history,<br />without the noise.
         </h1>
         <p className="mb-7 max-w-140 text-[15px] leading-[1.65] text-muted">
-          Open a working tree. GitCat keeps credentials, hooks, SSH, and Git behavior where they belong: in system Git.
+          A Windows-first desktop client for the Git you already have installed. Branch graph, staging, diffs, and
+          conflict resolution in one window - no account, no cloud, no background services.
         </p>
-        <Button icon={<FolderGit2 size={17} />} onClick={onOpen} tone="accent">
-          Open repository
+        <Button icon={<FolderGit2 size={17} />} onClick={onStart} tone="accent">
+          Get started
         </Button>
         <div className="mt-6.75 flex flex-wrap gap-4.5 text-[11px] text-muted [&_svg]:text-accent">
           <span className="flex items-center gap-1.5"><GitBranch size={15} /> Visual branch graph</span>
@@ -38,7 +39,7 @@ export function WelcomeView({ onOpen, openKeybind }: { onOpen: () => void; openK
         </div>
       </section>
       <kbd className="absolute bottom-5.5 right-6 z-2 rounded border border-b-2 border-border px-2 py-1.25 text-[10px] text-muted">
-        {openKeybind || "Unassigned"}
+        {startKeybind || "Unassigned"}
       </kbd>
     </main>
   );
