@@ -66,6 +66,44 @@ export function toSplitRows(lines: readonly DiffLine[]): SplitRow[] {
   return rows;
 }
 
+const TAB_WIDTH = 4;
+
+function charWidth(char: string): number {
+  const code = char.codePointAt(0) ?? 0;
+  if (code < 0x1100) return 1;
+  return code <= 0x115f
+    || (code >= 0x2e80 && code <= 0xa4cf)
+    || (code >= 0xac00 && code <= 0xd7a3)
+    || (code >= 0xf900 && code <= 0xfaff)
+    || (code >= 0xfe30 && code <= 0xfe6f)
+    || (code >= 0xff00 && code <= 0xff60)
+    || (code >= 0x1f300 && code <= 0x1faff)
+    ? 2
+    : 1;
+}
+
+function visualWidth(content: string): number {
+  let width = 0;
+  for (const char of content) {
+    width += char === "\t" ? TAB_WIDTH - (width % TAB_WIDTH) : charWidth(char);
+  }
+  return width;
+}
+
+export function maxLineWidth(hunks: readonly DiffHunk[]): number {
+  let widest = 0;
+
+  for (const hunk of hunks) {
+    for (const line of hunk.lines) {
+      if (line.kind === "no_newline") continue;
+      const width = visualWidth(line.content);
+      if (width > widest) widest = width;
+    }
+  }
+
+  return widest;
+}
+
 function rowKinds(hunks: readonly DiffHunk[], mode: DiffViewMode): (MarkKind | null)[] {
   const kinds: (MarkKind | null)[] = [];
 

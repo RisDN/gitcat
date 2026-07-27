@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import { cx } from "../../lib";
 import type { FileDiff } from "../../lib/types";
@@ -8,8 +8,8 @@ import { ChangeKind, DIFF_VIEW_MODES, DiffState, ModeButton, isWholeFileMode } f
 import type { DiffViewMode } from "./DiffParts";
 import { HighlightContext, useDiffHighlight } from "./highlight";
 import { InlineHunk } from "./InlineHunk";
-import { SplitHunk } from "./SplitHunk";
-import { buildDiffMap } from "./rows";
+import { SplitPanes } from "./SplitPanes";
+import { buildDiffMap, maxLineWidth } from "./rows";
 
 export interface DiffViewerProps {
   diff: FileDiff | null;
@@ -35,6 +35,7 @@ export function DiffViewer({
     () => buildDiffMap(diff?.hunks ?? [], mode),
     [diff, mode],
   );
+  const contentColumns = useMemo(() => maxLineWidth(diff?.hunks ?? []), [diff]);
   const highlight = useDiffHighlight(diff);
 
   const setMode = (nextMode: DiffViewMode) => {
@@ -125,16 +126,25 @@ export function DiffViewer({
       ) : (
         <HighlightContext.Provider value={highlight}>
           <div className="flex min-h-0 min-w-0 flex-1">
-            <div
-              className={cx("min-w-0 flex-1 overflow-auto", showMinimap && "gc-diff-scroller--mapped")}
-              ref={scrollRef}
-            >
-              {diff.hunks.map((hunk, index) => (
-                mode === "split"
-                  ? <SplitHunk hunk={hunk} index={index} key={`${hunk.header}:${index}`} showHeader={showHunkHeaders} />
-                  : <InlineHunk hunk={hunk} index={index} key={`${hunk.header}:${index}`} showHeader={showHunkHeaders} />
-              ))}
-            </div>
+            {mode === "split" ? (
+              <SplitPanes
+                contentColumns={contentColumns}
+                hunks={diff.hunks}
+                leftRef={scrollRef}
+                mapped={showMinimap}
+                showHeaders={showHunkHeaders}
+              />
+            ) : (
+              <div
+                className={cx("min-w-0 flex-1 overflow-auto", showMinimap && "gc-diff-scroller--mapped")}
+                ref={scrollRef}
+                style={{ "--gc-diff-cols": contentColumns } as CSSProperties}
+              >
+                {diff.hunks.map((hunk, index) => (
+                  <InlineHunk hunk={hunk} index={index} key={`${hunk.header}:${index}`} showHeader={showHunkHeaders} />
+                ))}
+              </div>
+            )}
             {showMinimap ? <DiffMinimap map={diffMap} scrollRef={scrollRef} /> : null}
           </div>
         </HighlightContext.Provider>
