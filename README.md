@@ -104,6 +104,23 @@ The Vite page does not access the file system or real repositories. Native Git o
 
 ## Build and verification
 
+`scripts/build-all.ps1` runs the whole pipeline in order: frontend dependency install, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, TypeScript typecheck, and finally `npm run tauri build` (which also produces the Vite web build and the native installers). It stops at the first failing step and exits with that step's exit code.
+
+```powershell
+cd .\apps\desktop
+npm.cmd run build:all
+```
+
+Flags:
+
+- `-SkipInstall`: do not run `npm ci` / `npm install` first.
+- `-SkipVerify`: skip fmt, clippy, tests, and typecheck; build only.
+- `-NoBundle`: build the release binary without MSI/NSIS installers (faster).
+
+Outputs: `apps/desktop/dist` (web), `target/release/gitcat-desktop.exe` (binary), `target/release/bundle` (installers).
+
+The individual steps are also available separately.
+
 Rust workspace:
 
 ```powershell
