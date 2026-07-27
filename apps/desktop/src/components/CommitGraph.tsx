@@ -352,7 +352,7 @@ function RefLabelPill({
   const displayName = decoration.kind === "remote_branch"
     ? remoteBranchNameWithoutRemote(decoration.name)
     : decoration.name;
-  const canCheckout = decoration.kind === "local_branch" && !decoration.synthetic;
+  const canCheckout = isBranchDecoration(decoration) && !decoration.synthetic;
 
   return (
     <span

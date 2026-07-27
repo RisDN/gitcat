@@ -480,7 +480,8 @@
   color: var(--gc-ref-color);
 }
 
-.gc-ref-label--local_branch:not(.gc-ref-label--head) { @apply cursor-pointer; }
+.gc-ref-label--local_branch:not(.gc-ref-label--head),
+.gc-ref-label--remote_branch { @apply cursor-pointer; }
 .gc-ref-label svg { @apply shrink-0; }
 
 .gc-ref-label__remote-icon {

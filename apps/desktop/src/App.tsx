@@ -124,7 +124,6 @@ type PromptState =
     | { kind: "rename_group"; groupId: string; current: string }
     | { kind: "alias_tab"; tabId: string; current: string }
     | { kind: "create_branch"; startOid: string }
-    | { kind: "remote_branch"; branch: BranchInfo }
     | { kind: "rename_branch"; branch: BranchInfo }
     | { kind: "create_tag"; oid: string }
     | null;
@@ -1821,6 +1820,11 @@ function App() {
         }
     }, [activateRepositoryTab, addToast, closeTab, moveRepositoryTab, persisted.workspace, showError, tabMenu]);
 
+    const checkoutRemoteBranch = useCallback((branch: BranchInfo) => {
+        const localName = branchNameWithoutRemote(branch.name);
+        void runMutation(`Checked out ${localName}`, (repository) => gitcatApi.checkoutBranch(repository.repository_id, localName));
+    }, [runMutation]);
+
     const branchContextActions = useMemo<ContextAction[]>(() => {
         if (!branchMenu) return [];
         const { branch, scope } = branchMenu;
@@ -1942,9 +1946,6 @@ function App() {
             case "create_branch":
                 void runMutation("Branch created", (repository) => gitcatApi.createBranch(repository.repository_id, value, currentPrompt.startOid, true));
                 break;
-            case "remote_branch":
-                void runMutation("Remote branch checked out", (repository) => gitcatApi.createBranch(repository.repository_id, value, currentPrompt.branch.oid, true));
-                break;
             case "rename_branch":
                 void runMutation("Branch renamed", (repository) => gitcatApi.renameBranch(repository.repository_id, currentPrompt.branch.name, value));
                 break;
@@ -1961,7 +1962,6 @@ function App() {
             case "rename_group": return { title: "Rename repository group", label: "Group name", initialValue: prompt.current, confirmLabel: "Rename" };
             case "alias_tab": return { title: "Rename repository tab", label: "Tab name", initialValue: prompt.current, confirmLabel: "Rename" };
             case "create_branch": return { title: "Create branch", label: "Branch name", placeholder: "feature/short-name", confirmLabel: "Create and checkout" };
-            case "remote_branch": return { title: "Check out remote branch", label: "Local branch name", initialValue: prompt.branch.name.split("/").slice(1).join("/"), confirmLabel: "Create and checkout" };
             case "rename_branch": return { title: "Rename branch", label: "New branch name", initialValue: prompt.branch.name, confirmLabel: "Rename" };
             case "create_tag": return { title: "Create tag", label: "Tag name", placeholder: "v1.0.0", confirmLabel: "Create tag" };
         }
@@ -2339,7 +2339,7 @@ function App() {
                                 onCheckout={(branch) => {
                                     if (!branch.is_head) void runMutation(`Checked out ${branch.name}`, (repository) => gitcatApi.checkoutBranch(repository.repository_id, branch.name));
                                 }}
-                                onCheckoutRemote={(branch) => setPrompt({ kind: "remote_branch", branch })}
+                                onCheckoutRemote={checkoutRemoteBranch}
                                 onCreateBranch={() => currentHeadOid ? setPrompt({ kind: "create_branch", startOid: currentHeadOid }) : undefined}
                                 remoteBranches={snapshot?.remote_branches ?? []}
                                 remoteIconUrls={remoteIconUrls}
@@ -2460,6 +2460,11 @@ function App() {
                                             onRefDoubleClick={(decoration) => {
                                                 if (decoration.kind === "local_branch" && !decoration.is_head) {
                                                     void runMutation(`Checked out ${decoration.name}`, (repository) => gitcatApi.checkoutBranch(repository.repository_id, decoration.name));
+                                                    return;
+                                                }
+                                                if (decoration.kind === "remote_branch") {
+                                                    const branch = snapshot?.remote_branches.find((candidate) => candidate.full_name === decoration.full_name);
+                                                    if (branch) checkoutRemoteBranch(branch);
                                                 }
                                             }}
                                             onSelect={selectCommit}
