@@ -6,7 +6,7 @@ The adapter lives in `apps/desktop/src-tauri`. It is a thin boundary: it owns th
 
 `run()` performs these steps:
 
-1. Initialize `tauri-plugin-dialog`.
+1. Initialize `tauri-plugin-dialog`, `tauri-plugin-process`, and `tauri-plugin-updater`.
 2. Create a `JsonStateStore` backed by `<app_data_dir>/state.json`.
 3. Create `GitCliBackend` and `CoreApi`.
 4. Register the typed command handler list.
@@ -105,8 +105,26 @@ The frontend saves after a 250 ms debounce. At startup, it reopens tab paths; a 
 
 - `core:default`
 - `dialog:allow-open`
+- `updater:default`
+- `process:allow-restart`
 
-There are no shell, filesystem, or process plugin permissions. Only the Rust backend starts Git processes. The production CSP allows only first-party/IPC/asset content; objects, frames, base URIs, and form actions are blocked.
+There are no shell or filesystem plugin permissions. Only the Rust backend starts Git processes. The production CSP allows only first-party/IPC/asset content; objects, frames, base URIs, and form actions are blocked. The CSP does not need an entry for the update endpoint: the updater's HTTP traffic runs in the Rust process, not in the webview.
+
+## Auto-update
+
+Windows only, stable channel, manual release publishing.
+
+- Manifest endpoint: `https://github.com/RisDN/gitcat/releases/latest/download/latest.json`.
+- Update payloads are minisign-signed; the public key lives in `tauri.conf.json` under `plugins.updater.pubkey`. The private key and its passphrase are the `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository secrets. The passphrase must not be empty: an empty value is not a settable environment variable on Windows, so the Tauri CLI would fall back to an interactive prompt and the build would hang.
+- `bundle.createUpdaterArtifacts` makes the NSIS bundle emit `*-setup.exe.sig` next to the installer.
+- NSIS `installMode` is `passive`: the installer shows a progress bar, replaces the app, and the frontend calls `relaunch()`.
+- The app version comes from the workspace `Cargo.toml`; `tauri.conf.json` intentionally has no `version` field so there is a single source of truth.
+
+The frontend hook is `apps/desktop/src/lib/updates.ts` (`useAppUpdate`). It checks once, four seconds after startup, and never downloads on its own. When an update exists, `UpdateIndicator` shows a button in the status bar; clicking it downloads the installer with progress, installs it, and restarts. In the browser demo runtime, the hook is inert.
+
+The release workflow is `.github/workflows/release-windows.yml`, triggered manually. With `publish: true` it generates `latest.json` from the signature file and creates the `v<version>` GitHub release with the installer, its `.sig`, and the manifest.
+
+Installers are not Authenticode-signed, so SmartScreen warns on each update.
 
 ## Error propagation
 

@@ -26,6 +26,7 @@ import {
     StatusBar,
     StatusItem,
     StatusSpacer,
+    UpdateIndicator,
     ViewTab,
     ViewTabs,
 } from "./components/shell";
@@ -43,6 +44,7 @@ import { WelcomeView } from "./components/WelcomeView";
 import { WorktreePanel, type CommitDraft } from "./components/worktree";
 import { getApiError, gitcatApi } from "./lib/api";
 import { chooseDirectory } from "./lib/platform";
+import { useAppUpdate } from "./lib/updates";
 import { conflictOperationLabel } from "./lib/conflicts";
 import { sameFileDiff } from "./lib/diffs";
 import {
@@ -482,6 +484,7 @@ function App() {
     const [leftPanelVisible, setLeftPanelVisible] = useState(true);
     const [rightPanelVisible, setRightPanelVisible] = useState(true);
     const [appMetadata, setAppMetadata] = useState<AppMetadata>({ version: "unknown", commit: "unknown" });
+    const appUpdate = useAppUpdate();
     const [conflictPreflight, setConflictPreflight] = useState<ConflictPreflightResult | null>(null);
     const [conflictPreflightLoading, setConflictPreflightLoading] = useState(false);
     const [conflictEditor, setConflictEditor] = useState<ConflictFileDetails | null>(null);
@@ -2809,6 +2812,7 @@ function App() {
                 <StatusSpacer />
                 {activeRepository ? <StatusItem>{stashes.length} stashes</StatusItem> : null}
                 {activeRepository ? <StatusItem>{activeRepository.info.object_format.toUpperCase()}</StatusItem> : null}
+                <UpdateIndicator update={appUpdate} />
                 <BuildIdentity title={`Build commit ${appMetadata.commit}`}>
                     GitCat v{appMetadata.version} · {appMetadata.commit}
                 </BuildIdentity>

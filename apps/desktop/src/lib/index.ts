@@ -6,4 +6,5 @@ export { createDemoGitCatApi, DEMO_REPOSITORY_ID } from "./demo";
 export * from "./paths";
 export * from "./platform";
 export * from "./trailers";
+export * from "./updates";
 export * from "./types";

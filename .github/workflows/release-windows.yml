@@ -2,9 +2,18 @@ name: windows-release-build
 
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a GitHub release with the updater manifest
+        type: boolean
+        default: false
+      release_notes:
+        description: Release notes shown in the update prompt
+        type: string
+        default: ""
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -43,6 +52,9 @@ jobs:
         run: npm run typecheck
       - name: Build NSIS installer
         working-directory: apps/desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run tauri build -- --bundles nsis
       - name: Verify WebView2 loader is self-contained
         shell: pwsh
@@ -68,10 +80,68 @@ jobs:
             throw "Expected one NSIS installer, found $($installers.Count)"
           }
           Get-FileHash -Algorithm SHA256 $installers[0].FullName
+      - name: Build updater manifest
+        id: manifest
+        shell: pwsh
+        env:
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          $version = (Select-String -Path 'Cargo.toml' -Pattern '^version = "(.+)"' |
+            Select-Object -First 1).Matches[0].Groups[1].Value
+          if (-not $version) {
+            throw 'Could not read the workspace version from Cargo.toml'
+          }
+          $installer = Get-ChildItem 'target\release\bundle\nsis\*-setup.exe' | Select-Object -First 1
+          $signatureFile = "$($installer.FullName).sig"
+          if (-not (Test-Path $signatureFile)) {
+            throw "Missing updater signature: $signatureFile. Is TAURI_SIGNING_PRIVATE_KEY set?"
+          }
+          $notes = $env:RELEASE_NOTES
+          if (-not $notes) {
+            $notes = "GitCat v$version"
+          }
+          $manifest = [ordered]@{
+            version   = $version
+            notes     = $notes
+            pub_date  = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+            platforms = [ordered]@{
+              'windows-x86_64' = [ordered]@{
+                signature = (Get-Content $signatureFile -Raw).Trim()
+                url = "https://github.com/${{ github.repository }}/releases/download/v$version/$($installer.Name)"
+              }
+            }
+          }
+          $manifest | ConvertTo-Json -Depth 5 |
+            Out-File 'target\release\bundle\nsis\latest.json' -Encoding utf8NoBOM
+          "version=$version" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "installer=$($installer.FullName)" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
       - uses: actions/upload-artifact@v4
         with:
           name: gitcat-windows-msvc
           if-no-files-found: error
           path: |
             target/release/bundle/nsis/*-setup.exe
+            target/release/bundle/nsis/*-setup.exe.sig
+            target/release/bundle/nsis/latest.json
             target/release/gitcat-desktop.exe
+      - name: Publish GitHub release
+        if: ${{ inputs.publish }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          $version = '${{ steps.manifest.outputs.version }}'
+          $notes = $env:RELEASE_NOTES
+          if (-not $notes) {
+            $notes = "GitCat v$version"
+          }
+          gh release create "v$version" `
+            --title "GitCat v$version" `
+            --notes $notes `
+            'target\release\bundle\nsis\latest.json' `
+            "${{ steps.manifest.outputs.installer }}" `
+            "${{ steps.manifest.outputs.installer }}.sig"
+          if ($LASTEXITCODE -ne 0) {
+            throw "gh release create failed with exit code $LASTEXITCODE"
+          }
