@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 
+import { conflictSideLabels } from "../../lib/conflicts";
 import type { ConflictResolution, RepositoryOperationState, StatusEntry, WorktreeStatus } from "../../lib/types";
 import { ContextMenu, type ContextAction } from "../ContextMenu";
 import { FileTreeControls } from "../file-tree";
@@ -42,6 +43,7 @@ interface WorktreePanelProps {
   onOpenDiff: (entry: StatusEntry, staged: boolean) => void;
   onCommit: (message: string, amend: boolean, signoff: boolean) => Promise<boolean>;
   onResolveConflict: (entry: StatusEntry, resolution: ConflictResolution) => void;
+  onResolveConflicts: (paths: string[], resolution: ConflictResolution) => void;
   onOpenConflict: (entry: StatusEntry) => void;
   onAutoResolveConflicts: () => void;
   commitKeybind?: string;
@@ -90,6 +92,7 @@ export function WorktreePanel({
   onOpenDiff,
   onCommit,
   onResolveConflict,
+  onResolveConflicts,
   onOpenConflict,
   onAutoResolveConflicts,
   commitKeybind = "Ctrl+Enter",
@@ -114,7 +117,7 @@ export function WorktreePanel({
   const unstagedItems = useMemo(() => toTreeItems(unstaged, "worktree"), [unstaged]);
 
   const [fileMenu, setFileMenu] = useState<{ entry: StatusEntry; staged: boolean; x: number; y: number } | null>(null);
-  const [folderMenu, setFolderMenu] = useState<{ path: string; entries: StatusEntry[]; staged: boolean; x: number; y: number } | null>(null);
+  const [folderMenu, setFolderMenu] = useState<{ path: string; entries: StatusEntry[]; conflicts: StatusEntry[]; staged: boolean; x: number; y: number } | null>(null);
 
   const openFileMenu = (entry: StatusEntry, staged: boolean, event: ReactMouseEvent) => {
     if (entry.conflicted) return;
@@ -127,6 +130,7 @@ export function WorktreePanel({
     setFolderMenu({
       path: folder.path,
       entries: folder.items.filter((entry) => !entry.conflicted),
+      conflicts: folder.items.filter((entry) => entry.conflicted),
       staged,
       x: event.clientX,
       y: event.clientY,
@@ -178,6 +182,20 @@ export function WorktreePanel({
   const folderMenuActions = useMemo<ContextAction[]>(() => {
     if (!folderMenu) return [];
     const empty = !folderMenu.entries.length;
+    const conflictCount = folderMenu.conflicts.length;
+    const labels = conflictSideLabels(operation, branchName);
+    const conflictActions: ContextAction[] = conflictCount
+      ? [
+        {
+          id: "conflicts_mark_resolved",
+          label: `Mark ${conflictCount} conflict${conflictCount === 1 ? "" : "s"} in folder resolved`,
+          disabled: busy,
+          separatorBefore: true,
+        },
+        { id: "conflicts_ours", label: `Take ${labels.ours} for folder`, disabled: busy },
+        { id: "conflicts_theirs", label: `Take ${labels.theirs} for folder`, disabled: busy },
+      ]
+      : [];
     return [
       folderMenu.staged
         ? { id: "unstage", label: "Unstage folder", disabled: busy || empty }
@@ -186,15 +204,20 @@ export function WorktreePanel({
       { id: "ignore", label: `Ignore all files in '${folderMenu.path}/'`, disabled: busy },
       { id: "stash", label: "Stash folder", disabled: busy || empty },
       { id: "patch", label: "Create Patch from changes in directory", disabled: empty },
+      ...conflictActions,
       { id: "open", label: "Open folder", separatorBefore: true },
     ];
-  }, [busy, folderMenu]);
+  }, [branchName, busy, folderMenu, operation]);
 
   const executeFolderAction = (id: string) => {
     if (!folderMenu) return;
-    const { entries, path, staged } = folderMenu;
+    const { conflicts: folderConflicts, entries, path, staged } = folderMenu;
     const paths = entries.map((entry) => entry.path);
+    const conflictPaths = folderConflicts.map((entry) => entry.path);
     switch (id) {
+      case "conflicts_mark_resolved": onResolveConflicts(conflictPaths, "mark_resolved"); break;
+      case "conflicts_ours": onResolveConflicts(conflictPaths, "ours"); break;
+      case "conflicts_theirs": onResolveConflicts(conflictPaths, "theirs"); break;
       case "stage": onStage(paths, { path }); break;
       case "unstage": onUnstage(paths, { path }); break;
       case "discard": onDiscard(paths); break;
@@ -229,6 +252,8 @@ export function WorktreePanel({
         conflictCount={conflicts.length}
         onAutoResolveConflicts={onAutoResolveConflicts}
         onDiscardAll={() => onDiscard(status.entries.map((entry) => entry.path))}
+        onResolveAllConflicts={(resolution) => onResolveConflicts(conflicts.map((entry) => entry.path), resolution)}
+        operation={operation}
         stashCount={status.stash_count}
       />
 

@@ -448,9 +448,8 @@
 }
 
 .gc-ref-stack__overflow {
-  @apply pointer-events-none absolute left-0 z-[15] flex min-w-max -translate-y-[2px] flex-col gap-[2px] rounded-[3px] border p-[2px] opacity-0 transition-[opacity,transform] duration-[90ms] ease-linear;
+  @apply pointer-events-none absolute left-0 z-[15] flex min-w-max -translate-y-[2px] flex-col items-start gap-[2px] rounded-[3px] p-[2px] opacity-0 transition-[opacity,transform] duration-[90ms] ease-linear;
   top: calc(100% + 2px);
-  border-color: color-mix(in srgb, var(--gc-accent) 28%, var(--gc-border));
   background: color-mix(in srgb, var(--gc-panel) 96%, black);
   box-shadow: 0 8px 18px rgb(0 0 0 / 28%);
 }
@@ -495,7 +494,18 @@
   color: color-mix(in srgb, var(--gc-text) 82%, var(--gc-ref-color));
 }
 
-.gc-ref-label--tag { --gc-ref-color: var(--gc-success); }
+.gc-ref-stack__count {
+  --gc-ref-color: var(--gc-row-branch-color, var(--gc-accent));
+  @apply relative z-[2] inline-flex h-[21px] shrink-0 select-none items-center rounded-[3px] border px-[4px] text-[10px] font-bold leading-none;
+  border-color: color-mix(in srgb, var(--gc-ref-color) 40%, var(--gc-border));
+  background: color-mix(in srgb, var(--gc-ref-color) 9%, var(--gc-panel));
+  color: color-mix(in srgb, var(--gc-ref-color) 72%, var(--gc-text));
+}
+
+.gc-commit-row:hover .gc-ref-stack--stacked .gc-ref-stack__count,
+.gc-ref-stack--stacked:hover .gc-ref-stack__count {
+  @apply hidden;
+}
 
 .gc-ref-label--head {
   @apply h-[23px] max-w-[112px] gap-1 px-[7px] py-px text-[12px] opacity-100 filter-none;
@@ -506,6 +516,11 @@
     inset 2px 0 0 color-mix(in srgb, var(--gc-ref-color) 75%, white),
     0 0 0 1px color-mix(in srgb, var(--gc-ref-color) 22%, transparent),
     0 0 10px color-mix(in srgb, var(--gc-ref-color) 18%, transparent);
+}
+
+.gc-ref-stack__overflow .gc-ref-label {
+  @apply border-transparent shadow-none;
+  background: transparent;
 }
 
 /* GitKraken-style structured diff */

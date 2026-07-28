@@ -308,6 +308,20 @@ impl CoreApi {
         .await
     }
 
+    pub async fn resolve_conflicts(
+        &self,
+        repository_id: &RepositoryId,
+        paths: &[String],
+        resolution: ConflictResolution,
+    ) -> ApiResult<MutationResult> {
+        self.mutate(repository_id, |backend, repository_path| async move {
+            backend
+                .resolve_conflicts(&repository_path, paths, resolution)
+                .await
+        })
+        .await
+    }
+
     pub async fn auto_resolve_conflicts(
         &self,
         repository_id: &RepositoryId,
@@ -562,6 +576,17 @@ impl CoreApi {
     ) -> ApiResult<MutationResult> {
         self.mutate(repository_id, |backend, path| async move {
             backend.abort_operation(&path, operation).await
+        })
+        .await
+    }
+
+    pub async fn skip_operation(
+        &self,
+        repository_id: &RepositoryId,
+        operation: ContinueOperation,
+    ) -> ApiResult<MutationResult> {
+        self.mutate(repository_id, |backend, path| async move {
+            backend.skip_operation(&path, operation).await
         })
         .await
     }
@@ -1115,6 +1140,15 @@ mod tests {
             self.mutation("save_conflict_result", path).await
         }
 
+        async fn resolve_conflicts(
+            &self,
+            path: &Path,
+            _conflict_paths: &[String],
+            _resolution: ConflictResolution,
+        ) -> ApiResult<MutationResult> {
+            self.mutation("resolve_conflicts", path).await
+        }
+
         async fn auto_resolve_conflicts(&self, path: &Path) -> ApiResult<MutationResult> {
             self.mutation("auto_resolve_conflicts", path).await
         }
@@ -1280,6 +1314,14 @@ mod tests {
             _operation: ContinueOperation,
         ) -> ApiResult<MutationResult> {
             self.mutation("abort_operation", path).await
+        }
+
+        async fn skip_operation(
+            &self,
+            path: &Path,
+            _operation: ContinueOperation,
+        ) -> ApiResult<MutationResult> {
+            self.mutation("skip_operation", path).await
         }
 
         async fn stash_list(&self, path: &Path) -> ApiResult<Vec<StashEntry>> {
@@ -1501,6 +1543,7 @@ mod tests {
                 intended_branch: "main".into(),
             },
             operation_state: RepositoryOperationState::Normal,
+            operation_progress: None,
             status: WorktreeStatus::default(),
             local_branches: Vec::new(),
             remote_branches: Vec::new(),

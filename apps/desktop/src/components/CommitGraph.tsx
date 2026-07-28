@@ -423,8 +423,7 @@ function CommitRefStack({
   }
 
   const displayDecorations = decorations.filter((_, index) => !hiddenRemoteIndexes.has(index));
-  const branchCount = displayDecorations.filter(isBranchDecoration).length;
-  const shouldStack = branchCount > 1;
+  const shouldStack = displayDecorations.length > 1;
   const [primary, ...rest] = displayDecorations;
   const isInactive = (decoration: GraphRefLabel) =>
     hasMultipleBranches && decoration.kind === "local_branch" && !decoration.is_head;
@@ -444,32 +443,24 @@ function CommitRefStack({
         onDoubleClick={onRefDoubleClick}
         remoteIconUrl={remoteIconUrl(primary)}
       />
-      {rest.length > 0 && shouldStack ? (
-        <span className="gc-ref-stack__overflow">
-          {rest.map((decoration) => (
-            <RefLabelPill
-              decoration={decoration}
-              inactive={isInactive(decoration)}
-              key={decoration.full_name}
-              linkedRemote={linkedRemotes.get(decoration.full_name)}
-              linkedRemoteIconUrl={remoteIconUrl(linkedRemotes.get(decoration.full_name))}
-              onDoubleClick={onRefDoubleClick}
-              remoteIconUrl={remoteIconUrl(decoration)}
-            />
-          ))}
-        </span>
+      {shouldStack ? (
+        <>
+          <span aria-hidden="true" className="gc-ref-stack__count">{`+${rest.length}`}</span>
+          <span className="gc-ref-stack__overflow">
+            {rest.map((decoration) => (
+              <RefLabelPill
+                decoration={decoration}
+                inactive={isInactive(decoration)}
+                key={decoration.full_name}
+                linkedRemote={linkedRemotes.get(decoration.full_name)}
+                linkedRemoteIconUrl={remoteIconUrl(linkedRemotes.get(decoration.full_name))}
+                onDoubleClick={onRefDoubleClick}
+                remoteIconUrl={remoteIconUrl(decoration)}
+              />
+            ))}
+          </span>
+        </>
       ) : null}
-      {rest.length > 0 && !shouldStack ? rest.map((decoration) => (
-        <RefLabelPill
-          decoration={decoration}
-          inactive={isInactive(decoration)}
-          key={decoration.full_name}
-          linkedRemote={linkedRemotes.get(decoration.full_name)}
-          linkedRemoteIconUrl={remoteIconUrl(linkedRemotes.get(decoration.full_name))}
-          onDoubleClick={onRefDoubleClick}
-          remoteIconUrl={remoteIconUrl(decoration)}
-        />
-      )) : null}
     </span>
   );
 }

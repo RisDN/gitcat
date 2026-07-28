@@ -780,6 +780,35 @@ class DemoGitCatApi implements GitCatApi {
     return this.resolveConflict(repositoryId, path, "mark_resolved", expectedState);
   }
 
+  async resolveConflicts(
+    repositoryId: RepositoryId,
+    paths: string[],
+    resolution: ConflictResolution,
+  ): Promise<MutationResult> {
+    await delay();
+    this.ensureRepository(repositoryId);
+    const conflicted = this.snapshotValue.status.entries.filter((entry) => entry.conflicted);
+    const targets = paths.length
+      ? conflicted.filter((entry) => paths.includes(entry.path))
+      : conflicted;
+    if (paths.length && targets.length !== new Set(paths).size) {
+      fail("invalid_request", "Selected paths are not currently conflicted");
+    }
+    const resolved = new Set(targets.map((entry) => entry.path));
+    if (resolution === "delete") {
+      this.snapshotValue.status.entries = this.snapshotValue.status.entries.filter(
+        (entry) => !resolved.has(entry.path),
+      );
+    } else {
+      for (const entry of targets) {
+        entry.conflicted = false;
+        entry.index = "modified";
+        delete entry.worktree;
+      }
+    }
+    return this.mutation();
+  }
+
   async autoResolveConflicts(repositoryId: RepositoryId): Promise<MutationResult> {
     await delay();
     this.ensureRepository(repositoryId);
@@ -1107,6 +1136,20 @@ class DemoGitCatApi implements GitCatApi {
   ): Promise<MutationResult> {
     await delay();
     this.ensureRepository(repositoryId);
+    this.snapshotValue.operation_state = "normal";
+    return this.mutation();
+  }
+
+  async skipOperation(
+    repositoryId: RepositoryId,
+    operation: ContinueOperation,
+  ): Promise<MutationResult> {
+    await delay();
+    this.ensureRepository(repositoryId);
+    if (operation === "merge") fail("unsupported_operation", "A merge cannot skip a commit");
+    this.snapshotValue.status.entries = this.snapshotValue.status.entries.filter(
+      (entry) => !entry.conflicted,
+    );
     this.snapshotValue.operation_state = "normal";
     return this.mutation();
   }

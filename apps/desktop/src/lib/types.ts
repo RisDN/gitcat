@@ -113,10 +113,17 @@ export interface RemoteInfo {
   push_url: string;
 }
 
+export interface OperationProgress {
+  current: number;
+  total: number;
+  subject?: string;
+}
+
 export interface RepositorySnapshot {
   generation: string;
   head: HeadState;
   operation_state: RepositoryOperationState;
+  operation_progress?: OperationProgress;
   status: WorktreeStatus;
   local_branches: BranchInfo[];
   remote_branches: BranchInfo[];

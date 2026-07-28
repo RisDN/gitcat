@@ -321,6 +321,17 @@ async fn conflict_save_edited(
 }
 
 #[tauri::command]
+async fn conflicts_resolve(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    paths: Vec<String>,
+    resolution: ConflictResolution,
+) -> ApiResult<MutationResult> {
+    core.resolve_conflicts(&repository_id, &paths, resolution)
+        .await
+}
+
+#[tauri::command]
 async fn conflicts_auto_resolve(
     core: State<'_, Arc<CoreApi>>,
     repository_id: RepositoryId,
@@ -527,6 +538,15 @@ async fn operation_abort(
 }
 
 #[tauri::command]
+async fn operation_skip(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    operation: ContinueOperation,
+) -> ApiResult<MutationResult> {
+    core.skip_operation(&repository_id, operation).await
+}
+
+#[tauri::command]
 async fn stash_list(
     core: State<'_, Arc<CoreApi>>,
     repository_id: RepositoryId,
@@ -644,6 +664,7 @@ pub fn run() {
             file_patch_save,
             conflict_resolve,
             conflict_save_edited,
+            conflicts_resolve,
             conflicts_auto_resolve,
             create_commit,
             commit_reword,
@@ -664,6 +685,7 @@ pub fn run() {
             commit_action_availability,
             operation_continue,
             operation_abort,
+            operation_skip,
             stash_list,
             stash_push,
             stash_apply,

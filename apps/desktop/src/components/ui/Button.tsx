@@ -5,7 +5,7 @@ import { cx } from "../../lib";
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   icon?: ReactNode;
   compact?: boolean;
-  tone?: "default" | "accent" | "danger";
+  tone?: "default" | "accent" | "danger" | "warning";
 };
 
 const TONE = {
@@ -15,6 +15,8 @@ const TONE = {
     "border-accent bg-accent text-[#07161b] enabled:hover:border-[color-mix(in_srgb,var(--gc-accent)_82%,white)] enabled:hover:bg-[color-mix(in_srgb,var(--gc-accent)_82%,white)]",
   danger:
     "border-[color-mix(in_srgb,var(--gc-danger)_60%,var(--gc-border))] bg-control text-danger enabled:hover:border-danger enabled:hover:bg-[color-mix(in_srgb,var(--gc-danger)_13%,var(--gc-panel))]",
+  warning:
+    "border-warning bg-warning text-[#1c1204] enabled:hover:border-[color-mix(in_srgb,var(--gc-warning)_82%,white)] enabled:hover:bg-[color-mix(in_srgb,var(--gc-warning)_82%,white)]",
 } as const;
 
 export function Button({

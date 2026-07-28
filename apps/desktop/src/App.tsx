@@ -1425,6 +1425,21 @@ function App() {
         });
     }, [runMutation]);
 
+    const resolveConflictPaths = useCallback((paths: string[], resolution: ConflictResolution) => {
+        if (!paths.length) return;
+        const count = `${paths.length} conflicted file${paths.length === 1 ? "" : "s"}`;
+        const question = resolution === "mark_resolved"
+            ? `Stage the current working copy of ${count} as resolved?`
+            : resolution === "delete"
+                ? `Delete ${count} as the conflict resolution?`
+                : `Take the ${resolution === "ours" ? "current" : "incoming"} version for ${count}?`;
+        if (!window.confirm(question)) return;
+        void runMutation(
+            `${paths.length} conflict${paths.length === 1 ? "" : "s"} resolved`,
+            (repository) => gitcatApi.resolveConflicts(repository.repository_id, paths, resolution),
+        );
+    }, [runMutation]);
+
     const copySha = useCallback(async (oid: string) => {
         try {
             await navigator.clipboard.writeText(oid);
@@ -1501,6 +1516,14 @@ function App() {
         const operation = snapshot ? continuableOperation(snapshot.operation_state) : null;
         if (!operation || !window.confirm(`Abort the active ${operation.replace("_", "-")} operation and discard its in-progress state?`)) return;
         void runMutation("Operation aborted", (repository) => gitcatApi.abortOperation(repository.repository_id, operation));
+    }, [runMutation, snapshot]);
+
+    const skipActiveOperation = useCallback(() => {
+        const operation = snapshot ? continuableOperation(snapshot.operation_state) : null;
+        if (!operation || operation === "merge") return;
+        const label = operation.replace("_", "-");
+        if (!window.confirm(`Skip the commit currently being applied by this ${label} and drop its changes?`)) return;
+        void runMutation("Commit skipped", (repository) => gitcatApi.skipOperation(repository.repository_id, operation));
     }, [runMutation, snapshot]);
 
     const autoResolveActiveConflicts = useCallback(() => {
@@ -2410,6 +2433,7 @@ function App() {
     const pendingOperation = snapshot
         ? continuableOperation(snapshot.operation_state)
         : null;
+    const operationProgress = snapshot?.operation_progress ?? null;
     if (initializing) {
         return (
             <AppShell className="items-center justify-center gap-3 text-muted [&>svg]:animate-orbit">
@@ -2486,8 +2510,6 @@ function App() {
                         />
                     ) : (
                         <Toolbar
-                            ahead={snapshot?.status.ahead ?? 0}
-                            behind={snapshot?.status.behind ?? 0}
                             branchName={currentBranch(snapshot)}
                             busy={busy}
                             canPop={stashes.length > 0}
@@ -2523,15 +2545,26 @@ function App() {
                             role="status"
                         >
                             <AlertTriangle size={16} />
-                            <span className="flex-1 text-[color-mix(in_srgb,var(--gc-warning)_68%,var(--gc-text))]">
-                                <strong>{snapshot.operation_state.replace("_", " ")} in progress.</strong>{" "}
-                                {pendingOperation
-                                    ? "Resolve conflicted files, then continue or abort."
-                                    : "Complete or abort this bisect from Git before running another operation."}
+                            <span className="flex min-w-0 flex-1 items-center gap-2 text-[color-mix(in_srgb,var(--gc-warning)_68%,var(--gc-text))]">
+                                <strong className="whitespace-nowrap">
+                                    {snapshot.operation_state.replace("_", " ")} in progress
+                                    {operationProgress ? ` · commit ${operationProgress.current} of ${operationProgress.total}` : ""}.
+                                </strong>
+                                {operationProgress?.subject ? (
+                                    <em className="min-w-0 truncate not-italic opacity-80">{operationProgress.subject}</em>
+                                ) : null}
+                                <span className="whitespace-nowrap">
+                                    {pendingOperation
+                                        ? "Resolve conflicted files, then continue or abort."
+                                        : "Complete or abort this bisect from Git before running another operation."}
+                                </span>
                             </span>
                             {pendingOperation ? (
                                 <>
                                     <Button compact onClick={continueActiveOperation}>Continue</Button>
+                                    {pendingOperation === "merge" ? null : (
+                                        <Button compact onClick={skipActiveOperation}>Skip commit</Button>
+                                    )}
                                     <Button compact onClick={abortActiveOperation} tone="danger">Abort</Button>
                                 </>
                             ) : null}
@@ -2759,6 +2792,7 @@ function App() {
                                     onOpenDiff={openWorktreeDiff}
                                     onOpenConflict={(entry) => void openConflictEditor(entry)}
                                     onResolveConflict={resolveConflictEntry}
+                                    onResolveConflicts={resolveConflictPaths}
                                     onStage={stagePaths}
                                     onUnstage={unstagePaths}
                                     onDiscard={(paths) => {

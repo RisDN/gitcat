@@ -35,6 +35,8 @@ const MAX_CONFLICT_TEXT_BYTES: usize = 1024 * 1024;
 const MAX_UNTRACKED_STAT_BYTES: u64 = 1024 * 1024;
 const MAX_UNTRACKED_STAT_FILES: usize = 2000;
 const WHOLE_FILE_CONTEXT_LINES: u32 = 1_000_000_000;
+const BULK_PATH_CHUNK: usize = 64;
+const MAX_REPORTED_BULK_PATHS: usize = 10;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct UnmergedIndexEntry {
@@ -610,6 +612,19 @@ impl GitCliBackend {
         Ok(operation_state_from_git_dir(&git_dir))
     }
 
+    async fn operation_status(
+        &self,
+        path: &Path,
+    ) -> ApiResult<(RepositoryOperationState, Option<OperationProgress>)> {
+        let git_dir = self.git_dir(path).await?;
+        let state = operation_state_from_git_dir(&git_dir);
+        let progress = match state {
+            RepositoryOperationState::Rebase => operation_progress_from_git_dir(&git_dir),
+            _ => None,
+        };
+        Ok((state, progress))
+    }
+
     async fn remotes(&self, path: &Path) -> ApiResult<Vec<RemoteInfo>> {
         let output = self.read(Some(path), os_args(&["remote"])).await?;
         let mut remotes = Vec::new();
@@ -1115,6 +1130,77 @@ impl GitCliBackend {
             .await
     }
 
+    async fn conflicted_paths(&self, path: &Path) -> ApiResult<Vec<String>> {
+        let output = self.status_output(path).await?;
+        Ok(parse_status(&output.stdout)?
+            .status
+            .entries
+            .into_iter()
+            .filter(|entry| entry.conflicted)
+            .map(|entry| entry.path)
+            .collect())
+    }
+
+    async fn unmerged_stages(
+        &self,
+        path: &Path,
+        conflict_paths: &[String],
+    ) -> ApiResult<HashMap<String, u8>> {
+        let mut stages: HashMap<String, u8> = HashMap::new();
+        for chunk in conflict_paths.chunks(BULK_PATH_CHUNK) {
+            let mut args = os_args(&[
+                "--literal-pathspecs",
+                "ls-files",
+                "--unmerged",
+                "--stage",
+                "-z",
+                "--",
+            ]);
+            args.extend(chunk.iter().map(OsString::from));
+            let output = self.read(Some(path), args).await?;
+            for record in output
+                .stdout_lossy()
+                .split('\0')
+                .filter(|record| !record.is_empty())
+            {
+                let Some((meta, entry_path)) = record.split_once('\t') else {
+                    continue;
+                };
+                let Some(stage) = meta
+                    .split_whitespace()
+                    .nth(2)
+                    .and_then(|stage| stage.parse::<u8>().ok())
+                else {
+                    continue;
+                };
+                *stages.entry(entry_path.to_owned()).or_default() |= 1 << stage;
+            }
+        }
+        Ok(stages)
+    }
+
+    async fn run_path_chunks(
+        &self,
+        path: &Path,
+        prefix: &[&str],
+        conflict_paths: &[String],
+    ) -> ApiResult<()> {
+        for chunk in conflict_paths.chunks(BULK_PATH_CHUNK) {
+            let mut args = os_args(prefix);
+            args.extend(chunk.iter().map(OsString::from));
+            let mut options = GitRunOptions::mutation(READ_OUTPUT_CAP);
+            options.allow_failure = true;
+            let output = self
+                .runner
+                .run(Some(path), &args, None, CancellationToken::new(), options)
+                .await?;
+            if !output.success() {
+                return Err(self.runner.failure_error(&output));
+            }
+        }
+        Ok(())
+    }
+
     async fn changed_files_for_commit(
         &self,
         path: &Path,
@@ -1386,12 +1472,13 @@ impl GitBackend for GitCliBackend {
             .stdout_lossy()
             .trim()
             == "true";
-        let operation_state = self.operation_state(path).await?;
+        let (operation_state, operation_progress) = self.operation_status(path).await?;
         let remotes = self.remotes(path).await?;
         Ok(RepositorySnapshot {
             generation,
             head: parsed_status.head,
             operation_state,
+            operation_progress,
             status: parsed_status.status,
             local_branches,
             remote_branches,
@@ -2076,6 +2163,89 @@ impl GitBackend for GitCliBackend {
         self.stage_conflict_path(path, conflict_path).await
     }
 
+    async fn resolve_conflicts(
+        &self,
+        path: &Path,
+        conflict_paths: &[String],
+        resolution: ConflictResolution,
+    ) -> ApiResult<MutationResult> {
+        validate_paths(conflict_paths)?;
+        let conflicted = self.conflicted_paths(path).await?;
+        let mut targets = if conflict_paths.is_empty() {
+            conflicted.clone()
+        } else {
+            conflict_paths.to_vec()
+        };
+        targets.sort();
+        targets.dedup();
+        if targets.is_empty() {
+            return self.mutation_result(path, self.head_oid(path).await?).await;
+        }
+
+        let unconflicted: Vec<&String> = targets
+            .iter()
+            .filter(|target| !conflicted.contains(target))
+            .collect();
+        if !unconflicted.is_empty() {
+            return Err(ApiError::new(
+                ErrorCode::InvalidRequest,
+                "Selected paths are not currently conflicted",
+            )
+            .with_details(summarize_paths(&unconflicted)));
+        }
+
+        let checkout_side = match resolution {
+            ConflictResolution::Ours => Some(("--ours", 2u8, "ours")),
+            ConflictResolution::Theirs => Some(("--theirs", 3u8, "theirs")),
+            ConflictResolution::MarkResolved | ConflictResolution::Delete => None,
+        };
+
+        if let Some((checkout_flag, stage, side_name)) = checkout_side {
+            let stages = self.unmerged_stages(path, &targets).await?;
+            let missing: Vec<&String> = targets
+                .iter()
+                .filter(|target| {
+                    stages.get(*target).copied().unwrap_or_default() & (1 << stage) == 0
+                })
+                .collect();
+            if !missing.is_empty() {
+                return Err(ApiError::new(
+                    ErrorCode::UnsupportedOperation,
+                    format!("The {side_name} side has no file content for some conflicts"),
+                )
+                .with_details(format!(
+                    "{}: resolve these individually, or use the explicit delete resolution if deletion is intended.",
+                    summarize_paths(&missing)
+                )));
+            }
+            let before_oid = self.head_oid(path).await?;
+            self.run_path_chunks(
+                path,
+                &["--literal-pathspecs", "checkout", checkout_flag, "--"],
+                &targets,
+            )
+            .await?;
+            self.run_path_chunks(path, &["--literal-pathspecs", "add", "--"], &targets)
+                .await?;
+            return self.mutation_result(path, before_oid).await;
+        }
+
+        let before_oid = self.head_oid(path).await?;
+        let prefix: &[&str] = if resolution == ConflictResolution::Delete {
+            &[
+                "--literal-pathspecs",
+                "rm",
+                "--force",
+                "--ignore-unmatch",
+                "--",
+            ]
+        } else {
+            &["--literal-pathspecs", "add", "--all", "--"]
+        };
+        self.run_path_chunks(path, prefix, &targets).await?;
+        self.mutation_result(path, before_oid).await
+    }
+
     async fn auto_resolve_conflicts(&self, path: &Path) -> ApiResult<MutationResult> {
         // `rerere` only reuses a repository-local resolution recorded for the
         // exact conflict preimage. It never chooses current or incoming content.
@@ -2636,6 +2806,27 @@ impl GitBackend for GitCliBackend {
             .await
     }
 
+    async fn skip_operation(
+        &self,
+        path: &Path,
+        operation: ContinueOperation,
+    ) -> ApiResult<MutationResult> {
+        ensure_operation(self.operation_state(path).await?, operation)?;
+        let args = match operation {
+            ContinueOperation::Merge => {
+                return Err(ApiError::new(
+                    ErrorCode::UnsupportedOperation,
+                    "A merge cannot skip a commit; resolve the conflicts or abort the merge",
+                ));
+            }
+            ContinueOperation::Rebase => os_args(&["rebase", "--skip"]),
+            ContinueOperation::CherryPick => os_args(&["cherry-pick", "--skip"]),
+            ContinueOperation::Revert => os_args(&["revert", "--skip"]),
+        };
+        self.mutate(path, args, None, CancellationToken::new(), false)
+            .await
+    }
+
     async fn stash_list(&self, path: &Path) -> ApiResult<Vec<StashEntry>> {
         let mut args = os_args(&["stash", "list"]);
         args.push(format!("--format={STASH_FORMAT}").into());
@@ -3136,6 +3327,61 @@ fn operation_state_from_git_dir(git_dir: &Path) -> RepositoryOperationState {
     }
 }
 
+fn summarize_paths(paths: &[&String]) -> String {
+    let listed = paths
+        .iter()
+        .take(MAX_REPORTED_BULK_PATHS)
+        .map(|path| path.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    if paths.len() > MAX_REPORTED_BULK_PATHS {
+        format!(
+            "{listed} and {} more",
+            paths.len() - MAX_REPORTED_BULK_PATHS
+        )
+    } else {
+        listed
+    }
+}
+
+fn operation_progress_from_git_dir(git_dir: &Path) -> Option<OperationProgress> {
+    let read_count = |file: &Path| {
+        fs::read_to_string(file)
+            .ok()
+            .and_then(|value| value.trim().parse::<u32>().ok())
+    };
+    let merge_dir = git_dir.join("rebase-merge");
+    let (current, total, message_file) = if merge_dir.exists() {
+        (
+            read_count(&merge_dir.join("msgnum"))?,
+            read_count(&merge_dir.join("end"))?,
+            merge_dir.join("message"),
+        )
+    } else {
+        let apply_dir = git_dir.join("rebase-apply");
+        (
+            read_count(&apply_dir.join("next"))?,
+            read_count(&apply_dir.join("last"))?,
+            apply_dir.join("msg-clean"),
+        )
+    };
+    if total == 0 {
+        return None;
+    }
+    let subject = fs::read_to_string(message_file).ok().and_then(|message| {
+        message
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(str::to_owned)
+    });
+    Some(OperationProgress {
+        current: current.min(total),
+        total,
+        subject,
+    })
+}
+
 fn validate_relative_path(path: &str) -> ApiResult<()> {
     if path.is_empty() || path.contains('\0') {
         return Err(ApiError::new(
@@ -3537,6 +3783,76 @@ mod tests {
         assert!(result.needs_user_action);
         assert_eq!(result.conflicts.len(), 1);
         (directory, backend)
+    }
+
+    async fn binary_conflicted_repository() -> (tempfile::TempDir, GitCliBackend, Vec<String>) {
+        let (directory, backend, base_oid) = committed_repository().await;
+        let paths: Vec<String> = vec![
+            "plugins/alpha.jar".into(),
+            "plugins/beta.jar".into(),
+            "plugins/gamma.jar".into(),
+        ];
+        fs::create_dir_all(directory.path().join("plugins")).expect("create plugins directory");
+        let write_all = |bytes: [u8; 4]| {
+            for path in &paths {
+                fs::write(directory.path().join(path), bytes).expect("write binary fixture");
+            }
+        };
+        async fn commit(backend: &GitCliBackend, path: &Path, message: &str) {
+            backend
+                .create_commit(
+                    path,
+                    &CommitOptions {
+                        message: message.into(),
+                        amend: false,
+                        signoff: false,
+                    },
+                )
+                .await
+                .expect("commit binary fixture");
+        }
+
+        write_all([0, 1, 2, 3]);
+        backend
+            .stage_paths(directory.path(), &paths)
+            .await
+            .expect("stage base binaries");
+        commit(&backend, directory.path(), "base plugins").await;
+        let plugin_base = backend
+            .head_oid(directory.path())
+            .await
+            .expect("read HEAD")
+            .expect("HEAD exists");
+        assert_ne!(plugin_base, base_oid);
+
+        backend
+            .create_branch(directory.path(), "incoming", &plugin_base, true)
+            .await
+            .expect("create incoming branch");
+        write_all([9, 9, 9, 9]);
+        backend
+            .stage_paths(directory.path(), &paths)
+            .await
+            .expect("stage incoming binaries");
+        commit(&backend, directory.path(), "incoming plugins").await;
+
+        backend
+            .checkout_branch(directory.path(), "main")
+            .await
+            .expect("return to main");
+        write_all([5, 5, 5, 5]);
+        backend
+            .stage_paths(directory.path(), &paths)
+            .await
+            .expect("stage current binaries");
+        commit(&backend, directory.path(), "current plugins").await;
+
+        let result = backend
+            .merge_branch(directory.path(), "incoming")
+            .await
+            .expect("binary conflicts are a resumable state");
+        assert_eq!(result.conflicts.len(), paths.len());
+        (directory, backend, paths)
     }
 
     async fn modify_delete_conflicted_repository() -> (tempfile::TempDir, GitCliBackend) {
@@ -5149,6 +5465,192 @@ mod tests {
             .abort_operation(directory.path(), ContinueOperation::Merge)
             .await
             .expect("abort manual fixture merge");
+    }
+
+    #[tokio::test]
+    async fn bulk_mark_resolved_stages_every_conflicted_binary_path() {
+        let (directory, backend, paths) = binary_conflicted_repository().await;
+
+        let result = backend
+            .resolve_conflicts(directory.path(), &[], ConflictResolution::MarkResolved)
+            .await
+            .expect("mark every conflict resolved");
+
+        assert!(result.conflicts.is_empty());
+        assert!(result.needs_user_action, "merge still needs completion");
+        for path in &paths {
+            assert_eq!(
+                fs::read(directory.path().join(path)).expect("read resolved binary"),
+                [5, 5, 5, 5],
+                "{path} keeps the working copy content"
+            );
+        }
+        assert!(
+            git_stdout(directory.path(), &["ls-files", "--unmerged"]).is_empty(),
+            "no unmerged index entries remain"
+        );
+        backend
+            .abort_operation(directory.path(), ContinueOperation::Merge)
+            .await
+            .expect("abort bulk fixture merge");
+    }
+
+    #[tokio::test]
+    async fn bulk_resolution_takes_one_side_for_selected_paths_only() {
+        let (directory, backend, paths) = binary_conflicted_repository().await;
+
+        let result = backend
+            .resolve_conflicts(directory.path(), &paths[..2], ConflictResolution::Theirs)
+            .await
+            .expect("take incoming side for the selected paths");
+
+        assert_eq!(result.conflicts.len(), 1);
+        assert_eq!(result.conflicts[0].path, paths[2]);
+        for path in &paths[..2] {
+            assert_eq!(
+                fs::read(directory.path().join(path)).expect("read resolved binary"),
+                [9, 9, 9, 9],
+                "{path} takes the incoming content"
+            );
+        }
+        backend
+            .abort_operation(directory.path(), ContinueOperation::Merge)
+            .await
+            .expect("abort partial bulk fixture merge");
+    }
+
+    #[tokio::test]
+    async fn bulk_resolution_rejects_paths_that_are_not_conflicted() {
+        let (directory, backend, _) = binary_conflicted_repository().await;
+
+        let error = backend
+            .resolve_conflicts(
+                directory.path(),
+                &["hello.txt".into()],
+                ConflictResolution::MarkResolved,
+            )
+            .await
+            .expect_err("clean paths are rejected before any staging happens");
+
+        assert_eq!(error.code, ErrorCode::InvalidRequest);
+        assert_eq!(
+            backend
+                .conflicted_paths(directory.path())
+                .await
+                .expect("conflicts are untouched")
+                .len(),
+            3
+        );
+        backend
+            .abort_operation(directory.path(), ContinueOperation::Merge)
+            .await
+            .expect("abort rejected bulk fixture merge");
+    }
+
+    #[tokio::test]
+    async fn rebase_reports_stopped_commit_progress_and_can_skip_it() {
+        let (directory, backend, base_oid) = committed_repository().await;
+        backend
+            .create_branch(directory.path(), "topic", &base_oid, true)
+            .await
+            .expect("create topic branch");
+        fs::write(directory.path().join("hello.txt"), "topic version\n")
+            .expect("write topic version");
+        backend
+            .stage_paths(directory.path(), &["hello.txt".into()])
+            .await
+            .expect("stage topic version");
+        backend
+            .create_commit(
+                directory.path(),
+                &CommitOptions {
+                    message: "feat: update plugins".into(),
+                    amend: false,
+                    signoff: false,
+                },
+            )
+            .await
+            .expect("commit topic conflict");
+        fs::write(directory.path().join("other.txt"), "topic extra\n").expect("write topic extra");
+        backend
+            .stage_paths(directory.path(), &["other.txt".into()])
+            .await
+            .expect("stage topic extra");
+        backend
+            .create_commit(
+                directory.path(),
+                &CommitOptions {
+                    message: "chore: unrelated".into(),
+                    amend: false,
+                    signoff: false,
+                },
+            )
+            .await
+            .expect("commit topic extra");
+
+        backend
+            .checkout_branch(directory.path(), "main")
+            .await
+            .expect("return to main");
+        fs::write(directory.path().join("hello.txt"), "main version\n")
+            .expect("write main version");
+        backend
+            .stage_paths(directory.path(), &["hello.txt".into()])
+            .await
+            .expect("stage main version");
+        backend
+            .create_commit(
+                directory.path(),
+                &CommitOptions {
+                    message: "main change".into(),
+                    amend: false,
+                    signoff: false,
+                },
+            )
+            .await
+            .expect("commit main change");
+        backend
+            .checkout_branch(directory.path(), "topic")
+            .await
+            .expect("return to topic");
+        let rebase = Command::new("git")
+            .arg("-C")
+            .arg(directory.path())
+            .args(["rebase", "main"])
+            .output()
+            .expect("run fixture rebase");
+        assert!(!rebase.status.success(), "fixture rebase stops on conflict");
+
+        let snapshot = backend
+            .snapshot(directory.path())
+            .await
+            .expect("snapshot the stopped rebase");
+        assert_eq!(snapshot.operation_state, RepositoryOperationState::Rebase);
+        let progress = snapshot
+            .operation_progress
+            .expect("a stopped rebase reports progress");
+        assert_eq!(progress.current, 1);
+        assert_eq!(progress.total, 2);
+        assert_eq!(progress.subject.as_deref(), Some("feat: update plugins"));
+
+        let skipped = backend
+            .skip_operation(directory.path(), ContinueOperation::Rebase)
+            .await
+            .expect("skip the conflicted commit");
+        assert!(skipped.conflicts.is_empty());
+        assert_eq!(
+            backend
+                .operation_state(directory.path())
+                .await
+                .expect("read operation state"),
+            RepositoryOperationState::Normal
+        );
+        assert_eq!(
+            fs::read_to_string(directory.path().join("hello.txt"))
+                .expect("read rebased file")
+                .replace("\r\n", "\n"),
+            "main version\n"
+        );
     }
 
     #[tokio::test]

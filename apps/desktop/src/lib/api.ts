@@ -90,6 +90,11 @@ export interface GitCatCommands {
     lineEnding: ConflictLineEndingPolicy,
     expectedState: ConflictExpectedState,
   ): Promise<MutationResult>;
+  resolveConflicts(
+    repositoryId: RepositoryId,
+    paths: string[],
+    resolution: ConflictResolution,
+  ): Promise<MutationResult>;
   autoResolveConflicts(repositoryId: RepositoryId): Promise<MutationResult>;
   createCommit(repositoryId: RepositoryId, options: CommitOptions): Promise<MutationResult>;
   rewordCommit(
@@ -159,6 +164,10 @@ export interface GitCatCommands {
     operation: ContinueOperation,
   ): Promise<MutationResult>;
   abortOperation(
+    repositoryId: RepositoryId,
+    operation: ContinueOperation,
+  ): Promise<MutationResult>;
+  skipOperation(
     repositoryId: RepositoryId,
     operation: ContinueOperation,
   ): Promise<MutationResult>;
@@ -269,6 +278,8 @@ export function createTauriGitCatApi(): GitCatApi {
       invokeTauri("conflict_resolve", { repositoryId, path, resolution, expectedState }),
     saveConflictResult: (repositoryId, path, text, lineEnding, expectedState) =>
       invokeTauri("conflict_save_edited", { repositoryId, path, text, lineEnding, expectedState }),
+    resolveConflicts: (repositoryId, paths, resolution) =>
+      invokeTauri("conflicts_resolve", { repositoryId, paths, resolution }),
     autoResolveConflicts: (repositoryId) =>
       invokeTauri("conflicts_auto_resolve", { repositoryId }),
     createCommit: (repositoryId, options) =>
@@ -321,6 +332,8 @@ export function createTauriGitCatApi(): GitCatApi {
       invokeTauri("operation_continue", { repositoryId, operation }),
     abortOperation: (repositoryId, operation) =>
       invokeTauri("operation_abort", { repositoryId, operation }),
+    skipOperation: (repositoryId, operation) =>
+      invokeTauri("operation_skip", { repositoryId, operation }),
     stashList: (repositoryId) =>
       invokeTauri("stash_list", { repositoryId }),
     stashPush: (repositoryId, message, includeUntracked) =>

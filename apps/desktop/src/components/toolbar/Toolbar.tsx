@@ -37,8 +37,6 @@ interface ToolbarProps {
   operation: RepositoryOperationState;
   busy: boolean;
   refreshing?: boolean;
-  ahead: number;
-  behind: number;
   canStash: boolean;
   canPop: boolean;
   pullMode: PullMode;
@@ -68,8 +66,6 @@ export function Toolbar({
   operation,
   busy,
   refreshing = false,
-  ahead,
-  behind,
   canStash,
   canPop,
   pullMode,
@@ -141,8 +137,6 @@ export function Toolbar({
       <div className="flex min-w-0 items-center gap-1.25 justify-self-center" aria-label="Repository actions">
         <div className="relative flex items-center gap-px" ref={menuRef}>
           <ToolbarAction
-            accent={behind > 0}
-            count={behind}
             disabled={busy}
             icon={<Download size={18} />}
             label="Pull"
@@ -197,8 +191,6 @@ export function Toolbar({
           ) : null}
         </div>
         <ToolbarAction
-          accent={ahead > 0}
-          count={ahead}
           disabled={busy}
           icon={<Upload size={18} />}
           label="Push"

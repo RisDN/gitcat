@@ -89,10 +89,20 @@ pub struct RepositoryCapabilities {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OperationProgress {
+    pub current: u32,
+    pub total: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepositorySnapshot {
     pub generation: String,
     pub head: HeadState,
     pub operation_state: RepositoryOperationState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation_progress: Option<OperationProgress>,
     pub status: WorktreeStatus,
     pub local_branches: Vec<BranchInfo>,
     pub remote_branches: Vec<BranchInfo>,

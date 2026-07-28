@@ -68,6 +68,12 @@ pub trait GitBackend: Send + Sync {
         line_ending: ConflictLineEndingPolicy,
         expected_state: &ConflictExpectedState,
     ) -> ApiResult<MutationResult>;
+    async fn resolve_conflicts(
+        &self,
+        path: &Path,
+        conflict_paths: &[String],
+        resolution: ConflictResolution,
+    ) -> ApiResult<MutationResult>;
     async fn auto_resolve_conflicts(&self, path: &Path) -> ApiResult<MutationResult>;
     async fn create_commit(
         &self,
@@ -168,6 +174,11 @@ pub trait GitBackend: Send + Sync {
         operation: ContinueOperation,
     ) -> ApiResult<MutationResult>;
     async fn abort_operation(
+        &self,
+        path: &Path,
+        operation: ContinueOperation,
+    ) -> ApiResult<MutationResult>;
+    async fn skip_operation(
         &self,
         path: &Path,
         operation: ContinueOperation,
