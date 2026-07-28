@@ -138,6 +138,21 @@
     font-feature-settings: "liga" 0, "clig" 0, "calt" 0;
   }
 
+  input[type="color"] {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+    border-radius: inherit;
+  }
+
+  input[type="color"]::-webkit-color-swatch {
+    border: none;
+    border-radius: inherit;
+  }
+
   ::-webkit-scrollbar {
     width: var(--gc-scrollbar-width);
     height: var(--gc-scrollbar-width);
