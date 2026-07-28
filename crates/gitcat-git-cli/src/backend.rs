@@ -3565,9 +3565,7 @@ fn apply_stash_view(commits: &mut Vec<CommitSummary>, stashes: &StashGraph) {
             continue;
         };
         commit.parent_oids.truncate(1);
-        if commit.body_preview.is_empty() {
-            commit.body_preview = commit.subject.clone();
-        }
+        commit.body_preview = String::new();
         commit.subject = stash.label.clone();
         commit.stash = Some(stash.reference.clone());
     }
