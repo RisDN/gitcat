@@ -1,4 +1,5 @@
 mod watcher;
+mod window_state;
 
 use std::sync::Arc;
 
@@ -13,10 +14,11 @@ use gitcat_contracts::{
 use gitcat_core::{CoreApi, JsonStateStore};
 use gitcat_git_cli::GitCliBackend;
 use serde::Serialize;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager, State, WindowEvent};
 use tokio_util::sync::CancellationToken;
 
 use crate::watcher::RepositoryWatchState;
+use crate::window_state::WindowModeStore;
 
 #[derive(Debug, Serialize)]
 pub struct OpenedRepository {
@@ -597,12 +599,23 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let state_path = app.path().app_data_dir()?.join("state.json");
+            let data_dir = app.path().app_data_dir()?;
             let backend = Arc::new(GitCliBackend::default());
             app.manage(Arc::new(CoreApi::new(backend)));
-            app.manage(JsonStateStore::new(state_path));
+            app.manage(JsonStateStore::new(data_dir.join("state.json")));
             app.manage(RepositoryWatchState::default());
+            app.manage(WindowModeStore::new(data_dir.join("window.json")));
+
+            if let Some(window) = app.get_webview_window("main") {
+                app.state::<WindowModeStore>().restore(&window);
+                let _ = window.show();
+            }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if matches!(event, WindowEvent::Resized(_)) {
+                window.state::<WindowModeStore>().remember(window);
+            }
         })
         .invoke_handler(tauri::generate_handler![
             app_metadata,

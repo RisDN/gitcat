@@ -1126,6 +1126,7 @@ dependencies = [
  "gitcat-git-cli",
  "notify",
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
