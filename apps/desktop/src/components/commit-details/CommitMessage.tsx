@@ -13,7 +13,7 @@ export function MessageCard({ children }: { children: ReactNode }) {
 }
 
 function MessageText({ body }: { body: string }) {
-    if (!body) return <span className="mt-2.75 block text-[11px] italic text-muted">No description</span>;
+    if (!body) return <></>;
     return (
         <p className="mt-3 whitespace-pre-wrap text-left leading-[1.55] text-[color-mix(in_srgb,var(--gc-text)_80%,var(--gc-muted))]">
             {body}

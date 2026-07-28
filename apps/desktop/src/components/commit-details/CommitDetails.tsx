@@ -7,7 +7,7 @@ import type { FileTreeItem, FileViewMode } from "../file-tree";
 import { ChangeCountSummary, FileTree, FileTreeControls, fileChangeCounts, sumChangeCounts } from "../file-tree";
 import { Badge, SidePanel } from "../ui";
 import { MessageEditor, MessageView } from "./CommitMessage";
-import { Avatar, CoAuthorRow, FilesHeader, FilesPanel, IdentityRow, StatsRow } from "./CommitSections";
+import { Avatar, CoAuthorRow, FilesPanel, IdentityRow, StatsRow } from "./CommitSections";
 import { ShaBar, ShaCopy } from "./ShaBar";
 
 interface CommitDetailsProps {
@@ -122,10 +122,6 @@ export function CommitDetails({ details, selectedPath, busy = false, fileViewMod
                 {details.parent_oids.length > 1 ? <Badge tone="warning">merge</Badge> : null}
             </StatsRow>
             <FilesPanel>
-                <FilesHeader>
-                    <span>Changed files</span>
-                    <small className="ml-auto">{details.files.length}</small>
-                </FilesHeader>
                 <FileTreeControls mode={fileViewMode} onModeChange={onFileViewModeChange} />
                 <FileTree
                     ariaLabel="Changed files"

@@ -4,7 +4,6 @@ const CO_AUTHOR_LINE = /^\s*co-authored-by:\s*(.*?)\s*(?:<\s*([^>]*)\s*>)?\s*$/i
 
 export function parseCoAuthors(body: string): Identity[] {
   const coAuthors: Identity[] = [];
-  const seen = new Set<string>();
 
   for (const line of body.split("\n")) {
     const match = CO_AUTHOR_LINE.exec(line);
@@ -12,9 +11,6 @@ export function parseCoAuthors(body: string): Identity[] {
     const name = match[1] ?? "";
     const email = match[2] ?? "";
     if (!name && !email) continue;
-    const key = (email || name).toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
     coAuthors.push({ name: name || email, email });
   }
 

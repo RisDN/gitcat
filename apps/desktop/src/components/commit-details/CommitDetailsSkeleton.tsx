@@ -1,7 +1,7 @@
 import { cx } from "../../lib";
 import { SidePanel } from "../ui";
 import { MessageCard } from "./CommitMessage";
-import { Avatar, FilesHeader, FilesPanel, IdentityRow, StatsRow } from "./CommitSections";
+import { Avatar, FilesPanel, IdentityRow, StatsRow } from "./CommitSections";
 import { ShaBar } from "./ShaBar";
 import { SkeletonLine } from "./SkeletonLine";
 
@@ -42,10 +42,6 @@ export function CommitDetailsSkeleton() {
                 <SkeletonLine className="w-11.5" />
             </StatsRow>
             <FilesPanel>
-                <FilesHeader>
-                    <SkeletonLine className="w-28" />
-                    <SkeletonLine as="small" className="ml-auto w-5.5" />
-                </FilesHeader>
                 <div className="flex flex-col gap-1.75 overflow-auto pt-2" aria-hidden="true">
                     {fileRows.map((row) => (
                         <SkeletonLine className={cx("h-4.75", fileRowShape(row))} key={row} />
