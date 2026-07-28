@@ -7,6 +7,7 @@ import type {
   MouseEvent as ReactMouseEvent,
 } from "react";
 
+import { GRAPH_LANE_SLOTS } from "../lib/styles";
 import type { CommitSummary, RefLabel } from "../lib/types";
 
 const ROW_HEIGHT = 28;
@@ -16,7 +17,6 @@ const LANE_WIDTH = 18;
 const GRAPH_PADDING = 24;
 const REF_COLUMN_WIDTH = 118;
 const MIN_GRAPH_WIDTH = 96;
-const LANE_COLOR_COUNT = 10;
 const FIRST_COLOR_SLOT = 0;
 const EDGE_CORNER = 12;
 const AVATAR_RADIUS = 11;
@@ -119,11 +119,11 @@ export function getWipLaneColorVariable(): string {
 }
 
 function colorVariable(slot: number): string {
-  return `var(--gc-lane-${slot % LANE_COLOR_COUNT})`;
+  return `var(--gc-lane-${slot % GRAPH_LANE_SLOTS})`;
 }
 
 function colorClass(base: string, slot: number): string {
-  return `${base} ${base}--lane-${slot % LANE_COLOR_COUNT}`;
+  return `${base} ${base}--lane-${slot % GRAPH_LANE_SLOTS}`;
 }
 
 function buildBranchColors(commits: readonly CommitSummary[]): Map<string, number> {
@@ -272,9 +272,10 @@ function buildGraphGeometry(commits: readonly CommitSummary[]): GraphGeometry {
       const parentIndex = commitIndex.get(edge.parent_oid) ?? -1;
       const parentVisible = parentIndex > index;
       const targetIndex = parentVisible ? parentIndex : commits.length;
+      const endLane = parentVisible ? commits[parentIndex].graph.lane : edge.to_lane;
       const startX = laneX(edge.from_lane);
       const startY = rowY(index);
-      const endX = laneX(edge.to_lane);
+      const endX = laneX(endLane);
       const endY = Math.min(rowY(targetIndex), commits.length * ROW_STRIDE - ROW_GAP);
       const data = buildEdgePath(startX, startY, endX, endY, parentVisible);
       const commitColor = colors.get(commit.oid) ?? FIRST_COLOR_SLOT;

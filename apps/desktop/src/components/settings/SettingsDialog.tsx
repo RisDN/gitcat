@@ -87,6 +87,7 @@ export function SettingsDialog({ settings, defaults, onSave, onClose }: Settings
           </Field>
         </section>
         <ThemeEditor
+          defaultPalette={defaults.theme.graph_palette}
           onColorChange={(field: keyof ThemeColors, value: string) =>
             setDraft((current) => ({ ...current, theme: { ...current.theme, [field]: value } }))}
           onPaletteChange={(graph_palette) =>

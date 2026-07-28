@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use gitcat_contracts::{CommitSummary, GraphCell, GraphEdge, LaneState};
 
 /// Adds deterministic graph lane information to topologically ordered commits.
@@ -12,7 +14,10 @@ pub fn layout_commits(
 ) {
     reserve_head_lane(commits, lanes, head_oid);
 
-    for commit in commits.iter_mut() {
+    let mut commit_lanes = Vec::with_capacity(commits.len());
+    let mut parent_lanes: HashMap<String, usize> = HashMap::new();
+
+    for commit in commits.iter() {
         let lane = lane_for_commit(&mut lanes.heads, &commit.oid);
 
         // A malformed or externally supplied cursor may contain the same head
@@ -23,25 +28,50 @@ pub fn layout_commits(
             }
         }
 
-        let mut edges = Vec::with_capacity(commit.parent_oids.len());
+        commit_lanes.push(lane);
+
         for (parent_index, parent_oid) in commit.parent_oids.iter().enumerate() {
-            let parent_lane = lanes
+            let claimed_lane = lanes
                 .heads
                 .iter()
-                .position(|head| head.as_deref() == Some(parent_oid.as_str()))
-                .unwrap_or_else(|| {
+                .position(|head| head.as_deref() == Some(parent_oid.as_str()));
+
+            let parent_lane = match claimed_lane {
+                Some(claimed_lane) => {
+                    let takes_over = parent_index == 0
+                        && claimed_lane > lane
+                        && lanes.heads[lane].is_none();
+                    if takes_over {
+                        lanes.heads[lane] = Some(parent_oid.clone());
+                        lane
+                    } else {
+                        claimed_lane
+                    }
+                }
+                None => {
                     let preferred_lane =
                         (parent_index == 0 && lanes.heads[lane].is_none()).then_some(lane);
                     allocate_lane(&mut lanes.heads, parent_oid, preferred_lane)
-                });
+                }
+            };
 
-            edges.push(GraphEdge {
+            parent_lanes.insert(parent_oid.clone(), parent_lane);
+        }
+    }
+
+    for (index, commit) in commits.iter_mut().enumerate() {
+        let lane = commit_lanes[index];
+        let edges = commit
+            .parent_oids
+            .iter()
+            .enumerate()
+            .map(|(parent_index, parent_oid)| GraphEdge {
                 parent_oid: parent_oid.clone(),
                 from_lane: lane,
-                to_lane: parent_lane,
+                to_lane: parent_lanes.get(parent_oid).copied().unwrap_or(lane),
                 merge: parent_index > 0,
-            });
-        }
+            })
+            .collect();
 
         commit.graph = GraphCell { lane, edges };
     }
@@ -221,6 +251,50 @@ mod tests {
         assert_eq!(commits[0].graph.edges[0].to_lane, 0);
         assert_eq!(commits[1].graph.lane, 0);
         assert_eq!(commits[2].graph.lane, 0);
+    }
+
+    #[test]
+    fn leftmost_chain_keeps_a_contested_first_parent() {
+        let mut commits = vec![
+            commit("stash", &["base", "index"]),
+            commit("index", &["base"]),
+            commit("tip", &["main-1"]),
+            commit("main-1", &["base"]),
+            commit("other-tip", &["other-1"]),
+            commit("other-1", &["older"]),
+            commit("base", &["older"]),
+            commit("older", &[]),
+        ];
+        let mut lanes = LaneState { heads: Vec::new() };
+
+        layout_commits(&mut commits, &mut lanes, Some("tip"));
+
+        assert_eq!(commits[2].graph.lane, 0);
+        assert_eq!(commits[3].graph.lane, 0);
+        assert_eq!(commits[3].graph.edges[0].to_lane, 0);
+        assert_eq!(commits[6].graph.lane, 0);
+        assert_eq!(commits[0].graph.edges[0].to_lane, 0);
+        assert_eq!(commits[1].graph.edges[0].to_lane, 0);
+    }
+
+    #[test]
+    fn unrelated_tip_skips_a_lane_that_still_carries_a_bend() {
+        let mut commits = vec![
+            commit("stash", &["base"]),
+            commit("tip", &["main-1"]),
+            commit("main-1", &["base"]),
+            commit("other-tip", &["other-1"]),
+            commit("other-1", &["older"]),
+            commit("base", &["older"]),
+            commit("older", &[]),
+        ];
+        let mut lanes = LaneState { heads: Vec::new() };
+
+        layout_commits(&mut commits, &mut lanes, Some("tip"));
+
+        assert_eq!(commits[0].graph.lane, 1);
+        assert_eq!(commits[3].graph.lane, 2);
+        assert_eq!(commits[4].graph.lane, 2);
     }
 
     #[test]

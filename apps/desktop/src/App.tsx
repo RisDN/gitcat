@@ -48,6 +48,7 @@ import { chooseDirectory } from "./lib/platform";
 import { useAppUpdate } from "./lib/updates";
 import { conflictOperationLabel } from "./lib/conflicts";
 import { sameFileDiff } from "./lib/diffs";
+import { GRAPH_LANE_SLOTS } from "./lib/styles";
 import {
     DEFAULT_KEYBINDS,
     duplicateKeybinds,
@@ -431,7 +432,7 @@ function applyTheme(settings: AppSettings): void {
         "--gc-diff-delete": theme.diff_deletion,
     };
     for (const [name, value] of Object.entries(variables)) root.style.setProperty(name, value);
-    for (let index = 0; index < 10; index += 1) {
+    for (let index = 0; index < GRAPH_LANE_SLOTS; index += 1) {
         root.style.setProperty(`--gc-lane-${index}`, theme.graph_palette[index % theme.graph_palette.length]);
     }
 }

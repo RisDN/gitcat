@@ -1,4 +1,8 @@
+import { RotateCcw } from "lucide-react";
+
+import { GRAPH_LANE_SLOTS } from "../../lib/styles";
 import type { ThemeColors } from "../../lib/types";
+import { Button } from "../ui";
 import { SectionHeading } from "./SettingsField";
 
 const COLOR_FIELDS: Array<[keyof ThemeColors, string]> = [
@@ -18,13 +22,20 @@ const COLOR_FIELDS: Array<[keyof ThemeColors, string]> = [
 
 export function ThemeEditor({
   theme,
+  defaultPalette,
   onColorChange,
   onPaletteChange,
 }: {
   theme: ThemeColors;
+  defaultPalette: readonly string[];
   onColorChange: (field: keyof ThemeColors, value: string) => void;
   onPaletteChange: (palette: string[]) => void;
 }) {
+  const lanes = Array.from(
+    { length: GRAPH_LANE_SLOTS },
+    (_, index) => theme.graph_palette[index] ?? defaultPalette[index % defaultPalette.length] ?? "#000000",
+  );
+
   return (
     <section className="min-w-0">
       <SectionHeading>Interface colors</SectionHeading>
@@ -46,15 +57,25 @@ export function ThemeEditor({
           </label>
         ))}
       </div>
-      <SectionHeading>Graph lanes</SectionHeading>
+      <SectionHeading className="flex items-center justify-between gap-3">
+        Graph lanes
+        <Button
+          compact
+          icon={<RotateCcw size={13} />}
+          onClick={() => onPaletteChange([...defaultPalette])}
+          title="Restore the default lane colors"
+        >
+          Reset lanes
+        </Button>
+      </SectionHeading>
       <div className="flex flex-wrap gap-1.75">
-        {theme.graph_palette.map((color, index) => (
+        {lanes.map((color, index) => (
           <input
             aria-label={`Graph lane ${index + 1}`}
             className="size-7.75 cursor-pointer overflow-hidden rounded-full border border-border bg-transparent p-0"
-            key={`${index}:${color}`}
+            key={index}
             onChange={(event) => {
-              const palette = [...theme.graph_palette];
+              const palette = [...lanes];
               palette[index] = event.target.value;
               onPaletteChange(palette);
             }}
