@@ -56,7 +56,7 @@ export function CoAuthorRow({ coAuthors }: { coAuthors: readonly Identity[] }) {
 }
 
 export function StatsRow({ children }: { children: ReactNode }) {
-  return <div className="flex items-center gap-2 border-y border-border px-3 py-2">{children}</div>;
+  return <div className="flex items-center gap-2 border-b border-border px-3 pb-2">{children}</div>;
 }
 
 export function FilesPanel({ children }: { children: ReactNode }) {

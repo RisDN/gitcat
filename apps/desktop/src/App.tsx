@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Copy, Download, FolderInput, FolderPlus, FolderX, GitBranchPlus, GitCommitHorizontal, GitPullRequestArrow, LoaderCircle, Minus, Pencil, Plus, RotateCcw, Tag, Trash2, Upload, X, } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, Download, FolderInput, FolderPlus, FolderX, GitBranchPlus, GitCommitHorizontal, GitPullRequestArrow, LoaderCircle, Pencil, RotateCcw, Tag, Trash2, Upload, X, } from "lucide-react";
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState, } from "react";
 
 import { CommitDetails, CommitDetailsSkeleton } from "./components/commit-details";
@@ -6,7 +6,7 @@ import { CommitGraph, getCommitGraphWidth, getCommitLaneX, getCommitRowBranchOri
 import { ConflictResolverDialog } from "./components/conflict";
 import { ContextMenu, type ContextAction } from "./components/ContextMenu";
 import { DiffViewer, isWholeFileMode, type DiffViewMode } from "./components/diff";
-import { fileChangeCounts, orderedFilePaths } from "./components/file-tree";
+import { ChangeCountSummary, emptyChangeCounts, fileChangeCounts, orderedFilePaths, sumChangeCounts } from "./components/file-tree";
 import type { FolderCollapseTarget } from "./components/file-tree";
 import { OperationBanner } from "./components/OperationBanner";
 import { PromptDialog } from "./components/PromptDialog";
@@ -2239,18 +2239,10 @@ function App() {
     const activeConflictCount =snapshot?.status.entries.filter((entry) => entry.conflicted).length ?? 0;
     const wipStats = useMemo(() => {
         const entries = snapshot?.status.entries ?? [];
-        return entries.reduce(
-            (total, entry) => {
-                const kind = wipChangeKind(entry);
-                const counts = kind ? fileChangeCounts(kind) : { added: 0, deleted: 0, modified: 0 };
-                return {
-                    added: total.added + counts.added,
-                    deleted: total.deleted + counts.deleted,
-                    modified: total.modified + counts.modified,
-                };
-            },
-            { added: 0, deleted: 0, modified: 0 },
-        );
+        return sumChangeCounts(...entries.map((entry) => {
+            const kind = wipChangeKind(entry);
+            return kind ? fileChangeCounts(kind) : emptyChangeCounts;
+        }));
     }, [snapshot?.status.entries]);
     const conflictTarget = activeTab?.conflict_target_disabled
         ? null
@@ -2647,24 +2639,7 @@ function App() {
                                             <span className="gc-wip-row__rail"><i /></span>
                                             <span className="gc-wip-row__message">
                                                 <strong>// WIP</strong>
-                                                {wipStats.modified ? (
-                                                    <span className="flex items-center gap-px font-mono text-[10px] text-foreground">
-                                                        <Pencil aria-hidden="true" className="shrink-0 text-warning" size={11} strokeWidth={3} />
-                                                        {wipStats.modified}
-                                                    </span>
-                                                ) : null}
-                                                {wipStats.added ? (
-                                                    <span className="flex items-center gap-px font-mono text-[10px] text-foreground">
-                                                        <Plus aria-hidden="true" className="shrink-0 text-success" size={11} strokeWidth={3} />
-                                                        {wipStats.added}
-                                                    </span>
-                                                ) : null}
-                                                {wipStats.deleted ? (
-                                                    <span className="flex items-center gap-px font-mono text-[10px] text-foreground">
-                                                        <Minus aria-hidden="true" className="shrink-0 text-danger" size={11} strokeWidth={3} />
-                                                        {wipStats.deleted}
-                                                    </span>
-                                                ) : null}
+                                                <ChangeCountSummary counts={wipStats} size="md" />
                                             </span>
                                             <span className={activeConflictCount ? "gc-wip-row__conflicts" : "text-muted"}>
                                                 {activeConflictCount ? <><AlertTriangle size={12} /> {activeConflictCount}</> : ""}

@@ -24,7 +24,10 @@ export interface FileChangeCounts {
   added: number;
   deleted: number;
   modified: number;
+  renamed: number;
 }
+
+export const emptyChangeCounts: FileChangeCounts = { added: 0, deleted: 0, modified: 0, renamed: 0 };
 
 interface MutableFolder<T> {
   name: string;
@@ -71,22 +74,26 @@ interface FolderTotals<T> {
 
 export function fileChangeCounts(status: string): FileChangeCounts {
   if (status === "added" || status === "untracked" || status === "copied") {
-    return { added: 1, deleted: 0, modified: 0 };
+    return { ...emptyChangeCounts, added: 1 };
   }
   if (status === "deleted") {
-    return { added: 0, deleted: 1, modified: 0 };
+    return { ...emptyChangeCounts, deleted: 1 };
   }
-  return { added: 0, deleted: 0, modified: 1 };
+  if (status === "renamed") {
+    return { ...emptyChangeCounts, renamed: 1 };
+  }
+  return { ...emptyChangeCounts, modified: 1 };
 }
 
-function sumChangeCounts(...counts: readonly FileChangeCounts[]): FileChangeCounts {
+export function sumChangeCounts(...counts: readonly FileChangeCounts[]): FileChangeCounts {
   return counts.reduce<FileChangeCounts>(
     (total, count) => ({
       added: total.added + count.added,
       deleted: total.deleted + count.deleted,
       modified: total.modified + count.modified,
+      renamed: total.renamed + count.renamed,
     }),
-    { added: 0, deleted: 0, modified: 0 },
+    emptyChangeCounts,
   );
 }
 

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { identityInitials, parseCoAuthors } from "../../lib";
 import type { ChangedFile, CommitDetails as CommitDetailsType } from "../../lib/types";
 import type { FileTreeItem, FileViewMode } from "../file-tree";
-import { FileTree, FileTreeControls } from "../file-tree";
+import { ChangeCountSummary, FileTree, FileTreeControls, fileChangeCounts, sumChangeCounts } from "../file-tree";
 import { Badge, SidePanel } from "../ui";
 import { MessageEditor, MessageView } from "./CommitMessage";
 import { Avatar, CoAuthorRow, FilesHeader, FilesPanel, IdentityRow, StatsRow } from "./CommitSections";
@@ -76,6 +76,10 @@ export function CommitDetails({ details, selectedPath, busy = false, fileViewMod
         additions: file.additions,
         deletions: file.deletions,
     })), [details.files]);
+    const fileCounts = useMemo(
+        () => sumChangeCounts(...details.files.map((file) => fileChangeCounts(file.status))),
+        [details.files],
+    );
 
     return (
         <SidePanel aria-label="Commit details">
@@ -112,9 +116,9 @@ export function CommitDetails({ details, selectedPath, busy = false, fileViewMod
             </IdentityRow>
             <CoAuthorRow coAuthors={coAuthors} />
             <StatsRow>
-                <Badge tone="accent">{details.stats.files} files</Badge>
-                <span className="font-bold text-success">+{details.stats.additions}</span>
-                <span className="font-bold text-danger">−{details.stats.deletions}</span>
+                <span className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
+                    <ChangeCountSummary counts={fileCounts} labels size="md" />
+                </span>
                 {details.parent_oids.length > 1 ? <Badge tone="warning">merge</Badge> : null}
             </StatsRow>
             <FilesPanel>

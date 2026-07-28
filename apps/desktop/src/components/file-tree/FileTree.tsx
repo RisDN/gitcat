@@ -5,7 +5,8 @@ import type { LucideIcon } from "lucide-react";
 
 import { cx } from "../../lib";
 import type { FileViewMode } from "../../lib/types";
-import { ChangeCount, EntryName, ModifiedCount, RowAction, TreeEntry, TreeRow, fileStatusClass } from "./TreeRow";
+import { ChangeCountSummary } from "./ChangeCounts";
+import { EntryName, RowAction, TreeEntry, TreeRow, fileStatusClass } from "./TreeRow";
 import {
   buildTree,
   collectFolderItems,
@@ -15,7 +16,6 @@ import {
   pathCollator,
   treeIndent,
 } from "./tree";
-import type { FileChangeCounts } from "./tree";
 import type { FileTreeItem, FolderCollapse, TreeNode } from "./tree";
 
 const STATUS_ICON: Record<string, LucideIcon> = {
@@ -36,16 +36,6 @@ function collapseTargetPath(target: FolderCollapse["target"]): string {
 function isForcedCollapsed(forced: string | null, path: string): boolean {
   if (forced === null) return false;
   return !forced || path === forced || path.startsWith(`${forced}/`);
-}
-
-function renderFileCountSummary(counts: FileChangeCounts, showModified: boolean): ReactNode {
-  return (
-    <>
-      {showModified && counts.modified ? <ModifiedCount>{counts.modified}</ModifiedCount> : null}
-      {counts.added ? <ChangeCount tone="add">{counts.added}</ChangeCount> : null}
-      {counts.deleted ? <ChangeCount tone="remove">{counts.deleted}</ChangeCount> : null}
-    </>
-  );
 }
 
 interface FileTreeProps<T> {
@@ -191,7 +181,7 @@ export function FileTree<T>({
             <StatusIcon aria-hidden="true" size={12} strokeWidth={2.6} />
           </b>
           <EntryName>{label}</EntryName>
-          {renderFileCountSummary(fileChangeCounts(item.status), false)}
+          <ChangeCountSummary counts={fileChangeCounts(item.status)} statusKinds={false} />
           {item.binary ? <small className="text-[9px] text-warning">binary</small> : null}
         </TreeEntry>
         {renderAction ? <RowAction pinned={unmerged}>{renderAction(item.data)}</RowAction> : null}
@@ -219,7 +209,7 @@ export function FileTree<T>({
           {expanded ? <ChevronDown aria-hidden="true" size={13} /> : <ChevronRight aria-hidden="true" size={13} />}
           <Folder aria-hidden="true" size={14} />
           <EntryName>{node.name}</EntryName>
-          {!expanded ? renderFileCountSummary(node.changeCounts, true) : null}
+          {!expanded ? <ChangeCountSummary counts={node.changeCounts} /> : null}
         </TreeEntry>
         {expanded ? (
           <div className="flex min-w-0 flex-col gap-0.75" role="list" style={treeIndent(depth)}>

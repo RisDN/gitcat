@@ -1,4 +1,3 @@
-import { Minus, Pencil, Plus } from "lucide-react";
 import type { ComponentPropsWithRef } from "react";
 
 import { cx } from "../../lib";
@@ -58,30 +57,6 @@ export function TreeEntry({ className = "", depth, ...props }: ComponentPropsWit
 
 export function EntryName({ children }: { children: string }) {
   return <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{children}</span>;
-}
-
-export function ChangeCount({ tone, children }: { tone: "add" | "remove"; children: number }) {
-  const Icon = tone === "add" ? Plus : Minus;
-  return (
-    <small className="flex shrink-0 items-center gap-px font-mono text-[9px] leading-none text-foreground">
-      <Icon
-        aria-hidden="true"
-        className={cx("shrink-0", tone === "add" ? "text-success" : "text-danger")}
-        size={10}
-        strokeWidth={3}
-      />
-      {children}
-    </small>
-  );
-}
-
-export function ModifiedCount({ children }: { children: number }) {
-  return (
-    <small className="flex shrink-0 items-center gap-px font-mono text-[9px] leading-none text-foreground">
-      <Pencil aria-hidden="true" className="shrink-0 text-warning" size={10} strokeWidth={3} />
-      {children}
-    </small>
-  );
 }
 
 // Revealed on row hover, or pinned open while a conflict is unresolved.
