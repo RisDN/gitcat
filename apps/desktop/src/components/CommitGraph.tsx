@@ -115,8 +115,11 @@ export function getCommitRowBranchOrigin(lane: number): number {
   return REF_COLUMN_WIDTH + laneX(lane) - AVATAR_RADIUS;
 }
 
-export function getWipLaneColorVariable(): string {
-  return `var(--gc-lane-${FIRST_COLOR_SLOT})`;
+export function getWipLaneColorVariable(
+  commits: readonly CommitSummary[],
+  headOid: string | null,
+): string {
+  return colorVariable(wipColorSlot(commits, buildBranchColors(commits), headOid));
 }
 
 function colorVariable(slot: number): string {
@@ -128,39 +131,102 @@ function colorClass(base: string, slot: number): string {
 }
 
 function buildBranchColors(commits: readonly CommitSummary[]): Map<string, number> {
-  const colors = new Map<string, number>();
-  let nextSlot = FIRST_COLOR_SLOT;
+  const rowOf = new Map<string, number>();
+  for (let index = 0; index < commits.length; index += 1) rowOf.set(commits[index].oid, index);
 
-  for (const commit of commits) {
+  const groupOf = new Map<string, number>();
+  const spans: { start: number; end: number; lane: number }[] = [];
+  const offPageRow = commits.length;
+  const openGroup = (row: number, lane: number): number => {
+    spans.push({ start: row, end: row, lane });
+    return spans.length - 1;
+  };
+  const extend = (group: number, row: number) => {
+    spans[group].start = Math.min(spans[group].start, row);
+    spans[group].end = Math.max(spans[group].end, row);
+  };
+  const parentRow = (parentOid: string) => rowOf.get(parentOid) ?? offPageRow;
+
+  for (let index = 0; index < commits.length; index += 1) {
+    const commit = commits[index];
     if (commit.stash) continue;
 
-    let color = colors.get(commit.oid);
-    if (color === undefined) {
-      color = nextSlot;
-      nextSlot += 1;
-      colors.set(commit.oid, color);
+    let group = groupOf.get(commit.oid);
+    if (group === undefined) {
+      group = openGroup(index, commit.graph.lane);
+      groupOf.set(commit.oid, group);
     }
+    extend(group, index);
 
-    for (let index = 0; index < commit.graph.edges.length; index += 1) {
-      const parentOid = commit.graph.edges[index].parent_oid;
-      if (colors.has(parentOid)) continue;
-      if (index === 0) {
-        colors.set(parentOid, color);
+    for (let edgeIndex = 0; edgeIndex < commit.graph.edges.length; edgeIndex += 1) {
+      const edge = commit.graph.edges[edgeIndex];
+      const parentOid = edge.parent_oid;
+
+      if (edgeIndex === 0) {
+        if (!groupOf.has(parentOid)) groupOf.set(parentOid, group);
+        extend(group, parentRow(parentOid));
         continue;
       }
-      colors.set(parentOid, nextSlot);
-      nextSlot += 1;
+
+      let mergeGroup = groupOf.get(parentOid);
+      if (mergeGroup === undefined) {
+        mergeGroup = openGroup(index, edge.to_lane);
+        groupOf.set(parentOid, mergeGroup);
+      }
+      extend(mergeGroup, index);
+      extend(mergeGroup, parentRow(parentOid));
     }
   }
 
-  for (const commit of commits) {
-    if (!commit.stash || colors.has(commit.oid)) continue;
-    const parentOid = commit.graph.edges[0]?.parent_oid;
-    const parentColor = parentOid === undefined ? undefined : colors.get(parentOid);
-    colors.set(commit.oid, parentColor ?? FIRST_COLOR_SLOT);
+  for (let index = 0; index < commits.length; index += 1) {
+    const commit = commits[index];
+    if (!commit.stash || groupOf.has(commit.oid)) continue;
+
+    const group = openGroup(index, commit.graph.lane);
+    groupOf.set(commit.oid, group);
+    for (const edge of commit.graph.edges) extend(group, parentRow(edge.parent_oid));
   }
 
+  const slots = new Array<number>(spans.length);
+  const order = spans
+    .map((span, group) => group)
+    .sort((left, right) => (
+      spans[left].start - spans[right].start
+        || spans[left].lane - spans[right].lane
+        || left - right
+    ));
+
+  for (const group of order) {
+    const taken = new Set<number>();
+    for (const other of order) {
+      if (slots[other] === undefined) continue;
+      if (spans[other].start <= spans[group].end && spans[group].start <= spans[other].end) {
+        taken.add(slots[other]);
+      }
+    }
+
+    let offset = 0;
+    while (offset < GRAPH_LANE_SLOTS && taken.has((FIRST_COLOR_SLOT + offset) % GRAPH_LANE_SLOTS)) {
+      offset += 1;
+    }
+    slots[group] = (FIRST_COLOR_SLOT + offset) % GRAPH_LANE_SLOTS;
+  }
+
+  const colors = new Map<string, number>();
+  for (const [oid, group] of groupOf) colors.set(oid, slots[group]);
+
   return colors;
+}
+
+function wipColorSlot(
+  commits: readonly CommitSummary[],
+  colors: Map<string, number>,
+  headOid: string | null,
+): number {
+  const headCommit = (headOid ? commits.find((commit) => commit.oid === headOid) : undefined)
+    ?? commits.find((commit) => !commit.stash);
+  const color = headCommit === undefined ? undefined : colors.get(headCommit.oid);
+  return color ?? FIRST_COLOR_SLOT;
 }
 
 function rowY(index: number): number {
@@ -865,7 +931,7 @@ export function CommitGraph({
         <g mask={`url(#${nodeMaskId})`}>
           {wipPath ? (
             <path
-              className={colorClass("gc-commit-graph__edge", FIRST_COLOR_SLOT)}
+              className={colorClass("gc-commit-graph__edge", wipColorSlot(commits, geometry.colors, wip?.headOid ?? null))}
               d={wipPath.data}
               fill="none"
               vectorEffect="non-scaling-stroke"
