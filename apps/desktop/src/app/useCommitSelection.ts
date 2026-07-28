@@ -86,7 +86,7 @@ export function useCommitSelection({
         const firstCommit = history?.commits[0];
         if (!firstCommit) return;
 
-        document.querySelector<HTMLElement>("[data-commit-list]")?.focus();
+        document.querySelector<HTMLElement>("[data-commit-list]")?.focus({ preventScroll: true });
         selectCommit(firstCommit);
     }, [history, selectCommit]);
 

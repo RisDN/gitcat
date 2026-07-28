@@ -713,7 +713,7 @@ const CommitRow = memo(function CommitRow({
       data-oid={commit.oid}
       id={id}
       onClick={(event) => {
-        event.currentTarget.closest<HTMLElement>("[data-commit-list]")?.focus();
+        event.currentTarget.closest<HTMLElement>("[data-commit-list]")?.focus({ preventScroll: true });
         onSelect(commit);
       }}
       onContextMenu={handleContextMenu}
