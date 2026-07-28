@@ -11,23 +11,26 @@ Lightweight, Windows-first desktop Git client. Tauri v2 + React UI, Rust core, a
 - Tabs whose folder moved or is no longer a Git repository open a dedicated unavailable-repository page with retry, locate, and close actions instead of failing silently.
 - LOCAL, REMOTE, and TAGS sidebar with filtering, a current-branch marker, `/`-segment folders for local branches, remote-grouped remote branches with owner avatars, and a right-click branch menu for pull, push, branch creation, rename, safe deletion, and name copy.
 - Double-clicking a remote branch checks it out directly as a local tracking branch, with no intermediate name prompt.
-- Compact, column-aligned commit DAG with colored lanes, a reserved HEAD lane so branches ahead of HEAD fork off it, relative time markers behind the lanes, WIP pseudo-node connected to HEAD, initials avatars, arrow-key stepping between the WIP row and history, and loading of older commits.
-- Stash entries collapse into a single graph row each instead of the raw index/untracked helper commits.
+- Compact, column-aligned commit DAG with colored lanes, relative time markers behind the lanes, WIP pseudo-node connected to HEAD, initials avatars, arrow-key stepping between the WIP row and history, and loading of older commits.
+- Lanes and lane colors follow the order the lines appear in the list, so checking out another branch never moves a branch sideways or repaints it. A branch keeps its color where its first-parent history continues, and lines visible at the same time never share a color.
+- Ref labels, row highlight, and the WIP node take the color of the branch they belong to; the default palette is the ten-color GitLens lane set.
+- Stash entries collapse into a single graph row each instead of the raw index/untracked helper commits, and are drawn as a dashed line in their own color.
 - Double-click a local branch label in the graph to check that branch out.
 - `Ctrl+F` search across commit subjects and full description/body text; matches stay highlighted while the rest of the graph dims.
 - Graph rows show the commit description under the subject; commit details list `Co-authored-by` trailers as separate authors.
 - Commit details: click-to-copy SHA with full-object tooltip, author, timestamp, parents, statistics, Path/Tree changed files, and in-place commit message editing (reword).
-- GitKraken-style structured diff with three view modes - hunk, inline, and split - persisted across restarts, plus line numbers and rename/mode/binary/truncation states. Split panes scroll independently and size to their own content.
+- GitKraken-style structured diff with three view modes - hunk, inline, and split - persisted across restarts, plus line numbers and rename/mode/binary/truncation states. Split panes scroll independently and size to their own content. The diff opens in place of the graph and is closed from its header or with `Esc`; there is no separate view tab bar.
 - Syntax highlighting in diffs (Shiki-based tokenization) and a change map next to whole-file diffs for jumping between modified regions. Highlighting survives silent background reloads without flicker.
 - WIP/working tree: separate collapsible staged/unstaged trees, optimistic staging with rollback on failure, per-file or bulk actions, separate summary and description fields with a 72-character counter on the summary, amend, sign-off, and discard-all.
 - Changed-file context menu: stage/unstage, discard, ignore the file, extension, or folder, stash a single file, copy the path, and save a patch.
 - Push and pull quick actions carrying ahead/behind counts, autostash-backed pull for dirty worktrees, stash push and pop, and explicit pull modes: merge, fast-forward only, or rebase. Fetch and refresh are keybind-driven (`Ctrl+L`, `F5`).
 - Commit context menu: detached checkout, branch/tag creation, cherry-pick, revert, a reset submenu (soft, mixed, hard), and full SHA copy.
-- Continue or abort an in-progress merge/rebase/cherry-pick/revert.
+- Continue, skip, or abort an in-progress merge/rebase/cherry-pick/revert from an operation banner that names the commit the operation stopped on and shows the rebase position.
 - Read-only merge-conflict preflight plus an operation-aware Base/Ours/Theirs/result editor, guarded side selection, delete/stage actions, and conservative Git `rerere` reuse.
+- Bulk conflict resolution: mark every conflicted file resolved or take one side, for all conflicts or for a single folder.
 - Automatic refresh: the active repository's worktree and `.git` metadata are watched on disk, so commits, checkouts, and editor saves made outside GitCat appear without a manual refresh.
 - Auto-fetch when a repository is opened and then on a timer (1 minute by default, `0` disables, 60 maximum) keeps ahead/behind counts and remote branches current. It runs silently in the background: no toasts, no blocked toolbar, and failures stay quiet. Switching back to an already-fetched tab reuses the last result until the interval elapses.
-- Resizable panels, a persisted Path/Tree changed-files view mode, and customizable semantic UI, diff, and graph-lane colors.
+- Resizable panels, a persisted Path/Tree changed-files view mode, and customizable semantic UI and diff colors plus all ten graph lane colors, each resettable on its own.
 - Hideable side panels, window-centered repository actions, configurable command keybinds, and persistent footer build identity.
 - Window size, position, and maximized state are restored on the next launch.
 
@@ -160,7 +163,7 @@ The web build is written to `apps/desktop/dist`; native artifacts are written un
 
 ## Releases
 
-The current version is 1.0.1. `.github/workflows/release-windows.yml` (`workflow_dispatch`) builds the Windows release on `windows-latest`: it enforces the `x86_64-pc-windows-msvc` host, runs fmt, clippy, tests, and typecheck, then bundles the NSIS installer and uploads the installer plus the binary as an artifact.
+The current version is 1.1.0. `.github/workflows/release-windows.yml` (`workflow_dispatch`) builds the Windows release on `windows-latest`: it enforces the `x86_64-pc-windows-msvc` host, runs fmt, clippy, tests, and typecheck, then bundles the NSIS installer and uploads the installer plus the binary as an artifact.
 
 The build is verified to be self-contained: the job fails if `gitcat-desktop.exe` still imports `WebView2Loader.dll` or if a dynamic loader DLL is left in the release output, and it prints the installer's SHA-256.
 
