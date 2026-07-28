@@ -10,7 +10,7 @@ use std::{
 
 use async_trait::async_trait;
 use gitcat_contracts::*;
-use gitcat_core::{GitBackend, layout_commits};
+use gitcat_core::{GitBackend, layout_commits, reserve_wip_lane};
 use sha2::{Digest, Sha256};
 use tempfile::NamedTempFile;
 use tokio_util::sync::CancellationToken;
@@ -1574,6 +1574,9 @@ impl GitBackend for GitCliBackend {
             .as_ref()
             .map(|cursor| cursor.lanes.clone())
             .unwrap_or(LaneState { heads: Vec::new() });
+        if let Some(head_oid) = self.head_oid(path).await? {
+            reserve_wip_lane(&commits, &head_oid, &mut lanes);
+        }
         layout_commits(&mut commits, &mut lanes);
         let next_cursor = has_more.then(|| HistoryCursor {
             generation: generation.clone(),
