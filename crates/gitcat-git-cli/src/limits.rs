@@ -1,0 +1,12 @@
+pub(crate) const READ_OUTPUT_CAP: usize = 32 * 1024 * 1024;
+pub(crate) const NETWORK_OUTPUT_CAP: usize = 4 * 1024 * 1024;
+pub(crate) const MAX_HISTORY_PAGE: usize = 500;
+pub(crate) const MAX_SEARCH_RESULTS: usize = 10_000;
+pub(crate) const MAX_DIFF_BYTES: usize = 128 * 1024 * 1024;
+pub(crate) const MAX_COMMIT_MESSAGE_BYTES: usize = 1024 * 1024;
+pub(crate) const MAX_CONFLICT_TEXT_BYTES: usize = 1024 * 1024;
+pub(crate) const MAX_UNTRACKED_STAT_BYTES: u64 = 1024 * 1024;
+pub(crate) const MAX_UNTRACKED_STAT_FILES: usize = 2000;
+pub(crate) const WHOLE_FILE_CONTEXT_LINES: u32 = 1_000_000_000;
+pub(crate) const BULK_PATH_CHUNK: usize = 64;
+pub(crate) const MAX_REPORTED_BULK_PATHS: usize = 10;
