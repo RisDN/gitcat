@@ -118,16 +118,8 @@ export function getWipLaneColorVariable(): string {
   return `var(--gc-lane-${FIRST_COLOR_SLOT})`;
 }
 
-export function getWipLaneInkVariable(): string {
-  return `var(--gc-lane-${FIRST_COLOR_SLOT}-ink)`;
-}
-
 function colorVariable(slot: number): string {
   return `var(--gc-lane-${slot % GRAPH_LANE_SLOTS})`;
-}
-
-function colorInkVariable(slot: number): string {
-  return `var(--gc-lane-${slot % GRAPH_LANE_SLOTS}-ink)`;
 }
 
 function colorClass(base: string, slot: number): string {
@@ -624,7 +616,6 @@ const CommitRow = memo(function CommitRow({
   const rowStyle = {
     "--gc-branch-row-origin": `${REF_COLUMN_WIDTH + branchHoverOrigin}px`,
     "--gc-row-branch-color": colorVariable(color),
-    "--gc-row-branch-ink": colorInkVariable(color),
   } as CSSProperties;
   const graphSlotStyle = {
     width: graphWidth,

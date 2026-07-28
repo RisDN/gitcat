@@ -2,7 +2,7 @@ import { AlertTriangle, CheckCircle2, Copy, Download, FolderInput, FolderPlus, F
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState, } from "react";
 
 import { CommitDetails, CommitDetailsSkeleton } from "./components/commit-details";
-import { CommitGraph, getCommitGraphWidth, getCommitLaneX, getCommitRowBranchOrigin, getWipLane, getWipLaneColorVariable, getWipLaneInkVariable, type CommitContextMenuRequest, } from "./components/CommitGraph";
+import { CommitGraph, getCommitGraphWidth, getCommitLaneX, getCommitRowBranchOrigin, getWipLane, getWipLaneColorVariable, type CommitContextMenuRequest, } from "./components/CommitGraph";
 import { ConflictResolverDialog } from "./components/conflict";
 import { ContextMenu, type ContextAction } from "./components/ContextMenu";
 import { DiffViewer, isWholeFileMode, type DiffViewMode } from "./components/diff";
@@ -87,9 +87,6 @@ import type {
     StashEntry,
     StatusEntry,
 } from "./lib/types";
-
-const LANE_INK_LIGHT = "#f7fbff";
-const LANE_INK_DARK = "#12141a";
 
 const DEFAULT_SETTINGS: AppSettings = {
     default_pull_mode: "merge",
@@ -434,20 +431,8 @@ function applyTheme(settings: AppSettings): void {
     };
     for (const [name, value] of Object.entries(variables)) root.style.setProperty(name, value);
     for (let index = 0; index < GRAPH_LANE_SLOTS; index += 1) {
-        const lane = theme.graph_palette[index % theme.graph_palette.length];
-        root.style.setProperty(`--gc-lane-${index}`, lane);
-        root.style.setProperty(`--gc-lane-${index}-ink`, laneInk(lane));
+        root.style.setProperty(`--gc-lane-${index}`, theme.graph_palette[index % theme.graph_palette.length]);
     }
-}
-
-function laneInk(color: string): string {
-    const hex = color.replace("#", "");
-    const rgb = hex.length === 3 ? hex.replace(/./g, (char) => char + char) : hex.slice(0, 6);
-    const red = Number.parseInt(rgb.slice(0, 2), 16);
-    const green = Number.parseInt(rgb.slice(2, 4), 16);
-    const blue = Number.parseInt(rgb.slice(4, 6), 16);
-    if (Number.isNaN(red) || Number.isNaN(green) || Number.isNaN(blue)) return LANE_INK_LIGHT;
-    return (red * 0.299 + green * 0.587 + blue * 0.114) / 255 > 0.58 ? LANE_INK_DARK : LANE_INK_LIGHT;
 }
 
 function App() {
@@ -2447,7 +2432,6 @@ function App() {
         "--gc-branch-interactive-origin": `${wipLaneX + 11}px`,
         "--gc-branch-row-origin": `${getCommitRowBranchOrigin(wipLane)}px`,
         "--gc-row-branch-color": getWipLaneColorVariable(),
-        "--gc-row-branch-ink": getWipLaneInkVariable(),
         "--gc-wip-lane-x": `${wipLaneX}px`,
     } as React.CSSProperties;
     const activeCommitDraft = activeTabId
