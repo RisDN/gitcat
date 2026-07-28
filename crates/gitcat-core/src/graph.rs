@@ -95,8 +95,14 @@ fn reserve_head_lane(commits: &[CommitSummary], lanes: &mut LaneState, head_oid:
     if !lanes.heads.is_empty() {
         return;
     }
-    if !commits.iter().any(|commit| commit.oid == head_oid) {
+    let Some(head_index) = commits.iter().position(|commit| commit.oid == head_oid) else {
         return;
+    };
+
+    for commit in commits.iter().take(head_index) {
+        if commit.stash.is_some() {
+            lanes.heads.push(Some(commit.oid.clone()));
+        }
     }
 
     lanes.heads.push(Some(head_oid.to_owned()));
@@ -128,7 +134,7 @@ fn allocate_lane(
 
 #[cfg(test)]
 mod tests {
-    use gitcat_contracts::{CommitTime, GraphCell, Identity};
+    use gitcat_contracts::{CommitTime, GraphCell, Identity, StashRef};
 
     use super::*;
 
@@ -155,6 +161,36 @@ mod tests {
             stash: None,
             graph: GraphCell::default(),
         }
+    }
+
+    fn stash_commit(oid: &str, parents: &[&str]) -> CommitSummary {
+        CommitSummary {
+            stash: Some(StashRef {
+                index: 0,
+                selector: "stash@{0}".into(),
+            }),
+            ..commit(oid, parents)
+        }
+    }
+
+    #[test]
+    fn a_stash_above_head_keeps_the_trunk_lane() {
+        let mut commits = vec![
+            stash_commit("wip", &["base"]),
+            commit("tip", &["mid"]),
+            commit("mid", &["base"]),
+            commit("base", &[]),
+        ];
+        let mut lanes = LaneState { heads: Vec::new() };
+
+        layout_commits(&mut commits, &mut lanes, Some("tip"));
+
+        assert_eq!(commits[0].graph.lane, 0);
+        assert_eq!(commits[0].graph.edges[0].to_lane, 0);
+        assert_eq!(commits[1].graph.lane, 1);
+        assert_eq!(commits[2].graph.lane, 1);
+        assert_eq!(commits[2].graph.edges[0].to_lane, 0);
+        assert_eq!(commits[3].graph.lane, 0);
     }
 
     #[test]
