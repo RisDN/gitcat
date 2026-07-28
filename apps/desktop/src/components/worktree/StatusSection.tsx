@@ -1,5 +1,5 @@
 import { Check, ChevronDown, ChevronRight } from "lucide-react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 
 import { cx } from "../../lib";
 import type { ConflictResolution, RepositoryOperationState, StatusEntry } from "../../lib/types";
@@ -7,6 +7,7 @@ import { FileTree } from "../file-tree";
 import type { FileTreeItem, FileViewMode, FolderCollapse } from "../file-tree";
 import { ConflictQuickActions } from "./ConflictQuickActions";
 import { BulkButton, StageButton } from "./StageButtons";
+import type { BulkButtonTone } from "./StageButtons";
 
 export function StatusSection({
   label,
@@ -14,6 +15,8 @@ export function StatusSection({
   actionLabel,
   actionDisabled = false,
   actionPriority = false,
+  actionTone,
+  headerAction,
   branchName = "current branch",
   busy,
   collapse,
@@ -36,6 +39,8 @@ export function StatusSection({
   actionLabel: string;
   actionDisabled?: boolean;
   actionPriority?: boolean;
+  actionTone?: BulkButtonTone;
+  headerAction?: ReactNode;
   branchName?: string;
   busy: boolean;
   collapse?: FolderCollapse;
@@ -65,9 +70,12 @@ export function StatusSection({
           {open ? <ChevronDown aria-hidden="true" size={13} /> : <ChevronRight aria-hidden="true" size={13} />}
           <span>{label} <b className="ml-0.75 text-foreground">{items.length}</b></span>
         </button>
-        {actionDisabled || !items.length ? null : (
-          <BulkButton busy={busy} label={actionLabel} onClick={onAction} priority={actionPriority} />
-        )}
+        <span className="flex shrink-0 items-center gap-1">
+          {actionDisabled || !items.length ? null : (
+            <BulkButton busy={busy} label={actionLabel} onClick={onAction} priority={actionPriority} tone={actionTone} />
+          )}
+          {items.length ? headerAction : null}
+        </span>
       </header>
       {open ? (
         <FileTree

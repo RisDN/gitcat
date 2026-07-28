@@ -18,6 +18,22 @@ export function conflictOperationLabel(operation: RepositoryOperationState): str
   }
 }
 
+export function operationTitle(operation: RepositoryOperationState): string {
+  const label = conflictOperationLabel(operation);
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+export function operationContinueLabel(operation: RepositoryOperationState): string {
+  switch (operation) {
+    case "merge": return "Commit Merge";
+    case "rebase": return "Continue Rebase";
+    case "cherry_pick": return "Continue Cherry-pick";
+    case "revert": return "Continue Revert";
+    case "bisect":
+    case "normal": return "Continue";
+  }
+}
+
 export function conflictSideLabels(
   operation: RepositoryOperationState,
   branchName: string,

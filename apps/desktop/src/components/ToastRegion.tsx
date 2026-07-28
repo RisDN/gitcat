@@ -33,7 +33,7 @@ export function ToastRegion({ toasts, onDismiss }: { toasts: ToastMessage[]; onD
     <div
       aria-live="polite"
       aria-relevant="additions"
-      className="pointer-events-none fixed bottom-9.75 right-3.5 z-400 flex w-[min(370px,calc(100vw-28px))] flex-col gap-2"
+      className="pointer-events-none fixed bottom-9.75 left-3.5 z-400 flex w-[min(370px,calc(100vw-28px))] flex-col gap-2"
     >
       {toasts.map((toast) => (
         <div
@@ -44,10 +44,12 @@ export function ToastRegion({ toasts, onDismiss }: { toasts: ToastMessage[]; onD
           key={toast.id}
           role={toast.tone === "error" ? "alert" : "status"}
         >
-          <span className={cx("grid pt-px", TONE_TEXT[toast.tone])}>{ICONS[toast.tone]}</span>
+          <span className={cx("grid shrink-0 pt-px", TONE_TEXT[toast.tone])}>{ICONS[toast.tone]}</span>
           <div className="min-w-0 flex-1">
-            <strong className="text-[12px]">{toast.title}</strong>
-            {toast.detail ? <p className="mt-0.75 text-[10px] leading-[1.4] text-muted">{toast.detail}</p> : null}
+            <strong className="block wrap-anywhere text-[12px]">{toast.title}</strong>
+            {toast.detail ? (
+              <p className="mt-0.75 wrap-anywhere text-[10px] leading-[1.4] text-muted">{toast.detail}</p>
+            ) : null}
           </div>
           <IconButton aria-label="Dismiss" className="size-5.5!" onClick={() => onDismiss(toast.id)}>
             <X size={14} />

@@ -8,6 +8,7 @@ import { ContextMenu, type ContextAction } from "./components/ContextMenu";
 import { DiffViewer, isWholeFileMode, type DiffViewMode } from "./components/diff";
 import { fileChangeCounts, orderedFilePaths } from "./components/file-tree";
 import type { FolderCollapseTarget } from "./components/file-tree";
+import { OperationBanner } from "./components/OperationBanner";
 import { PromptDialog } from "./components/PromptDialog";
 import {
     RefSidebar,
@@ -711,7 +712,10 @@ function App() {
                 } else if (previous && overview.history.commits.some((commit) => commit.oid === previous)) {
                     setSelectedOid(previous);
                     setWipSelected(false);
-                } else if (!overview.snapshot.status.clean) {
+                } else if (
+                    !overview.snapshot.status.clean
+                    || continuableOperation(overview.snapshot.operation_state)
+                ) {
                     setSelectedOid(null);
                     setWipSelected(true);
                 } else {
@@ -1290,6 +1294,11 @@ function App() {
         setDiffLoading(false);
         setCenterView("graph");
     }, []);
+
+    const focusWorktree = useCallback(() => {
+        selectWip();
+        setRightPanelVisible(true);
+    }, [selectWip]);
 
     const selectFirstCommitFromWip = useCallback(() => {
         const firstCommit = history?.commits[0];
@@ -2322,6 +2331,9 @@ function App() {
             });
     }, [activeConflictCount, activeRepository, conflictHeadOid, conflictTarget, conflictTargetOid]);
 
+    const operationPending = snapshot ? continuableOperation(snapshot.operation_state) !== null : false;
+    const worktreeReachable = snapshot ? !snapshot.status.clean || operationPending : false;
+
     const conflictIndicator: ConflictIndicator = activeConflictCount
         ? {
             state: "active",
@@ -2430,10 +2442,6 @@ function App() {
         if (!activeTabId) return;
         setCommitDrafts((current) => ({ ...current, [activeTabId]: draft }));
     }, [activeTabId]);
-    const pendingOperation = snapshot
-        ? continuableOperation(snapshot.operation_state)
-        : null;
-    const operationProgress = snapshot?.operation_progress ?? null;
     if (initializing) {
         return (
             <AppShell className="items-center justify-center gap-3 text-muted [&>svg]:animate-orbit">
@@ -2539,37 +2547,16 @@ function App() {
                         />
                     )}
 
-                    {snapshot && snapshot.operation_state !== "normal" ? (
-                        <div
-                            className="flex min-h-10.25 flex-[0_0_41px] items-center gap-2.5 border-b border-[color-mix(in_srgb,var(--gc-warning)_37%,var(--gc-border))] bg-[color-mix(in_srgb,var(--gc-warning)_9%,var(--gc-surface))] px-3.5 py-1.25 text-warning"
-                            role="status"
-                        >
-                            <AlertTriangle size={16} />
-                            <span className="flex min-w-0 flex-1 items-center gap-2 text-[color-mix(in_srgb,var(--gc-warning)_68%,var(--gc-text))]">
-                                <strong className="whitespace-nowrap">
-                                    {snapshot.operation_state.replace("_", " ")} in progress
-                                    {operationProgress ? ` · commit ${operationProgress.current} of ${operationProgress.total}` : ""}.
-                                </strong>
-                                {operationProgress?.subject ? (
-                                    <em className="min-w-0 truncate not-italic opacity-80">{operationProgress.subject}</em>
-                                ) : null}
-                                <span className="whitespace-nowrap">
-                                    {pendingOperation
-                                        ? "Resolve conflicted files, then continue or abort."
-                                        : "Complete or abort this bisect from Git before running another operation."}
-                                </span>
-                            </span>
-                            {pendingOperation ? (
-                                <>
-                                    <Button compact onClick={continueActiveOperation}>Continue</Button>
-                                    {pendingOperation === "merge" ? null : (
-                                        <Button compact onClick={skipActiveOperation}>Skip commit</Button>
-                                    )}
-                                    <Button compact onClick={abortActiveOperation} tone="danger">Abort</Button>
-                                </>
-                            ) : null}
-                        </div>
-                    ) : null}
+                    <OperationBanner
+                        busy={busy}
+                        conflictCount={activeConflictCount}
+                        onAbort={abortActiveOperation}
+                        onContinue={continueActiveOperation}
+                        onReview={focusWorktree}
+                        onSkip={skipActiveOperation}
+                        operation={snapshot?.operation_state ?? "normal"}
+                        progress={snapshot?.operation_progress ?? null}
+                    />
 
                     <main
                         className="grid min-h-0 flex-auto overflow-hidden bg-background"
@@ -2661,7 +2648,7 @@ function App() {
                                         <span>Date / Time</span>
                                         <span>SHA</span>
                                     </div>
-                                    {snapshot && !snapshot.status.clean ? (
+                                    {worktreeReachable ? (
                                         <button
                                             className={`gc-wip-row ${wipSelected ? "gc-wip-row--selected" : ""}`}
                                             onClick={selectWip}
@@ -2710,7 +2697,7 @@ function App() {
                                             commits={history.commits}
                                             detachedHeadOid={snapshot?.head.kind === "detached" ? snapshot.head.oid : null}
                                             hideHeadDecoration={false}
-                                            onNavigateBeforeFirst={snapshot && !snapshot.status.clean ? selectWipFromGraph : undefined}
+                                            onNavigateBeforeFirst={worktreeReachable ? selectWipFromGraph : undefined}
                                             onCommitContextMenu={(request: CommitContextMenuRequest) => setCommitMenu({ x: request.clientX, y: request.clientY, commit: request.commit })}
                                             onCopySha={(oid) => void copySha(oid)}
                                             onRefDoubleClick={(decoration) => {
@@ -2793,6 +2780,10 @@ function App() {
                                     onOpenConflict={(entry) => void openConflictEditor(entry)}
                                     onResolveConflict={resolveConflictEntry}
                                     onResolveConflicts={resolveConflictPaths}
+                                    onContinueOperation={continueActiveOperation}
+                                    onSkipOperation={skipActiveOperation}
+                                    onAbortOperation={abortActiveOperation}
+                                    operationProgress={snapshot.operation_progress ?? null}
                                     onStage={stagePaths}
                                     onUnstage={unstagePaths}
                                     onDiscard={(paths) => {

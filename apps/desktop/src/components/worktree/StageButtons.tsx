@@ -3,20 +3,24 @@ import { cx } from "../../lib";
 const TONE = {
   add: "border-success bg-[color-mix(in_srgb,var(--gc-success)_16%,var(--gc-background))] enabled:hover:bg-success",
   remove: "border-danger bg-[color-mix(in_srgb,var(--gc-danger)_16%,var(--gc-background))] enabled:hover:bg-danger",
+  conflict: "border-warning bg-[color-mix(in_srgb,var(--gc-warning)_18%,var(--gc-background))] text-warning! enabled:hover:bg-warning enabled:hover:text-[#1c1204]!",
 } as const;
 
+export type BulkButtonTone = keyof typeof TONE;
+
 // Section-wide "Stage all"/"Unstage all"; unstaging is the destructive tone.
-export function BulkButton({ busy, label, priority, onClick }: {
+export function BulkButton({ busy, label, priority, tone, onClick }: {
   busy: boolean;
   label: string;
   priority: boolean;
+  tone?: BulkButtonTone;
   onClick: () => void;
 }) {
   return (
     <button
       className={cx(
-        "cursor-pointer rounded border px-2 py-1 text-[10px] font-[650] text-white disabled:cursor-default disabled:opacity-100",
-        priority ? cx(TONE.remove, "font-bold") : TONE.add,
+        "cursor-pointer whitespace-nowrap rounded border px-2 py-1 text-[10px] font-[650] text-white disabled:cursor-default disabled:opacity-100",
+        tone ? TONE[tone] : priority ? cx(TONE.remove, "font-bold") : TONE.add,
       )}
       disabled={busy}
       onClick={onClick}

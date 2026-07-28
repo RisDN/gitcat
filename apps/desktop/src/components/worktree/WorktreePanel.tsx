@@ -3,13 +3,15 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 
 import { conflictSideLabels } from "../../lib/conflicts";
-import type { ConflictResolution, RepositoryOperationState, StatusEntry, WorktreeStatus } from "../../lib/types";
+import type { ConflictResolution, OperationProgress, RepositoryOperationState, StatusEntry, WorktreeStatus } from "../../lib/types";
 import { ContextMenu, type ContextAction } from "../ContextMenu";
 import { FileTreeControls } from "../file-tree";
 import type { FileTreeItem, FileViewMode, FolderCollapse, FolderCollapseTarget } from "../file-tree";
 import { SidePanel } from "../ui";
 import { CommitForm } from "./CommitForm";
 import type { CommitDraft } from "./CommitForm";
+import { ConflictBulkMenu } from "./ConflictBulkMenu";
+import { OperationForm } from "./OperationForm";
 import { StatusSection } from "./StatusSection";
 import { WorktreeHeader } from "./WorktreeHeader";
 
@@ -46,9 +48,13 @@ interface WorktreePanelProps {
   onResolveConflicts: (paths: string[], resolution: ConflictResolution) => void;
   onOpenConflict: (entry: StatusEntry) => void;
   onAutoResolveConflicts: () => void;
+  onContinueOperation: () => void;
+  onSkipOperation: () => void;
+  onAbortOperation: () => void;
   commitKeybind?: string;
   selectedFile?: { path: string; staged: boolean } | null;
   operation: RepositoryOperationState;
+  operationProgress: OperationProgress | null;
   branchName: string;
   draft: CommitDraft;
   onDraftChange: (draft: CommitDraft) => void;
@@ -95,19 +101,25 @@ export function WorktreePanel({
   onResolveConflicts,
   onOpenConflict,
   onAutoResolveConflicts,
+  onContinueOperation,
+  onSkipOperation,
+  onAbortOperation,
   commitKeybind = "Ctrl+Enter",
   selectedFile,
   operation,
+  operationProgress,
   branchName,
   draft,
   onDraftChange,
 }: WorktreePanelProps) {
   const [unstagedOpen, setUnstagedOpen] = useState(true);
   const [stagedOpen, setStagedOpen] = useState(true);
+  const [conflictsOpen, setConflictsOpen] = useState(true);
   const staged = useMemo(() => status.entries.filter((entry) => entry.index && !entry.conflicted), [status.entries]);
-  const unstaged = useMemo(() => status.entries.filter((entry) => entry.worktree || entry.conflicted), [status.entries]);
-  const stageable = useMemo(() => unstaged.filter((entry) => !entry.conflicted), [unstaged]);
+  const unstaged = useMemo(() => status.entries.filter((entry) => entry.worktree && !entry.conflicted), [status.entries]);
+  const stageable = unstaged;
   const conflicts = useMemo(() => status.entries.filter((entry) => entry.conflicted), [status.entries]);
+  const operationPending = operation !== "normal" && operation !== "bisect";
   const canCommit = operation === "normal"
     && !busy
     && Boolean(draft.message.trim())
@@ -115,6 +127,7 @@ export function WorktreePanel({
     && !conflicts.length;
   const stagedItems = useMemo(() => toTreeItems(staged, "index"), [staged]);
   const unstagedItems = useMemo(() => toTreeItems(unstaged, "worktree"), [unstaged]);
+  const conflictItems = useMemo(() => toTreeItems(conflicts, "worktree"), [conflicts]);
 
   const [fileMenu, setFileMenu] = useState<{ entry: StatusEntry; staged: boolean; x: number; y: number } | null>(null);
   const [folderMenu, setFolderMenu] = useState<{ path: string; entries: StatusEntry[]; conflicts: StatusEntry[]; staged: boolean; x: number; y: number } | null>(null);
@@ -249,45 +262,72 @@ export function WorktreePanel({
         busy={busy}
         changeCount={status.entries.length}
         clean={status.clean}
-        conflictCount={conflicts.length}
-        onAutoResolveConflicts={onAutoResolveConflicts}
         onDiscardAll={() => onDiscard(status.entries.map((entry) => entry.path))}
-        onResolveAllConflicts={(resolution) => onResolveConflicts(conflicts.map((entry) => entry.path), resolution)}
-        operation={operation}
         stashCount={status.stash_count}
       />
 
       <FileTreeControls mode={fileViewMode} onModeChange={onFileViewModeChange} />
 
-      <StatusSection
-        actionLabel="Stage all"
-        actionDisabled={!stageable.length}
-        branchName={branchName}
-        busy={busy}
-        collapse={collapse && !collapse.staged ? collapse : undefined}
-        items={unstagedItems}
-        label="Unstaged"
-        onAction={() => onStage(stageable.map((entry) => entry.path), "all")}
-        onEntryAction={(entry) => onStage([entry.path])}
-        onItemContextMenu={(entry, event) => openFileMenu(entry, false, event)}
-        onFolderContextMenu={(folder, event) => openFolderMenu(folder, false, event)}
-        onOpenDiff={(entry) => onOpenDiff(entry, false)}
-        onResolveConflict={onResolveConflict}
-        onOpenConflict={onOpenConflict}
-        onToggle={() => setUnstagedOpen((open) => !open)}
-        open={unstagedOpen}
-        operation={operation}
-        plus
-        selectedId={selectedFile && !selectedFile.staged ? selectedFile.path : undefined}
-        viewMode={fileViewMode}
-      />
+      {conflicts.length ? (
+        <StatusSection
+          actionLabel="Mark All Resolved"
+          actionTone="conflict"
+          branchName={branchName}
+          busy={busy}
+          headerAction={(
+            <ConflictBulkMenu
+              branchName={branchName}
+              busy={busy}
+              onAutoResolveConflicts={onAutoResolveConflicts}
+              onResolveAllConflicts={(resolution) => onResolveConflicts(conflicts.map((entry) => entry.path), resolution)}
+              operation={operation}
+            />
+          )}
+          items={conflictItems}
+          label="Conflicted files"
+          onAction={() => onResolveConflicts(conflicts.map((entry) => entry.path), "mark_resolved")}
+          onEntryAction={(entry) => onResolveConflicts([entry.path], "mark_resolved")}
+          onFolderContextMenu={(folder, event) => openFolderMenu(folder, false, event)}
+          onOpenConflict={onOpenConflict}
+          onOpenDiff={(entry) => onOpenDiff(entry, false)}
+          onResolveConflict={onResolveConflict}
+          onToggle={() => setConflictsOpen((open) => !open)}
+          open={conflictsOpen}
+          operation={operation}
+          selectedId={selectedFile && !selectedFile.staged ? selectedFile.path : undefined}
+          viewMode={fileViewMode}
+        />
+      ) : null}
+
+      {operationPending && !unstaged.length ? null : (
+        <StatusSection
+          actionLabel="Stage all"
+          actionDisabled={!stageable.length}
+          branchName={branchName}
+          busy={busy}
+          collapse={collapse && !collapse.staged ? collapse : undefined}
+          items={unstagedItems}
+          label="Unstaged"
+          onAction={() => onStage(stageable.map((entry) => entry.path), "all")}
+          onEntryAction={(entry) => onStage([entry.path])}
+          onItemContextMenu={(entry, event) => openFileMenu(entry, false, event)}
+          onFolderContextMenu={(folder, event) => openFolderMenu(folder, false, event)}
+          onOpenDiff={(entry) => onOpenDiff(entry, false)}
+          onToggle={() => setUnstagedOpen((open) => !open)}
+          open={unstagedOpen}
+          plus
+          selectedId={selectedFile && !selectedFile.staged ? selectedFile.path : undefined}
+          viewMode={fileViewMode}
+        />
+      )}
+
       <StatusSection
         actionLabel="Unstage all"
         actionPriority
         busy={busy}
         collapse={collapse?.staged ? collapse : undefined}
         items={stagedItems}
-        label="Staged"
+        label={operationPending ? "Resolved files" : "Staged"}
         onAction={() => onUnstage(staged.map((entry) => entry.path), "all")}
         onEntryAction={(entry) => onUnstage([entry.path])}
         onItemContextMenu={(entry, event) => openFileMenu(entry, true, event)}
@@ -299,15 +339,27 @@ export function WorktreePanel({
         viewMode={fileViewMode}
       />
 
-      <CommitForm
-        busy={busy}
-        canCommit={canCommit}
-        commitKeybind={commitKeybind}
-        draft={draft}
-        onDraftChange={onDraftChange}
-        onSubmit={() => void submit()}
-        stagedCount={staged.length}
-      />
+      {operationPending ? (
+        <OperationForm
+          busy={busy}
+          conflictCount={conflicts.length}
+          onAbort={onAbortOperation}
+          onContinue={onContinueOperation}
+          onSkip={onSkipOperation}
+          operation={operation}
+          progress={operationProgress}
+        />
+      ) : (
+        <CommitForm
+          busy={busy}
+          canCommit={canCommit}
+          commitKeybind={commitKeybind}
+          draft={draft}
+          onDraftChange={onDraftChange}
+          onSubmit={() => void submit()}
+          stagedCount={staged.length}
+        />
+      )}
 
       {fileMenu ? createPortal(
         <ContextMenu
