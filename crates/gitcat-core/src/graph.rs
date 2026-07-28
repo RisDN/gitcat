@@ -57,6 +57,17 @@ pub fn layout_commits(
 
             parent_lanes.insert(parent_oid.clone(), parent_lane);
         }
+
+        if lanes.heads[lane].is_none() {
+            let bending_parent = commit.parent_oids.iter().find(|parent_oid| {
+                parent_lanes
+                    .get(parent_oid.as_str())
+                    .is_some_and(|parent_lane| *parent_lane < lane)
+            });
+            if let Some(parent_oid) = bending_parent {
+                lanes.heads[lane] = Some(parent_oid.clone());
+            }
+        }
     }
 
     for (index, commit) in commits.iter_mut().enumerate() {
