@@ -41,6 +41,16 @@
   --gc-lane-7: #f2ca33;
   --gc-lane-8: #7bd938;
   --gc-lane-9: #2ece9d;
+  --gc-lane-0-ink: #f7fbff;
+  --gc-lane-1-ink: #f7fbff;
+  --gc-lane-2-ink: #f7fbff;
+  --gc-lane-3-ink: #f7fbff;
+  --gc-lane-4-ink: #f7fbff;
+  --gc-lane-5-ink: #f7fbff;
+  --gc-lane-6-ink: #f7fbff;
+  --gc-lane-7-ink: #12141a;
+  --gc-lane-8-ink: #12141a;
+  --gc-lane-9-ink: #12141a;
   --gc-row-gap: 4px;
 }
 
@@ -469,10 +479,12 @@
 
 .gc-ref-label {
   --gc-ref-color: var(--gc-row-branch-color, var(--gc-accent));
-  @apply relative z-[2] inline-flex h-[21px] min-w-0 max-w-[125px] select-none items-center gap-1 overflow-hidden whitespace-nowrap rounded-[3px] border px-[6px] py-px text-[11px] font-bold;
-  border-color: color-mix(in srgb, var(--gc-ref-color) 45%, var(--gc-border));
-  background: color-mix(in srgb, var(--gc-ref-color) 9%, var(--gc-panel));
-  color: var(--gc-ref-color);
+  --gc-ref-ink: var(--gc-row-branch-ink, #f7fbff);
+  @apply relative z-[2] inline-flex h-[21px] min-w-0 max-w-[125px] select-none items-center gap-1 overflow-hidden whitespace-nowrap rounded-[3px] border py-px pl-[8px] pr-[6px] text-[11px] font-[620];
+  border-color: color-mix(in srgb, var(--gc-border) 82%, var(--gc-ref-color));
+  background: color-mix(in srgb, var(--gc-panel) 92%, black);
+  color: color-mix(in srgb, var(--gc-text) 88%, var(--gc-ref-color));
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--gc-ref-color) 82%, transparent);
 }
 
 .gc-ref-label--local_branch:not(.gc-ref-label--head),
@@ -497,17 +509,15 @@
 }
 
 .gc-ref-label--remote_branch {
-  border-color: color-mix(in srgb, var(--gc-ref-color) 42%, var(--gc-border));
-  background: color-mix(in srgb, var(--gc-ref-color) 7%, var(--gc-panel));
-  color: color-mix(in srgb, var(--gc-text) 82%, var(--gc-ref-color));
+  color: color-mix(in srgb, var(--gc-text) 74%, var(--gc-muted));
 }
 
 .gc-ref-stack__count {
   --gc-ref-color: var(--gc-row-branch-color, var(--gc-accent));
   @apply relative z-[2] inline-flex h-[21px] shrink-0 select-none items-center rounded-[3px] border px-[4px] text-[10px] font-bold leading-none;
-  border-color: color-mix(in srgb, var(--gc-ref-color) 40%, var(--gc-border));
-  background: color-mix(in srgb, var(--gc-ref-color) 9%, var(--gc-panel));
-  color: color-mix(in srgb, var(--gc-ref-color) 72%, var(--gc-text));
+  border-color: color-mix(in srgb, var(--gc-border) 82%, var(--gc-ref-color));
+  background: color-mix(in srgb, var(--gc-panel) 92%, black);
+  color: color-mix(in srgb, var(--gc-text) 72%, var(--gc-muted));
 }
 
 .gc-commit-row:hover .gc-ref-stack--stacked .gc-ref-stack__count,
@@ -516,14 +526,15 @@
 }
 
 .gc-ref-label--head {
-  @apply h-[23px] max-w-[112px] gap-1 px-[7px] py-px text-[12px] opacity-100 filter-none;
-  border-color: color-mix(in srgb, var(--gc-ref-color) 86%, white 10%);
-  background: color-mix(in srgb, var(--gc-ref-color) 44%, var(--gc-panel));
-  color: #f6feff;
-  box-shadow:
-    inset 2px 0 0 color-mix(in srgb, var(--gc-ref-color) 75%, white),
-    0 0 0 1px color-mix(in srgb, var(--gc-ref-color) 22%, transparent),
-    0 0 10px color-mix(in srgb, var(--gc-ref-color) 18%, transparent);
+  @apply h-[23px] max-w-[112px] gap-1 px-[7px] py-px text-[12px] font-[650] opacity-100 filter-none;
+  border-color: color-mix(in srgb, var(--gc-ref-color) 78%, black);
+  background: var(--gc-ref-color);
+  color: var(--gc-ref-ink);
+  box-shadow: none;
+}
+
+.gc-ref-label--head .gc-ref-label__remote-icon {
+  color: color-mix(in srgb, currentColor 78%, transparent);
 }
 
 .gc-ref-stack__overflow .gc-ref-label {
