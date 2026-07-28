@@ -63,6 +63,7 @@ interface GraphPath {
   data: string;
   color: number;
   merge: boolean;
+  stash: boolean;
 }
 
 interface GraphGeometry {
@@ -131,14 +132,14 @@ function buildBranchColors(commits: readonly CommitSummary[]): Map<string, numbe
   let nextSlot = FIRST_COLOR_SLOT;
 
   for (const commit of commits) {
+    if (commit.stash) continue;
+
     let color = colors.get(commit.oid);
     if (color === undefined) {
       color = nextSlot;
       nextSlot += 1;
       colors.set(commit.oid, color);
     }
-
-    if (commit.stash) continue;
 
     for (let index = 0; index < commit.graph.edges.length; index += 1) {
       const parentOid = commit.graph.edges[index].parent_oid;
@@ -150,6 +151,13 @@ function buildBranchColors(commits: readonly CommitSummary[]): Map<string, numbe
       colors.set(parentOid, nextSlot);
       nextSlot += 1;
     }
+  }
+
+  for (const commit of commits) {
+    if (!commit.stash || colors.has(commit.oid)) continue;
+    const parentOid = commit.graph.edges[0]?.parent_oid;
+    const parentColor = parentOid === undefined ? undefined : colors.get(parentOid);
+    colors.set(commit.oid, parentColor ?? FIRST_COLOR_SLOT);
   }
 
   return colors;
@@ -288,6 +296,7 @@ function buildGraphGeometry(commits: readonly CommitSummary[]): GraphGeometry {
         data,
         color,
         merge: edge.merge,
+        stash: Boolean(commit.stash),
       });
     }
   }
@@ -864,7 +873,7 @@ export function CommitGraph({
           ) : null}
           {geometry.paths.map((path) => (
             <path
-              className={`${colorClass("gc-commit-graph__edge", path.color)}${path.merge ? " gc-commit-graph__edge--merge" : ""}`}
+              className={`${colorClass("gc-commit-graph__edge", path.color)}${path.merge ? " gc-commit-graph__edge--merge" : ""}${path.stash ? " gc-commit-graph__edge--stash" : ""}`}
               d={path.data}
               fill="none"
               key={path.key}

@@ -221,6 +221,11 @@
   stroke-width: 2.5;
 }
 
+.gc-commit-graph__edge--stash {
+  stroke-linecap: butt;
+  stroke-dasharray: 4 5;
+}
+
 .gc-commit-graph__edge--lane-0 { stroke: var(--gc-lane-0); }
 .gc-commit-graph__edge--lane-1 { stroke: var(--gc-lane-1); }
 .gc-commit-graph__edge--lane-2 { stroke: var(--gc-lane-2); }
