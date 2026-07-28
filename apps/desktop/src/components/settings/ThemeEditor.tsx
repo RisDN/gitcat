@@ -47,7 +47,7 @@ export function ThemeEditor({
         ))}
       </div>
       <SectionHeading>Graph lanes</SectionHeading>
-      <div className="flex gap-1.75">
+      <div className="flex flex-wrap gap-1.75">
         {theme.graph_palette.map((color, index) => (
           <input
             aria-label={`Graph lane ${index + 1}`}

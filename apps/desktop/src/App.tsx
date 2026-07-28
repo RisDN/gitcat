@@ -2,7 +2,7 @@ import { AlertTriangle, CheckCircle2, Copy, Download, FolderInput, FolderPlus, F
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState, } from "react";
 
 import { CommitDetails, CommitDetailsSkeleton } from "./components/commit-details";
-import { CommitGraph, getCommitGraphWidth, getCommitLaneColorVariable, getCommitLaneX, getCommitRowBranchOrigin, getWipLane, type CommitContextMenuRequest, } from "./components/CommitGraph";
+import { CommitGraph, getCommitGraphWidth, getCommitLaneX, getCommitRowBranchOrigin, getWipLane, getWipLaneColorVariable, type CommitContextMenuRequest, } from "./components/CommitGraph";
 import { ConflictResolverDialog } from "./components/conflict";
 import { ContextMenu, type ContextAction } from "./components/ContextMenu";
 import { DiffViewer, isWholeFileMode, type DiffViewMode } from "./components/diff";
@@ -112,7 +112,7 @@ const DEFAULT_SETTINGS: AppSettings = {
         danger: "#e05d6f",
         diff_addition: "#244d33",
         diff_deletion: "#562e32",
-        graph_palette: ["#17b8d4", "#7c4dff", "#c42df0", "#ff9f43", "#4dbd74", "#ef5b8c"],
+        graph_palette: ["#15a0bf", "#0669f7", "#8e00c2", "#c517b6", "#d90171", "#cd0101", "#f25d2e", "#f2ca33", "#7bd938", "#2ece9d"],
     },
 };
 
@@ -431,7 +431,7 @@ function applyTheme(settings: AppSettings): void {
         "--gc-diff-delete": theme.diff_deletion,
     };
     for (const [name, value] of Object.entries(variables)) root.style.setProperty(name, value);
-    for (let index = 0; index < 8; index += 1) {
+    for (let index = 0; index < 10; index += 1) {
         root.style.setProperty(`--gc-lane-${index}`, theme.graph_palette[index % theme.graph_palette.length]);
     }
 }
@@ -2432,7 +2432,7 @@ function App() {
         "--gc-branch-origin": `${wipLaneX}px`,
         "--gc-branch-interactive-origin": `${wipLaneX + 11}px`,
         "--gc-branch-row-origin": `${getCommitRowBranchOrigin(wipLane)}px`,
-        "--gc-row-branch-color": getCommitLaneColorVariable(wipLane),
+        "--gc-row-branch-color": getWipLaneColorVariable(),
         "--gc-wip-lane-x": `${wipLaneX}px`,
     } as React.CSSProperties;
     const activeCommitDraft = activeTabId

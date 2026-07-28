@@ -31,14 +31,16 @@
   --gc-syntax-attribute: #d19a66;
   --gc-syntax-regexp: #7ec9a8;
   --gc-syntax-constant: #d19a66;
-  --gc-lane-0: #22c3e6;
-  --gc-lane-1: #9a63ff;
-  --gc-lane-2: #f09b45;
-  --gc-lane-3: #47c888;
-  --gc-lane-4: #ee5b99;
-  --gc-lane-5: #e0ce48;
-  --gc-lane-6: #4b8cff;
-  --gc-lane-7: #bd71db;
+  --gc-lane-0: #15a0bf;
+  --gc-lane-1: #0669f7;
+  --gc-lane-2: #8e00c2;
+  --gc-lane-3: #c517b6;
+  --gc-lane-4: #d90171;
+  --gc-lane-5: #cd0101;
+  --gc-lane-6: #f25d2e;
+  --gc-lane-7: #f2ca33;
+  --gc-lane-8: #7bd938;
+  --gc-lane-9: #2ece9d;
   --gc-row-gap: 4px;
 }
 
@@ -67,6 +69,8 @@
   --color-lane-5: var(--gc-lane-5);
   --color-lane-6: var(--gc-lane-6);
   --color-lane-7: var(--gc-lane-7);
+  --color-lane-8: var(--gc-lane-8);
+  --color-lane-9: var(--gc-lane-9);
 
   --color-sunken: color-mix(in srgb, var(--gc-surface) 96%, black);
   --color-menu: color-mix(in srgb, var(--gc-panel) 97%, black);
@@ -225,6 +229,8 @@
 .gc-commit-graph__edge--lane-5 { stroke: var(--gc-lane-5); }
 .gc-commit-graph__edge--lane-6 { stroke: var(--gc-lane-6); }
 .gc-commit-graph__edge--lane-7 { stroke: var(--gc-lane-7); }
+.gc-commit-graph__edge--lane-8 { stroke: var(--gc-lane-8); }
+.gc-commit-graph__edge--lane-9 { stroke: var(--gc-lane-9); }
 
 .gc-commit-graph__rows {
   @apply relative z-[2] grid;
@@ -347,6 +353,8 @@
 .gc-commit-row__graph-slot--lane-5 { --gc-graph-slot-color: var(--gc-lane-5); }
 .gc-commit-row__graph-slot--lane-6 { --gc-graph-slot-color: var(--gc-lane-6); }
 .gc-commit-row__graph-slot--lane-7 { --gc-graph-slot-color: var(--gc-lane-7); }
+.gc-commit-row__graph-slot--lane-8 { --gc-graph-slot-color: var(--gc-lane-8); }
+.gc-commit-row__graph-slot--lane-9 { --gc-graph-slot-color: var(--gc-lane-9); }
 
 .gc-wip-row__rail i {
   @apply absolute top-1/2 z-[3] h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-dashed bg-background;

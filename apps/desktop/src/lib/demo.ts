@@ -339,7 +339,7 @@ const defaultState = (): PersistedState => ({
       danger: "#e05d6f",
       diff_addition: "#244d33",
       diff_deletion: "#562e32",
-      graph_palette: ["#17b8d4", "#7c4dff", "#c42df0", "#ff9f43", "#4dbd74", "#ef5b8c"],
+      graph_palette: ["#15a0bf", "#0669f7", "#8e00c2", "#c517b6", "#d90171", "#cd0101", "#f25d2e", "#f2ca33", "#7bd938", "#2ece9d"],
     },
   },
   workspace: {

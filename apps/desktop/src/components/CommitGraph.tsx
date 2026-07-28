@@ -16,7 +16,8 @@ const LANE_WIDTH = 18;
 const GRAPH_PADDING = 24;
 const REF_COLUMN_WIDTH = 118;
 const MIN_GRAPH_WIDTH = 96;
-const LANE_COLOR_COUNT = 8;
+const LANE_COLOR_COUNT = 10;
+const FIRST_COLOR_SLOT = 0;
 const EDGE_CORNER = 12;
 const AVATAR_RADIUS = 11;
 const WIP_NODE_RADIUS = 12;
@@ -60,12 +61,13 @@ export interface CommitGraphProps {
 interface GraphPath {
   key: string;
   data: string;
-  lane: number;
+  color: number;
   merge: boolean;
 }
 
 interface GraphGeometry {
   paths: GraphPath[];
+  colors: Map<string, number>;
   width: number;
   height: number;
 }
@@ -82,6 +84,7 @@ type GraphRefLabel = RefLabel & {
 
 interface CommitRowProps {
   commit: CommitSummary;
+  color: number;
   id: string;
   index: number;
   selected: boolean;
@@ -111,16 +114,49 @@ export function getCommitRowBranchOrigin(lane: number): number {
   return REF_COLUMN_WIDTH + laneX(lane) - AVATAR_RADIUS;
 }
 
-export function getCommitLaneColorVariable(lane: number): string {
-  return `var(--gc-lane-${lane % LANE_COLOR_COUNT})`;
+export function getWipLaneColorVariable(): string {
+  return `var(--gc-lane-${FIRST_COLOR_SLOT})`;
+}
+
+function colorVariable(slot: number): string {
+  return `var(--gc-lane-${slot % LANE_COLOR_COUNT})`;
+}
+
+function colorClass(base: string, slot: number): string {
+  return `${base} ${base}--lane-${slot % LANE_COLOR_COUNT}`;
+}
+
+function buildBranchColors(commits: readonly CommitSummary[]): Map<string, number> {
+  const colors = new Map<string, number>();
+  let nextSlot = FIRST_COLOR_SLOT;
+
+  for (const commit of commits) {
+    let color = colors.get(commit.oid);
+    if (color === undefined) {
+      color = nextSlot;
+      nextSlot += 1;
+      colors.set(commit.oid, color);
+    }
+
+    if (commit.stash) continue;
+
+    for (let index = 0; index < commit.graph.edges.length; index += 1) {
+      const parentOid = commit.graph.edges[index].parent_oid;
+      if (colors.has(parentOid)) continue;
+      if (index === 0) {
+        colors.set(parentOid, color);
+        continue;
+      }
+      colors.set(parentOid, nextSlot);
+      nextSlot += 1;
+    }
+  }
+
+  return colors;
 }
 
 function rowY(index: number): number {
   return index * ROW_STRIDE + ROW_HEIGHT / 2;
-}
-
-function laneClass(base: string, lane: number): string {
-  return `${base} ${base}--lane-${lane % LANE_COLOR_COUNT}`;
 }
 
 function isBranchDecoration(decoration: RefLabel): boolean {
@@ -220,6 +256,7 @@ function buildEdgePath(
 
 function buildGraphGeometry(commits: readonly CommitSummary[]): GraphGeometry {
   const commitIndex = new Map<string, number>();
+  const colors = buildBranchColors(commits);
 
   for (let index = 0; index < commits.length; index += 1) {
     const commit = commits[index];
@@ -240,11 +277,15 @@ function buildGraphGeometry(commits: readonly CommitSummary[]): GraphGeometry {
       const endX = laneX(edge.to_lane);
       const endY = Math.min(rowY(targetIndex), commits.length * ROW_STRIDE - ROW_GAP);
       const data = buildEdgePath(startX, startY, endX, endY, parentVisible);
+      const commitColor = colors.get(commit.oid) ?? FIRST_COLOR_SLOT;
+      const color = edgeIndex === 0 || commit.stash
+        ? commitColor
+        : colors.get(edge.parent_oid) ?? commitColor;
 
       paths.push({
         key: `${commit.oid}:${edge.parent_oid}:${edgeIndex}`,
         data,
-        lane: Math.max(edge.from_lane, edge.to_lane),
+        color,
         merge: edge.merge,
       });
     }
@@ -252,6 +293,7 @@ function buildGraphGeometry(commits: readonly CommitSummary[]): GraphGeometry {
 
   return {
     paths,
+    colors,
     width: getCommitGraphWidth(commits),
     height: commits.length * ROW_STRIDE - ROW_GAP,
   };
@@ -512,6 +554,7 @@ function RowShaButton({ oid, shortOid, onCopy }: { oid: string; shortOid: string
 
 const CommitRow = memo(function CommitRow({
   commit,
+  color,
   id,
   index,
   selected,
@@ -571,7 +614,7 @@ const CommitRow = memo(function CommitRow({
   const branchInteractiveOrigin = branchOrigin + AVATAR_RADIUS;
   const rowStyle = {
     "--gc-branch-row-origin": `${REF_COLUMN_WIDTH + branchHoverOrigin}px`,
-    "--gc-row-branch-color": getCommitLaneColorVariable(commit.graph.lane),
+    "--gc-row-branch-color": colorVariable(color),
   } as CSSProperties;
   const graphSlotStyle = {
     width: graphWidth,
@@ -607,7 +650,7 @@ const CommitRow = memo(function CommitRow({
       </span>
       <span
         aria-label="Graph"
-        className={laneClass("gc-commit-row__graph-slot", commit.graph.lane)}
+        className={colorClass("gc-commit-row__graph-slot", color)}
         role="cell"
         style={graphSlotStyle}
       >
@@ -812,7 +855,7 @@ export function CommitGraph({
         <g mask={`url(#${nodeMaskId})`}>
           {wipPath ? (
             <path
-              className={laneClass("gc-commit-graph__edge", wipPath.lane)}
+              className={colorClass("gc-commit-graph__edge", FIRST_COLOR_SLOT)}
               d={wipPath.data}
               fill="none"
               vectorEffect="non-scaling-stroke"
@@ -820,7 +863,7 @@ export function CommitGraph({
           ) : null}
           {geometry.paths.map((path) => (
             <path
-              className={`${laneClass("gc-commit-graph__edge", path.lane)}${path.merge ? " gc-commit-graph__edge--merge" : ""}`}
+              className={`${colorClass("gc-commit-graph__edge", path.color)}${path.merge ? " gc-commit-graph__edge--merge" : ""}`}
               d={path.data}
               fill="none"
               key={path.key}
@@ -832,6 +875,7 @@ export function CommitGraph({
       <div className="gc-commit-graph__rows">
         {commits.map((commit, index) => (
           <CommitRow
+            color={geometry.colors.get(commit.oid) ?? FIRST_COLOR_SLOT}
             commit={commit}
             detachedHeadOid={detachedHeadOid}
             formatTimestamp={formatTimestamp}

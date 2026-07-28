@@ -122,12 +122,16 @@ impl Default for ThemeColors {
             diff_addition: "#244d33".into(),
             diff_deletion: "#562e32".into(),
             graph_palette: vec![
-                "#17b8d4".into(),
-                "#7c4dff".into(),
-                "#c42df0".into(),
-                "#ff9f43".into(),
-                "#4dbd74".into(),
-                "#ef5b8c".into(),
+                "#15a0bf".into(),
+                "#0669f7".into(),
+                "#8e00c2".into(),
+                "#c517b6".into(),
+                "#d90171".into(),
+                "#cd0101".into(),
+                "#f25d2e".into(),
+                "#f2ca33".into(),
+                "#7bd938".into(),
+                "#2ece9d".into(),
             ],
         }
     }
