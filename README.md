@@ -6,15 +6,20 @@ Lightweight, Windows-first desktop Git client. Tauri v2 + React UI, Rust core, a
 
 ## Key features
 
+- Start page when no repository is open: searchable recent repositories with per-entry removal, plus Open, Clone, and Create actions. Create supports a target path, default branch name, and a `.gitignore` template; hosted providers are listed but not yet available.
 - Repository tabs in folders or ungrouped: drag and drop, app-owned context actions, aliases, browser-style switching, automatic restoration, and reopening the most recently closed tab.
-- LOCAL, REMOTE, and TAGS sidebar with filtering, a current-branch marker, remote-grouped remote branches with owner avatars, and a right-click branch menu for pull, push, branch creation, rename, safe deletion, and name copy.
+- Tabs whose folder moved or is no longer a Git repository open a dedicated unavailable-repository page with retry, locate, and close actions instead of failing silently.
+- LOCAL, REMOTE, and TAGS sidebar with filtering, a current-branch marker, `/`-segment folders for local branches, remote-grouped remote branches with owner avatars, and a right-click branch menu for pull, push, branch creation, rename, safe deletion, and name copy.
+- Double-clicking a remote branch checks it out directly as a local tracking branch, with no intermediate name prompt.
 - Compact, column-aligned commit DAG with colored lanes, a reserved HEAD lane so branches ahead of HEAD fork off it, relative time markers behind the lanes, WIP pseudo-node connected to HEAD, initials avatars, arrow-key stepping between the WIP row and history, and loading of older commits.
 - Stash entries collapse into a single graph row each instead of the raw index/untracked helper commits.
 - Double-click a local branch label in the graph to check that branch out.
 - `Ctrl+F` search across commit subjects and full description/body text; matches stay highlighted while the rest of the graph dims.
+- Graph rows show the commit description under the subject; commit details list `Co-authored-by` trailers as separate authors.
 - Commit details: click-to-copy SHA with full-object tooltip, author, timestamp, parents, statistics, Path/Tree changed files, and in-place commit message editing (reword).
-- GitKraken-style structured diff: aligned inline/split views, line numbers, and rename/mode/binary/truncation states.
-- WIP/working tree: separate collapsible staged/unstaged trees, optimistic staging with rollback on failure, per-file or bulk actions, separate summary and description fields, amend, sign-off, and discard-all.
+- GitKraken-style structured diff with three view modes - hunk, inline, and split - persisted across restarts, plus line numbers and rename/mode/binary/truncation states. Split panes scroll independently and size to their own content.
+- Syntax highlighting in diffs (Shiki-based tokenization) and a change map next to whole-file diffs for jumping between modified regions. Highlighting survives silent background reloads without flicker.
+- WIP/working tree: separate collapsible staged/unstaged trees, optimistic staging with rollback on failure, per-file or bulk actions, separate summary and description fields with a 72-character counter on the summary, amend, sign-off, and discard-all.
 - Changed-file context menu: stage/unstage, discard, ignore the file, extension, or folder, stash a single file, copy the path, and save a patch.
 - Push and pull quick actions carrying ahead/behind counts, autostash-backed pull for dirty worktrees, stash push and pop, and explicit pull modes: merge, fast-forward only, or rebase. Fetch and refresh are keybind-driven (`Ctrl+L`, `F5`).
 - Commit context menu: detached checkout, branch/tag creation, cherry-pick, revert, a reset submenu (soft, mixed, hard), and full SHA copy.
@@ -24,6 +29,7 @@ Lightweight, Windows-first desktop Git client. Tauri v2 + React UI, Rust core, a
 - Auto-fetch when a repository is opened and then on a timer (1 minute by default, `0` disables, 60 maximum) keeps ahead/behind counts and remote branches current. It runs silently in the background: no toasts, no blocked toolbar, and failures stay quiet. Switching back to an already-fetched tab reuses the last result until the interval elapses.
 - Resizable panels, a persisted Path/Tree changed-files view mode, and customizable semantic UI, diff, and graph-lane colors.
 - Hideable side panels, window-centered repository actions, configurable command keybinds, and persistent footer build identity.
+- Window size, position, and maximized state are restored on the next launch.
 
 Keyboard shortcuts:
 
@@ -152,6 +158,12 @@ npm.cmd run tauri build
 
 The web build is written to `apps/desktop/dist`; native artifacts are written under Cargo's `target/release` directory.
 
+## Releases
+
+The current version is 1.0.1. `.github/workflows/release-windows.yml` (`workflow_dispatch`) builds the Windows release on `windows-latest`: it enforces the `x86_64-pc-windows-msvc` host, runs fmt, clippy, tests, and typecheck, then bundles the NSIS installer and uploads the installer plus the binary as an artifact.
+
+The build is verified to be self-contained: the job fails if `gitcat-desktop.exe` still imports `WebView2Loader.dll` or if a dynamic loader DLL is left in the release output, and it prints the installer's SHA-256.
+
 ## Security model
 
 - Git runs directly as a `tokio::process::Command` process; there is no shell and no general-purpose `run_git(args)` IPC.
@@ -163,7 +175,8 @@ The web build is written to `apps/desktop/dist`; native artifacts are written un
 - Allowed remote protocols: `file`, `git`, `http`, `https`, `ssh`; custom remote helpers are disabled.
 - Credential prompts are disabled. A preconfigured Git Credential Manager or SSH agent is required.
 - Auto-fetch is the only unattended network operation, it only ever runs `git fetch` on the active repository, and it is turned off by setting the interval to `0`.
-- `reset --hard`, discarding changes, forced branch deletion, and stash drop require explicit confirmation plus a current matching snapshot. The core rejects stale dialogs.
+- `reset --hard`, discarding changes, forced branch deletion, and stash drop require explicit confirmation plus a current matching snapshot. The core rejects stale dialogs. Destructive branch deletion is confirmed inline in the top bar instead of a modal.
+- Discarding a file that another process holds open fails with an explicit "file is in use" message instead of a generic Git error.
 - Rewording a commit is guarded by the same snapshot check, so it is rejected if the branch moved underneath the panel.
 - The filesystem watcher observes one repository - the active one - ignores `.git/objects` and `.git/lfs` churn, debounces bursts, and only asks the UI to reload. It never runs Git on its own.
 - GitCat does not modify the global `safe.directory` value or delete `.git/index.lock`.
@@ -171,11 +184,11 @@ The web build is written to `apps/desktop/dist`; native artifacts are written un
 
 ## MVP limitations
 
-- The UI currently supports opening existing local repositories. Init/clone core and IPC are implemented, but there is no dedicated UI yet.
+- Clone and create are local-only: hosted providers (GitHub, GitLab, Bitbucket, Azure DevOps) are shown in the create dialog but disabled.
 - A remote/upstream editor and annotated-tag message UI are not yet available; the core/IPC already partially supports them.
 - Stashing is limited to push and popping the latest entry from the toolbar. Applying or dropping an arbitrary stash has core/IPC support but no panel.
 - Network operations have no progress or cancel UI; the Tauri adapter currently creates its own cancellation token for each call.
-- Diffs use a text, line-level view; syntax highlighting and word-level diffs are not yet available.
+- Diffs are line-level: syntax highlighting is available, word-level diffs are not.
 - There is no built-in credential dialog or terminal.
 - Hosted provider profile pictures are not fetched without provider authentication; initials are used as the avatar fallback.
 
