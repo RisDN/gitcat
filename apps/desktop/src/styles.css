@@ -4,6 +4,7 @@
   color-scheme: dark;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  --gc-scrollbar-width: 10px;
   --gc-background: #11141a;
   --gc-surface: #191d25;
   --gc-panel: #20252e;
@@ -138,8 +139,8 @@
   }
 
   ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: var(--gc-scrollbar-width);
+    height: var(--gc-scrollbar-width);
   }
 
   ::-webkit-scrollbar-track {
@@ -190,7 +191,12 @@
 }
 
 .gc-graph-columns {
-  @apply sticky top-0 z-[8] h-6 border-b border-border text-[8px] font-[750] uppercase tracking-[0.08em] text-muted;
+  @apply h-6 text-[8px] font-[750] uppercase tracking-[0.08em] text-muted;
+}
+
+.gc-graph-header {
+  @apply shrink-0 overflow-x-hidden border-b border-border;
+  padding-right: var(--gc-scrollbar-width);
   background: color-mix(in srgb, var(--gc-panel) 94%, black);
 }
 

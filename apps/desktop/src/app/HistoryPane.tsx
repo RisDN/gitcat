@@ -1,4 +1,5 @@
 import { AlertTriangle } from "lucide-react";
+import { useRef } from "react";
 
 import { CommitGraph, type CommitContextMenuRequest } from "../components/CommitGraph";
 import { DiffViewer, type DiffViewMode } from "../components/diff";
@@ -106,6 +107,8 @@ export function HistoryPane({
     wipStats,
     worktreeReachable,
 }: HistoryPaneProps) {
+    const graphHeaderRef = useRef<HTMLDivElement | null>(null);
+
     return (
         <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background" aria-label="Repository history" style={{ gridColumn: 3 }}>
             {searchOpen && centerView === "graph" ? (
@@ -132,17 +135,29 @@ export function HistoryPane({
                 />
             ) : (
                 <div
-                    className="min-h-0 min-w-0 flex-1 overflow-auto"
+                    className="flex min-h-0 min-w-0 flex-1 flex-col"
                     style={{ "--gc-graph-column-width": `${graphColumnWidth}px` } as React.CSSProperties}
                 >
-                    <div className="gc-graph-columns" aria-hidden="true">
-                        <span>Branch / Tag</span>
-                        <span>Graph</span>
-                        <span>Commit message</span>
-                        <span>Author</span>
-                        <span>Date / Time</span>
-                        <span>SHA</span>
+                    <div
+                        aria-hidden="true"
+                        className="gc-graph-header"
+                        ref={graphHeaderRef}
+                    >
+                        <div className="gc-graph-columns">
+                            <span>Branch / Tag</span>
+                            <span>Graph</span>
+                            <span>Commit message</span>
+                            <span>Author</span>
+                            <span>Date / Time</span>
+                            <span>SHA</span>
+                        </div>
                     </div>
+                    <div
+                        className="min-h-0 min-w-0 flex-1 overflow-auto scrollbar-gutter-stable"
+                        onScroll={(event) => {
+                            if (graphHeaderRef.current) graphHeaderRef.current.scrollLeft = event.currentTarget.scrollLeft;
+                        }}
+                    >
                     {worktreeReachable ? (
                         <button
                             className={`gc-wip-row ${wipSelected ? "gc-wip-row--selected" : ""}`}
@@ -209,6 +224,7 @@ export function HistoryPane({
                             onClick={loadMoreHistory}
                         >{historyLoading ? "Loading older commits…" : "Load older commits"}</Button>
                     ) : null}
+                    </div>
                 </div>
             )}
         </section>
