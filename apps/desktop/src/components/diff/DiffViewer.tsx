@@ -1,8 +1,10 @@
+import { X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import { cx } from "../../lib";
 import type { FileDiff } from "../../lib/types";
+import { IconButton } from "../ui";
 import { DiffMinimap } from "./DiffMinimap";
 import { ChangeKind, DIFF_VIEW_MODES, DiffState, ModeButton, isWholeFileMode } from "./DiffParts";
 import type { DiffViewMode } from "./DiffParts";
@@ -17,6 +19,8 @@ export interface DiffViewerProps {
   defaultMode?: DiffViewMode;
   loading?: boolean;
   className?: string;
+  closeKeybind?: string;
+  onClose?: () => void;
   onModeChange?: (mode: DiffViewMode) => void;
 }
 
@@ -26,6 +30,8 @@ export function DiffViewer({
   defaultMode = "hunk",
   loading = false,
   className,
+  closeKeybind,
+  onClose,
   onModeChange,
 }: DiffViewerProps) {
   const [internalMode, setInternalMode] = useState<DiffViewMode>(defaultMode);
@@ -111,6 +117,15 @@ export function DiffViewer({
           <ModeButton active={mode === "inline"} mode="inline" onSelect={setMode}>Inline</ModeButton>
           <ModeButton active={mode === "split"} mode="split" onSelect={setMode}>Split</ModeButton>
         </div>
+        {onClose ? (
+          <IconButton
+            aria-label="Back to graph"
+            onClick={onClose}
+            title={closeKeybind ? `Back to graph (${closeKeybind})` : "Back to graph"}
+          >
+            <X size={16} />
+          </IconButton>
+        ) : null}
       </header>
 
       {diff.truncated ? (

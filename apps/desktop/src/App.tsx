@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Copy, Download, FolderInput, FolderPlus, FolderX, GitBranchPlus, GitCommitHorizontal, GitPullRequestArrow, LoaderCircle, Minus, PanelLeftOpen, Pencil, Plus, RotateCcw, Tag, Trash2, Upload, X, } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, Download, FolderInput, FolderPlus, FolderX, GitBranchPlus, GitCommitHorizontal, GitPullRequestArrow, LoaderCircle, Minus, Pencil, Plus, RotateCcw, Tag, Trash2, Upload, X, } from "lucide-react";
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState, } from "react";
 
 import { CommitDetails, CommitDetailsSkeleton } from "./components/commit-details";
@@ -28,8 +28,6 @@ import {
     StatusItem,
     StatusSpacer,
     UpdateIndicator,
-    ViewTab,
-    ViewTabs,
 } from "./components/shell";
 import { ToastRegion, type ToastMessage } from "./components/ToastRegion";
 import { ConfirmBar, PULL_LABELS, Toolbar, type ConflictIndicator } from "./components/toolbar";
@@ -39,7 +37,7 @@ import {
     type TabGroupView,
     type TabView,
 } from "./components/top-tabs";
-import { Button, IconButton, SidePanel, Spinner } from "./components/ui";
+import { Button, SidePanel, Spinner } from "./components/ui";
 import { UnavailableRepositoryView } from "./components/UnavailableRepositoryView";
 import { WelcomeView } from "./components/WelcomeView";
 import { WorktreePanel, type CommitDraft } from "./components/worktree";
@@ -2542,6 +2540,8 @@ function App() {
                             conflictIndicator={conflictIndicator}
                             conflictTarget={conflictTarget}
                             conflictTargets={conflictTargets}
+                            leftPanelKeybind={persisted.settings.keybinds.toggle_left_panel}
+                            leftPanelVisible={leftPanelVisible}
                             onCreateBranch={createBranchAtHead}
                             onConflictIndicator={showConflictIndicator}
                             onConflictTargetChange={selectConflictTarget}
@@ -2552,6 +2552,7 @@ function App() {
                             onSettings={() => setSettingsOpen(true)}
                             onStash={stashActiveRepository}
                             onStashPop={popLatestStash}
+                            onToggleLeftPanel={() => setLeftPanelVisible((visible) => !visible)}
                             onToggleRightPanel={() => setRightPanelVisible((visible) => !visible)}
                             operation={snapshot?.operation_state ?? "normal"}
                             pullMode={persisted.settings.default_pull_mode}
@@ -2609,34 +2610,6 @@ function App() {
                         <Resizer hidden={!leftPanelVisible} onPointerDown={(event) => beginResize("left", event)} style={{ gridColumn: 2 }} />
 
                         <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background" aria-label="Repository history" style={{ gridColumn: 3 }}>
-                            <header className="flex h-8.75 flex-[0_0_35px] items-center gap-3 border-b border-border bg-[color-mix(in_srgb,var(--gc-surface)_80%,var(--gc-background))] px-2.25">
-                                {leftPanelVisible ? null : (
-                                    <IconButton
-                                        aria-label="Show branches panel"
-                                        onClick={() => setLeftPanelVisible(true)}
-                                        title={`Show branches panel (${persisted.settings.keybinds.toggle_left_panel})`}
-                                    >
-                                        <PanelLeftOpen size={16} />
-                                    </IconButton>
-                                )}
-                                <ViewTabs>
-                                    <ViewTab active={centerView === "graph"} onClick={() => setCenterView("graph")}>Graph</ViewTab>
-                                    <ViewTab active={centerView === "diff"} disabled={!diff && !diffLoading} onClick={() => setCenterView("diff")}>Diff</ViewTab>
-                                </ViewTabs>
-                                {centerView === "diff" ? (
-                                    <button
-                                        aria-label="Back to graph"
-                                        className="ml-auto inline-flex cursor-pointer items-center justify-center rounded bg-transparent p-1 text-muted hover:bg-row-hover hover:text-foreground"
-                                        onClick={() => setCenterView("graph")}
-                                        title="Back to graph"
-                                        type="button"
-                                    >
-                                        <X size={14} />
-                                    </button>
-                                ) : (
-                                    <span className="ml-auto text-[10px] text-muted">{history?.commits.length ?? 0} commits loaded</span>
-                                )}
-                            </header>
                             {searchOpen && centerView === "graph" ? (
                                 <SearchBar
                                     activeIndex={searchIndex}
@@ -2651,7 +2624,14 @@ function App() {
                                 />
                             ) : null}
                             {centerView === "diff" ? (
-                                <DiffViewer diff={diff} loading={diffLoading} mode={diffMode} onModeChange={setDiffMode} />
+                                <DiffViewer
+                                    closeKeybind={persisted.settings.keybinds.show_graph}
+                                    diff={diff}
+                                    loading={diffLoading}
+                                    mode={diffMode}
+                                    onClose={closeDiff}
+                                    onModeChange={setDiffMode}
+                                />
                             ) : (
                                 <div
                                     className="min-h-0 min-w-0 flex-1 overflow-auto"
