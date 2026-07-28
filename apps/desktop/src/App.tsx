@@ -38,6 +38,7 @@ import {
     type TabView,
 } from "./components/top-tabs";
 import { Button, IconButton, SidePanel, Spinner } from "./components/ui";
+import { UnavailableRepositoryView } from "./components/UnavailableRepositoryView";
 import { WelcomeView } from "./components/WelcomeView";
 import { WorktreePanel, type CommitDraft } from "./components/worktree";
 import { getApiError, gitcatApi } from "./lib/api";
@@ -436,6 +437,8 @@ function App() {
     const [persisted, setPersisted] = useState<PersistedState>(EMPTY_STATE);
     const [hydrated, setHydrated] = useState(false);
     const [runtime, setRuntime] = useState<Record<string, RuntimeRepository>>({});
+    const [tabErrors, setTabErrors] = useState<Record<string, string>>({});
+    const [openingTabIds, setOpeningTabIds] = useState<string[]>([]);
     const [snapshot, setSnapshot] = useState<RepositorySnapshot | null>(null);
     const [history, setHistory] = useState<HistoryPage | null>(null);
     const [stashes, setStashes] = useState<StashEntry[]>([]);
@@ -494,6 +497,7 @@ function App() {
     const autoFetchRef = useRef<() => void>(() => { });
     const lastAutoFetchRef = useRef<Map<string, number>>(new Map());
     const closedTabsRef = useRef<RepositoryTab[]>([]);
+    const openingTabsRef = useRef<Set<string>>(new Set());
     const workspaceRef = useRef(persisted.workspace);
     const overviewLoadSequence = useRef(0);
     const detailsLoadSequence = useRef(0);
@@ -525,6 +529,8 @@ function App() {
     const activeTab = activeTabId
         ? workspaceTabs(persisted.workspace).find((tab) => tab.id === activeTabId)
         : undefined;
+    const activeTabKind = activeTab?.kind;
+    const activeTabPath = activeTab?.repository_path;
 
     useEffect(() => {
         activeRepositoryIdRef.current = activeRepository?.repository_id ?? null;
@@ -573,15 +579,23 @@ function App() {
     const openStoredRepositories = useCallback(async (state: PersistedState) => {
         const tabs = workspaceTabs(state.workspace).filter((tab) => tab.kind !== "start");
         if (!tabs.length) return;
-        const opened = await Promise.allSettled(tabs.map(async (tab) => [tab.id, await gitcatApi.openRepository(tab.repository_path)] as const));
-        const next: Record<string, RuntimeRepository> = {};
-        for (const result of opened) {
-            if (result.status === "fulfilled") {
-                const [tabId, repository] = result.value;
-                next[tabId] = repository;
+        const opened = await Promise.all(tabs.map(async (
+            tab,
+        ): Promise<{ tabId: string; repository?: RuntimeRepository; error?: string }> => {
+            try {
+                return { tabId: tab.id, repository: await gitcatApi.openRepository(tab.repository_path) };
+            } catch (error) {
+                return { tabId: tab.id, error: getApiError(error).message };
             }
+        }));
+        const next: Record<string, RuntimeRepository> = {};
+        const failed: Record<string, string> = {};
+        for (const result of opened) {
+            if (result.repository) next[result.tabId] = result.repository;
+            else failed[result.tabId] = result.error ?? "Repository could not be opened";
         }
         setRuntime(next);
+        setTabErrors(failed);
         const preferred = state.workspace.active_tab_id;
         const preferredIsStartTab = workspaceTabs(state.workspace)
             .some((tab) => tab.id === preferred && tab.kind === "start");
@@ -589,9 +603,35 @@ function App() {
             const fallback = Object.keys(next)[0] ?? null;
             setPersisted((current) => ({ ...current, workspace: { ...current.workspace, active_tab_id: fallback } }));
         }
-        const failed = opened.filter((result) => result.status === "rejected").length;
-        if (failed) addToast({ tone: "error", title: `${failed} repository tab could not be restored`, detail: "The folder may have moved or no longer be a Git repository." });
-    }, [addToast]);
+    }, []);
+
+    const openTabRepository = useCallback(async (tabId: string, path: string) => {
+        if (openingTabsRef.current.has(tabId)) return;
+        openingTabsRef.current.add(tabId);
+        setOpeningTabIds((current) => [...current, tabId]);
+        try {
+            const opened = await gitcatApi.openRepository(path);
+            setRuntime((current) => ({ ...current, [tabId]: opened }));
+            setTabErrors((current) => {
+                if (!(tabId in current)) return current;
+                const next = { ...current };
+                delete next[tabId];
+                return next;
+            });
+        } catch (error) {
+            setTabErrors((current) => ({ ...current, [tabId]: getApiError(error).message }));
+            showError("Repository could not be opened", error);
+        } finally {
+            openingTabsRef.current.delete(tabId);
+            setOpeningTabIds((current) => current.filter((id) => id !== tabId));
+        }
+    }, [showError]);
+
+    useEffect(() => {
+        if (initializing || !activeTabId || activeRepository) return;
+        if (!activeTabPath || activeTabKind === "start") return;
+        void openTabRepository(activeTabId, activeTabPath);
+    }, [activeRepository, activeTabId, activeTabKind, activeTabPath, initializing, openTabRepository]);
 
     useEffect(() => {
         let alive = true;
@@ -961,6 +1001,12 @@ function App() {
     const adoptRepository = useCallback((opened: OpenedRepository, targetTabId: string | null) => {
         const tabId = targetTabId ?? makeId("tab");
         setRuntime((current) => ({ ...current, [tabId]: opened }));
+        setTabErrors((current) => {
+            if (!(tabId in current)) return current;
+            const next = { ...current };
+            delete next[tabId];
+            return next;
+        });
         setPersisted((current) => {
             const filled = (tab: RepositoryTab): RepositoryTab => (
                 tab.id === tabId
@@ -1134,6 +1180,12 @@ function App() {
         const repository = runtime[tabId];
         if (repository) void gitcatApi.closeRepository(repository.repository_id).catch(() => undefined);
         setRuntime((current) => {
+            const next = { ...current };
+            delete next[tabId];
+            return next;
+        });
+        setTabErrors((current) => {
+            if (!(tabId in current)) return current;
             const next = { ...current };
             delete next[tabId];
             return next;
@@ -1560,10 +1612,8 @@ function App() {
     }, []);
 
     const orderedTabIds = useMemo(
-        () => workspaceTabs(persisted.workspace)
-            .filter((tab) => tab.kind === "start" || runtime[tab.id] !== undefined)
-            .map((tab) => tab.id),
-        [persisted.workspace, runtime],
+        () => workspaceTabs(persisted.workspace).map((tab) => tab.id),
+        [persisted.workspace],
     );
 
     const activateRepositoryTab = useCallback((nextId: string | undefined) => {
@@ -2404,6 +2454,17 @@ function App() {
                         onOpen={() => void chooseRepository(activeTab.id)}
                         onSelectRecent={(recent) => void openRepositoryPath(recent.path, activeTab.id)}
                         recents={persisted.recents}
+                    />
+                ) : activeTab ? (
+                    <UnavailableRepositoryView
+                        busy={busy}
+                        detail={tabErrors[activeTab.id]}
+                        loading={openingTabIds.includes(activeTab.id)}
+                        name={activeTab.display_name}
+                        onClose={() => closeTab(activeTab.id)}
+                        onLocate={() => void chooseRepository(activeTab.id)}
+                        onRetry={() => void openTabRepository(activeTab.id, activeTab.repository_path)}
+                        path={activeTab.repository_path}
                     />
                 ) : (
                     <WelcomeView
