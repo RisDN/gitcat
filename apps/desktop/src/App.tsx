@@ -1266,11 +1266,11 @@ function App() {
         });
     }, []);
 
-    const selectCommit = useCallback((commit: CommitSummary) => {
-        if (!wipSelected && selectedOidRef.current === commit.oid) return;
+    const selectCommitOid = useCallback((oid: string) => {
+        if (!wipSelected && selectedOidRef.current === oid) return;
 
         ++diffLoadSequence.current;
-        setSelectedOid(commit.oid);
+        setSelectedOid(oid);
         setWipSelected(false);
         setDetails(null);
         setCommitActions([]);
@@ -1280,6 +1280,17 @@ function App() {
         setDiffLoading(false);
         setCenterView("graph");
     }, [wipSelected]);
+
+    const selectCommit = useCallback((commit: CommitSummary) => {
+        selectCommitOid(commit.oid);
+    }, [selectCommitOid]);
+
+    const jumpToCommit = useCallback((oid: string) => {
+        selectCommitOid(oid);
+        requestAnimationFrame(() => {
+            document.querySelector<HTMLElement>(`[data-oid="${oid}"]`)?.scrollIntoView({ block: "center" });
+        });
+    }, [selectCommitOid]);
 
     const selectWip = useCallback(() => {
         ++diffLoadSequence.current;
@@ -2766,6 +2777,7 @@ function App() {
                                     fileViewMode={persisted.settings.file_view_mode}
                                     onFileViewModeChange={changeFileViewMode}
                                     onCopySha={() => void copySha(details.oid)}
+                                    onJumpToCommit={jumpToCommit}
                                     onReword={snapshot ? (message) => rewordCommit(details.oid, message) : undefined}
                                     onSelectFile={openCommitFile}
                                     selectedPath={selectedPath}

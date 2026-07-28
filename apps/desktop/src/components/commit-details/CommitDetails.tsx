@@ -7,7 +7,7 @@ import type { FileTreeItem, FileViewMode } from "../file-tree";
 import { ChangeCountSummary, FileTree, FileTreeControls, fileChangeCounts, sumChangeCounts } from "../file-tree";
 import { Badge, SidePanel } from "../ui";
 import { MessageEditor, MessageView } from "./CommitMessage";
-import { Avatar, CoAuthorRow, FilesPanel, IdentityRow, StatsRow } from "./CommitSections";
+import { Avatar, CoAuthorRow, FilesPanel, IdentityRow, ParentRefs, StatsRow } from "./CommitSections";
 import { ShaBar, ShaCopy } from "./ShaBar";
 
 interface CommitDetailsProps {
@@ -18,6 +18,7 @@ interface CommitDetailsProps {
     onFileViewModeChange: (mode: FileViewMode) => void;
     onSelectFile: (file: ChangedFile) => void;
     onCopySha: () => void;
+    onJumpToCommit?: (oid: string) => void;
     onReword?: (message: string) => Promise<boolean>;
 }
 
@@ -37,7 +38,7 @@ const STATUS_LABEL: Record<string, string> = {
     unmerged: "U",
 };
 
-export function CommitDetails({ details, selectedPath, busy = false, fileViewMode, onFileViewModeChange, onSelectFile, onCopySha, onReword }: CommitDetailsProps) {
+export function CommitDetails({ details, selectedPath, busy = false, fileViewMode, onFileViewModeChange, onSelectFile, onCopySha, onJumpToCommit, onReword }: CommitDetailsProps) {
     const [editing, setEditing] = useState(false);
     const [subject, setSubject] = useState(details.subject);
     const [body, setBody] = useState(details.body);
@@ -113,6 +114,7 @@ export function CommitDetails({ details, selectedPath, busy = false, fileViewMod
                         <CalendarClock size={12} /> {authored.toLocaleString()}
                     </small>
                 </div>
+                <ParentRefs onJump={onJumpToCommit} parentOids={details.parent_oids} />
             </IdentityRow>
             <CoAuthorRow coAuthors={coAuthors} />
             <StatsRow>

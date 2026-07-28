@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { cx, identityInitials } from "../../lib";
 import type { Identity } from "../../lib/types";
+import { ShaChip } from "./ShaBar";
 
 export function IdentityRow({ children }: { children: ReactNode }) {
   return <div className="flex gap-2.5 px-3 pb-3 pt-0.75">{children}</div>;
@@ -20,6 +21,32 @@ export function Avatar({ initials }: { initials?: string }) {
     >
       {initials || "?"}
     </span>
+  );
+}
+
+export function ParentRefs({ parentOids, onJump }: { parentOids: readonly string[]; onJump?: (oid: string) => void }) {
+  if (parentOids.length === 0) return null;
+  return (
+    <div className="ml-auto flex shrink-0 items-start gap-1 text-[10px] text-muted">
+      <span>{parentOids.length > 1 ? "parents:" : "parent:"}</span>
+      <span className="flex flex-col items-end gap-0.5">
+        {parentOids.map((oid) => (onJump ? (
+          <ShaChip
+            align="right"
+            ariaLabel={`Jump to parent commit ${oid} in graph`}
+            hint="Jump to commit in graph"
+            key={oid}
+            oid={oid}
+            onClick={() => onJump(oid)}
+            shortOid={oid.slice(0, 7)}
+          />
+        ) : (
+          <code className="px-0.75 text-accent" key={oid} title={oid}>
+            {oid.slice(0, 7)}
+          </code>
+        )))}
+      </span>
+    </div>
   );
 }
 
