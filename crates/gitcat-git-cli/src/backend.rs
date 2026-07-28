@@ -389,6 +389,20 @@ impl GitCliBackend {
         }
     }
 
+    async fn default_stash_message(&self, path: &Path) -> ApiResult<Option<String>> {
+        let output = self
+            .read_allow_failure(
+                Some(path),
+                os_args(&["symbolic-ref", "--quiet", "--short", "HEAD"]),
+            )
+            .await?;
+        if !output.success() {
+            return Ok(None);
+        }
+        let branch = output.stdout_lossy().trim().to_owned();
+        Ok((!branch.is_empty()).then(|| format!("WIP on {branch}")))
+    }
+
     async fn resolve_commit(&self, path: &Path, revision: &str) -> ApiResult<String> {
         if revision.is_empty() || revision.contains(['\0', '\n', '\r']) {
             return Err(ApiError::new(
@@ -1991,6 +2005,10 @@ impl GitBackend for GitCliBackend {
             return self.mutation_result(path, self.head_oid(path).await?).await;
         }
         let mut args = os_args(&["stash", "push", "--include-untracked"]);
+        let message = match message {
+            Some(message) => Some(message.to_owned()),
+            None => self.default_stash_message(path).await?,
+        };
         if let Some(message) = message {
             if message.len() > MAX_COMMIT_MESSAGE_BYTES || message.contains('\0') {
                 return Err(ApiError::new(
@@ -2844,6 +2862,10 @@ impl GitBackend for GitCliBackend {
         if include_untracked {
             args.push("--include-untracked".into());
         }
+        let message = match message {
+            Some(message) => Some(message.to_owned()),
+            None => self.default_stash_message(path).await?,
+        };
         if let Some(message) = message {
             if message.len() > MAX_COMMIT_MESSAGE_BYTES || message.contains('\0') {
                 return Err(ApiError::new(
