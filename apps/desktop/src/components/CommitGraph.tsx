@@ -42,6 +42,7 @@ export interface WipConnector {
 export interface CommitGraphProps {
   commits: readonly CommitSummary[];
   selectedOid: string | null;
+  headOid?: string | null;
   wip?: WipConnector;
   beforeFirstSelected?: boolean;
   searchMatchOids?: ReadonlySet<string>;
@@ -115,11 +116,8 @@ export function getCommitRowBranchOrigin(lane: number): number {
   return REF_COLUMN_WIDTH + laneX(lane) - AVATAR_RADIUS;
 }
 
-export function getWipLaneColorVariable(
-  commits: readonly CommitSummary[],
-  headOid: string | null,
-): string {
-  return colorVariable(wipColorSlot(commits, buildBranchColors(commits), headOid));
+export function getWipLaneColorVariable(): string {
+  return colorVariable(FIRST_COLOR_SLOT);
 }
 
 function colorVariable(slot: number): string {
@@ -130,7 +128,10 @@ function colorClass(base: string, slot: number): string {
   return `${base} ${base}--lane-${slot % GRAPH_LANE_SLOTS}`;
 }
 
-function buildBranchColors(commits: readonly CommitSummary[]): Map<string, number> {
+function buildBranchColors(
+  commits: readonly CommitSummary[],
+  headOid: string | null,
+): Map<string, number> {
   const rowOf = new Map<string, number>();
   for (let index = 0; index < commits.length; index += 1) rowOf.set(commits[index].oid, index);
 
@@ -178,20 +179,31 @@ function buildBranchColors(commits: readonly CommitSummary[]): Map<string, numbe
     }
   }
 
+  let anchorGroup: number | undefined;
   for (let index = 0; index < commits.length; index += 1) {
     const commit = commits[index];
     if (!commit.stash || groupOf.has(commit.oid)) continue;
 
-    const group = openGroup(index, commit.graph.lane);
+    const originOid = commit.graph.edges[0]?.parent_oid;
+    const originGroup = originOid === undefined ? undefined : groupOf.get(originOid);
+    const group = originGroup ?? openGroup(index, commit.graph.lane);
     groupOf.set(commit.oid, group);
     for (const edge of commit.graph.edges) extend(group, parentRow(edge.parent_oid));
+    anchorGroup ??= group;
+  }
+
+  if (anchorGroup === undefined) {
+    const headCommit = (headOid ? commits.find((commit) => commit.oid === headOid) : undefined)
+      ?? commits.find((commit) => !commit.stash);
+    anchorGroup = headCommit === undefined ? undefined : groupOf.get(headCommit.oid);
   }
 
   const slots = new Array<number>(spans.length);
   const order = spans
     .map((span, group) => group)
     .sort((left, right) => (
-      spans[left].start - spans[right].start
+      Number(right === anchorGroup) - Number(left === anchorGroup)
+        || spans[left].start - spans[right].start
         || spans[left].lane - spans[right].lane
         || left - right
     ));
@@ -216,17 +228,6 @@ function buildBranchColors(commits: readonly CommitSummary[]): Map<string, numbe
   for (const [oid, group] of groupOf) colors.set(oid, slots[group]);
 
   return colors;
-}
-
-function wipColorSlot(
-  commits: readonly CommitSummary[],
-  colors: Map<string, number>,
-  headOid: string | null,
-): number {
-  const headCommit = (headOid ? commits.find((commit) => commit.oid === headOid) : undefined)
-    ?? commits.find((commit) => !commit.stash);
-  const color = headCommit === undefined ? undefined : colors.get(headCommit.oid);
-  return color ?? FIRST_COLOR_SLOT;
 }
 
 function rowY(index: number): number {
@@ -328,9 +329,12 @@ function buildEdgePath(
   return `M ${startX} ${startY} Q ${endX} ${startY}, ${endX} ${turnY} L ${endX} ${endY}`;
 }
 
-function buildGraphGeometry(commits: readonly CommitSummary[]): GraphGeometry {
+function buildGraphGeometry(
+  commits: readonly CommitSummary[],
+  headOid: string | null,
+): GraphGeometry {
   const commitIndex = new Map<string, number>();
-  const colors = buildBranchColors(commits);
+  const colors = buildBranchColors(commits, headOid);
 
   for (let index = 0; index < commits.length; index += 1) {
     const commit = commits[index];
@@ -764,6 +768,7 @@ const CommitRow = memo(function CommitRow({
 export function CommitGraph({
   commits,
   selectedOid,
+  headOid = null,
   wip,
   beforeFirstSelected = false,
   searchMatchOids,
@@ -781,7 +786,7 @@ export function CommitGraph({
 }: CommitGraphProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const nodeMaskId = `gc-node-mask-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
-  const geometry = useMemo(() => buildGraphGeometry(commits), [commits]);
+  const geometry = useMemo(() => buildGraphGeometry(commits, headOid), [commits, headOid]);
   const wipPath = useMemo(() => {
     if (!wip?.headOid) return null;
 
@@ -931,7 +936,7 @@ export function CommitGraph({
         <g mask={`url(#${nodeMaskId})`}>
           {wipPath ? (
             <path
-              className={colorClass("gc-commit-graph__edge", wipColorSlot(commits, geometry.colors, wip?.headOid ?? null))}
+              className={`${colorClass("gc-commit-graph__edge", FIRST_COLOR_SLOT)} gc-commit-graph__edge--wip`}
               d={wipPath.data}
               fill="none"
               vectorEffect="non-scaling-stroke"

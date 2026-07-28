@@ -2426,16 +2426,12 @@ function App() {
         () => getCommitGraphWidth(history?.commits ?? []),
         [history],
     );
-    const wipLaneColor = useMemo(
-        () => getWipLaneColorVariable(history?.commits ?? [], currentHeadOid),
-        [currentHeadOid, history],
-    );
     const wipLaneX = getCommitLaneX(wipLane);
     const wipRowStyle = {
         "--gc-branch-origin": `${wipLaneX}px`,
         "--gc-branch-interactive-origin": `${wipLaneX + 11}px`,
         "--gc-branch-row-origin": `${getCommitRowBranchOrigin(wipLane)}px`,
-        "--gc-row-branch-color": wipLaneColor,
+        "--gc-row-branch-color": getWipLaneColorVariable(),
         "--gc-wip-lane-x": `${wipLaneX}px`,
     } as React.CSSProperties;
     const activeCommitDraft = activeTabId
@@ -2680,6 +2676,7 @@ function App() {
                                         <CommitGraph
                                             beforeFirstSelected={wipSelected}
                                             commits={history.commits}
+                                            headOid={currentHeadOid}
                                             detachedHeadOid={snapshot?.head.kind === "detached" ? snapshot.head.oid : null}
                                             hideHeadDecoration={false}
                                             onNavigateBeforeFirst={worktreeReachable ? selectWipFromGraph : undefined}

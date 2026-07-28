@@ -221,7 +221,8 @@
   stroke-width: 2.5;
 }
 
-.gc-commit-graph__edge--stash {
+.gc-commit-graph__edge--stash,
+.gc-commit-graph__edge--wip {
   stroke-linecap: butt;
   stroke-dasharray: 4 5;
 }
