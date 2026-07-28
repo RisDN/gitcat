@@ -154,6 +154,30 @@ pub enum DiffViewMode {
     Split,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GraphColumnSettings {
+    pub refs: bool,
+    pub graph: bool,
+    pub message: bool,
+    pub author: bool,
+    pub date: bool,
+    pub sha: bool,
+}
+
+impl Default for GraphColumnSettings {
+    fn default() -> Self {
+        Self {
+            refs: true,
+            graph: true,
+            message: true,
+            author: true,
+            date: true,
+            sha: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
@@ -165,6 +189,7 @@ pub struct AppSettings {
     pub diff_max_bytes: usize,
     pub file_view_mode: FileViewMode,
     pub diff_view_mode: DiffViewMode,
+    pub graph_columns: GraphColumnSettings,
     pub keybinds: KeybindSettings,
     pub theme: ThemeColors,
 }
@@ -180,6 +205,7 @@ impl Default for AppSettings {
             diff_max_bytes: 8 * 1024 * 1024,
             file_view_mode: FileViewMode::default(),
             diff_view_mode: DiffViewMode::default(),
+            graph_columns: GraphColumnSettings::default(),
             keybinds: KeybindSettings::default(),
             theme: ThemeColors::default(),
         }

@@ -325,6 +325,7 @@ const defaultState = (): PersistedState => ({
     diff_max_bytes: 8 * 1024 * 1024,
     file_view_mode: "path",
     diff_view_mode: "hunk",
+    graph_columns: { refs: true, graph: true, message: true, author: true, date: true, sha: true },
     keybinds: { ...DEFAULT_KEYBINDS },
     theme: {
       background: "#17191f",

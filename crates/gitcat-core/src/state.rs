@@ -143,6 +143,19 @@ pub fn validate_settings(settings: &AppSettings) -> ApiResult<()> {
         ));
     }
 
+    let columns = settings.graph_columns;
+    if !(columns.refs
+        || columns.graph
+        || columns.message
+        || columns.author
+        || columns.date
+        || columns.sha)
+    {
+        return Err(invalid_settings(
+            "at least one commit list column must stay visible",
+        ));
+    }
+
     let keybinds = &settings.keybinds;
     let bindings = [
         keybinds.next_repository.as_str(),
@@ -299,7 +312,7 @@ mod tests {
     use std::fs;
     use std::sync::{Arc, Barrier};
 
-    use gitcat_contracts::{ErrorCode, PersistedState, PullMode};
+    use gitcat_contracts::{ErrorCode, GraphColumnSettings, PersistedState, PullMode};
     use tempfile::tempdir;
 
     use super::*;
@@ -380,6 +393,28 @@ mod tests {
             validate_settings(&settings).unwrap_err().code,
             ErrorCode::InvalidSettings
         );
+    }
+
+    #[test]
+    fn hiding_every_commit_column_is_rejected() {
+        let mut settings = AppSettings {
+            graph_columns: GraphColumnSettings {
+                refs: false,
+                graph: false,
+                message: false,
+                author: false,
+                date: false,
+                sha: false,
+            },
+            ..AppSettings::default()
+        };
+        assert_eq!(
+            validate_settings(&settings).unwrap_err().code,
+            ErrorCode::InvalidSettings
+        );
+
+        settings.graph_columns.message = true;
+        assert!(validate_settings(&settings).is_ok());
     }
 
     #[test]

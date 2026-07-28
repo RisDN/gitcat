@@ -1,4 +1,5 @@
 export * from "./api";
+export * from "./columns";
 export * from "./cx";
 export * from "./diffs";
 export * from "./styles";

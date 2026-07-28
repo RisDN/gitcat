@@ -7,15 +7,15 @@ import type {
   MouseEvent as ReactMouseEvent,
 } from "react";
 
+import { ALL_GRAPH_COLUMNS, graphColumnOffset } from "../lib/columns";
 import { GRAPH_LANE_SLOTS } from "../lib/styles";
-import type { CommitSummary, RefLabel } from "../lib/types";
+import type { CommitSummary, GraphColumnSettings, RefLabel } from "../lib/types";
 
 const ROW_HEIGHT = 28;
 const ROW_GAP = 4;
 const ROW_STRIDE = ROW_HEIGHT + ROW_GAP;
 const LANE_WIDTH = 18;
 const GRAPH_PADDING = 24;
-const REF_COLUMN_WIDTH = 118;
 const MIN_GRAPH_WIDTH = 96;
 const FIRST_COLOR_SLOT = 0;
 const EDGE_CORNER = 12;
@@ -41,6 +41,7 @@ export interface WipConnector {
 
 export interface CommitGraphProps {
   commits: readonly CommitSummary[];
+  columns?: GraphColumnSettings;
   selectedOid: string | null;
   headOid?: string | null;
   wip?: WipConnector;
@@ -87,6 +88,7 @@ type GraphRefLabel = RefLabel & {
 interface CommitRowProps {
   commit: CommitSummary;
   color: number;
+  columns: GraphColumnSettings;
   id: string;
   index: number;
   selected: boolean;
@@ -112,8 +114,9 @@ export function getCommitLaneX(lane: number): number {
   return laneX(lane);
 }
 
-export function getCommitRowBranchOrigin(lane: number): number {
-  return REF_COLUMN_WIDTH + laneX(lane) - AVATAR_RADIUS;
+export function getCommitRowBranchOrigin(lane: number, columns: GraphColumnSettings): number {
+  const offset = graphColumnOffset(columns);
+  return columns.graph ? offset + laneX(lane) - AVATAR_RADIUS : offset;
 }
 
 export function getWipLaneColorVariable(): string {
@@ -635,6 +638,7 @@ function RowShaButton({ oid, shortOid, onCopy }: { oid: string; shortOid: string
 const CommitRow = memo(function CommitRow({
   commit,
   color,
+  columns,
   id,
   index,
   selected,
@@ -690,10 +694,9 @@ const CommitRow = memo(function CommitRow({
     searchMatch ? "search result" : "",
   ].filter(Boolean).join(", ");
   const branchOrigin = laneX(commit.graph.lane);
-  const branchHoverOrigin = branchOrigin - AVATAR_RADIUS;
   const branchInteractiveOrigin = branchOrigin + AVATAR_RADIUS;
   const rowStyle = {
-    "--gc-branch-row-origin": `${REF_COLUMN_WIDTH + branchHoverOrigin}px`,
+    "--gc-branch-row-origin": `${getCommitRowBranchOrigin(commit.graph.lane, columns)}px`,
     "--gc-row-branch-color": colorVariable(color),
   } as CSSProperties;
   const graphSlotStyle = {
@@ -720,53 +723,66 @@ const CommitRow = memo(function CommitRow({
       role="row"
       style={rowStyle}
     >
-      <span aria-label="References" className="gc-commit-row__decorations" role="cell">
-        <CommitRefStack
-          decorations={decorations}
-          hasMultipleBranches={hasMultipleBranches}
-          onRefDoubleClick={onRefDoubleClick}
-          remoteIconUrls={remoteIconUrls}
-        />
-      </span>
-      <span
-        aria-label="Graph"
-        className={colorClass("gc-commit-row__graph-slot", color)}
-        role="cell"
-        style={graphSlotStyle}
-      >
-        <span
-          aria-hidden="true"
-          className={[
-            "gc-commit-row__avatar",
-            selected ? "gc-commit-row__avatar--selected" : "",
-            commit.stash ? "gc-commit-row__avatar--stash" : "",
-          ].filter(Boolean).join(" ")}
-          style={{ left: laneX(commit.graph.lane) }}
-        >
-          {commit.stash ? <Inbox size={11} strokeWidth={2.4} /> : initials.slice(0, 1) || "?"}
+      {columns.refs ? (
+        <span aria-label="References" className="gc-commit-row__decorations" role="cell">
+          <CommitRefStack
+            decorations={decorations}
+            hasMultipleBranches={hasMultipleBranches}
+            onRefDoubleClick={onRefDoubleClick}
+            remoteIconUrls={remoteIconUrls}
+          />
         </span>
-      </span>
-      <span className="gc-commit-row__subject" role="cell" title={rowTitle}>
-        {commit.subject || "(no commit message)"}
-        {description ? <span className="gc-commit-row__description">{description}</span> : null}
-      </span>
-      <span className="gc-commit-row__author" role="cell" title={commit.author.email}>
-        {commit.author.name}
-      </span>
-      <time className="gc-commit-row__time" dateTime={authoredDate?.toISOString()} role="cell" title={timestamp}>
-        {timestamp}
-      </time>
-      <span className="gc-commit-row__oid-wrap" role="cell">
-        {onCopySha ? (
-          <RowShaButton oid={commit.oid} onCopy={onCopySha} shortOid={commit.short_oid} />
-        ) : <span className="font-mono text-muted/70">{commit.short_oid}</span>}
-      </span>
+      ) : null}
+      {columns.graph ? (
+        <span
+          aria-label="Graph"
+          className={colorClass("gc-commit-row__graph-slot", color)}
+          role="cell"
+          style={graphSlotStyle}
+        >
+          <span
+            aria-hidden="true"
+            className={[
+              "gc-commit-row__avatar",
+              selected ? "gc-commit-row__avatar--selected" : "",
+              commit.stash ? "gc-commit-row__avatar--stash" : "",
+            ].filter(Boolean).join(" ")}
+            style={{ left: laneX(commit.graph.lane) }}
+          >
+            {commit.stash ? <Inbox size={11} strokeWidth={2.4} /> : initials.slice(0, 1) || "?"}
+          </span>
+        </span>
+      ) : null}
+      {columns.message ? (
+        <span className="gc-commit-row__subject" role="cell" title={rowTitle}>
+          {commit.subject || "(no commit message)"}
+          {description ? <span className="gc-commit-row__description">{description}</span> : null}
+        </span>
+      ) : null}
+      {columns.author ? (
+        <span className="gc-commit-row__author" role="cell" title={commit.author.email}>
+          {commit.author.name}
+        </span>
+      ) : null}
+      {columns.date ? (
+        <time className="gc-commit-row__time" dateTime={authoredDate?.toISOString()} role="cell" title={timestamp}>
+          {timestamp}
+        </time>
+      ) : null}
+      {columns.sha ? (
+        <span className="gc-commit-row__oid-wrap" role="cell">
+          {onCopySha ? (
+            <RowShaButton oid={commit.oid} onCopy={onCopySha} shortOid={commit.short_oid} />
+          ) : <span className="font-mono text-muted/70">{commit.short_oid}</span>}
+        </span>
+      ) : null}
     </div>
   );
 });
 
 export function CommitGraph({
   commits,
+  columns = ALL_GRAPH_COLUMNS,
   selectedOid,
   headOid = null,
   wip,
@@ -900,63 +916,66 @@ export function CommitGraph({
           <span className="gc-commit-time-marker" key={marker.key} style={{ top: marker.top }} />
         ))}
       </div>
-      <svg
-        aria-hidden="true"
-        className="gc-commit-graph__lanes"
-        focusable="false"
-        height={geometry.height}
-        style={{ left: REF_COLUMN_WIDTH }}
-        viewBox={`0 0 ${geometry.width} ${geometry.height}`}
-        width={geometry.width}
-      >
-        <defs>
-          <mask
-            height={geometry.height - maskTop}
-            id={nodeMaskId}
-            maskUnits="userSpaceOnUse"
-            width={geometry.width}
-            x={0}
-            y={maskTop}
-          >
-            <rect fill="white" height={geometry.height - maskTop} width={geometry.width} x={0} y={maskTop} />
-            {commits.map((commit, index) => (
-              <circle
-                cx={laneX(commit.graph.lane)}
-                cy={rowY(index)}
-                fill="black"
-                key={commit.oid}
-                r={AVATAR_RADIUS}
+      {columns.graph ? (
+        <svg
+          aria-hidden="true"
+          className="gc-commit-graph__lanes"
+          focusable="false"
+          height={geometry.height}
+          style={{ left: graphColumnOffset(columns) }}
+          viewBox={`0 0 ${geometry.width} ${geometry.height}`}
+          width={geometry.width}
+        >
+          <defs>
+            <mask
+              height={geometry.height - maskTop}
+              id={nodeMaskId}
+              maskUnits="userSpaceOnUse"
+              width={geometry.width}
+              x={0}
+              y={maskTop}
+            >
+              <rect fill="white" height={geometry.height - maskTop} width={geometry.width} x={0} y={maskTop} />
+              {commits.map((commit, index) => (
+                <circle
+                  cx={laneX(commit.graph.lane)}
+                  cy={rowY(index)}
+                  fill="black"
+                  key={commit.oid}
+                  r={AVATAR_RADIUS}
+                />
+              ))}
+              {wipPath ? (
+                <circle cx={laneX(wip?.lane ?? 0)} cy={WIP_ROW_Y} fill="black" r={WIP_NODE_RADIUS} />
+              ) : null}
+            </mask>
+          </defs>
+          <g mask={`url(#${nodeMaskId})`}>
+            {wipPath ? (
+              <path
+                className={`${colorClass("gc-commit-graph__edge", FIRST_COLOR_SLOT)} gc-commit-graph__edge--wip`}
+                d={wipPath.data}
+                fill="none"
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : null}
+            {geometry.paths.map((path) => (
+              <path
+                className={`${colorClass("gc-commit-graph__edge", path.color)}${path.merge ? " gc-commit-graph__edge--merge" : ""}${path.stash ? " gc-commit-graph__edge--stash" : ""}`}
+                d={path.data}
+                fill="none"
+                key={path.key}
+                vectorEffect="non-scaling-stroke"
               />
             ))}
-            {wipPath ? (
-              <circle cx={laneX(wip?.lane ?? 0)} cy={WIP_ROW_Y} fill="black" r={WIP_NODE_RADIUS} />
-            ) : null}
-          </mask>
-        </defs>
-        <g mask={`url(#${nodeMaskId})`}>
-          {wipPath ? (
-            <path
-              className={`${colorClass("gc-commit-graph__edge", FIRST_COLOR_SLOT)} gc-commit-graph__edge--wip`}
-              d={wipPath.data}
-              fill="none"
-              vectorEffect="non-scaling-stroke"
-            />
-          ) : null}
-          {geometry.paths.map((path) => (
-            <path
-              className={`${colorClass("gc-commit-graph__edge", path.color)}${path.merge ? " gc-commit-graph__edge--merge" : ""}${path.stash ? " gc-commit-graph__edge--stash" : ""}`}
-              d={path.data}
-              fill="none"
-              key={path.key}
-              vectorEffect="non-scaling-stroke"
-            />
-          ))}
-        </g>
-      </svg>
+          </g>
+        </svg>
+      ) : null}
       <div className="gc-commit-graph__rows">
         {commits.map((commit, index) => (
           <CommitRow
             color={geometry.colors.get(commit.oid) ?? FIRST_COLOR_SLOT}
+            columns={columns}
             commit={commit}
             detachedHeadOid={detachedHeadOid}
             formatTimestamp={formatTimestamp}

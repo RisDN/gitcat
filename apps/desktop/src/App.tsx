@@ -27,6 +27,7 @@ import type {
     DiffRequest,
     FileDiff,
     FileViewMode,
+    GraphColumnSettings,
     HistoryPage,
     PersistedState,
     RepositorySnapshot,
@@ -130,6 +131,11 @@ function App() {
                 ? current
                 : { ...current, settings: { ...current.settings, file_view_mode: mode } }
         ));
+    }, []);
+
+    const graphColumns = persisted.settings.graph_columns;
+    const setGraphColumns = useCallback((columns: GraphColumnSettings) => {
+        setPersisted((current) => ({ ...current, settings: { ...current.settings, graph_columns: columns } }));
     }, []);
 
     const diffMode = persisted.settings.diff_view_mode;
@@ -611,7 +617,7 @@ function App() {
     const wipRowStyle = {
         "--gc-branch-origin": `${wipLaneX}px`,
         "--gc-branch-interactive-origin": `${wipLaneX + 11}px`,
-        "--gc-branch-row-origin": `${getCommitRowBranchOrigin(wipLane)}px`,
+        "--gc-branch-row-origin": `${getCommitRowBranchOrigin(wipLane, graphColumns)}px`,
         "--gc-row-branch-color": getWipLaneColorVariable(),
         "--gc-wip-lane-x": `${wipLaneX}px`,
     } as React.CSSProperties;
@@ -780,6 +786,7 @@ function App() {
                             centerView={centerView}
                             checkoutRemoteBranch={checkoutRemoteBranch}
                             closeDiff={closeDiff}
+                            columns={graphColumns}
                             copySha={copySha}
                             currentHeadOid={currentHeadOid}
                             diff={diff}
@@ -805,6 +812,7 @@ function App() {
                             selectWip={selectWip}
                             selectWipFromGraph={selectWipFromGraph}
                             selectedOid={selectedOid}
+                            setColumns={setGraphColumns}
                             setCommitMenu={setCommitMenu}
                             setDiffMode={setDiffMode}
                             setSearchOpen={setSearchOpen}

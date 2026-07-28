@@ -183,10 +183,11 @@
 .gc-commit-row,
 .gc-wip-row {
   display: grid;
-  min-width: 780px;
-  grid-template-columns:
-    118px var(--gc-graph-column-width, 96px) minmax(180px, 1fr)
-    86px 116px 64px;
+  min-width: var(--gc-graph-columns-min-width, 780px);
+  grid-template-columns: var(
+    --gc-graph-columns-template,
+    118px var(--gc-graph-column-width, 96px) minmax(180px, 1fr) 86px 116px 64px
+  );
   align-items: center;
 }
 
@@ -195,9 +196,14 @@
 }
 
 .gc-graph-header {
-  @apply shrink-0 overflow-x-hidden border-b border-border;
+  @apply flex shrink-0 items-center border-b border-border;
   padding-right: var(--gc-scrollbar-width);
   background: color-mix(in srgb, var(--gc-panel) 94%, black);
+}
+
+/* Only the labels scroll with the rows; the column picker stays pinned right. */
+.gc-graph-header__labels {
+  @apply min-w-0 flex-1 overflow-x-hidden;
 }
 
 .gc-graph-columns > span {
@@ -205,7 +211,8 @@
 }
 
 .gc-commit-graph {
-  @apply relative min-w-[780px];
+  @apply relative;
+  min-width: var(--gc-graph-columns-min-width, 780px);
 }
 
 .gc-commit-graph--empty {

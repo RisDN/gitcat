@@ -1,5 +1,6 @@
+import { ALL_GRAPH_COLUMNS, GRAPH_COLUMNS, visibleGraphColumns } from "../lib/columns";
 import { DEFAULT_KEYBINDS, duplicateKeybinds, keybindValidationError } from "../lib/keybinds";
-import type { KeybindSettings, PersistedState, RepositoryTab } from "../lib/types";
+import type { GraphColumnSettings, KeybindSettings, PersistedState, RepositoryTab } from "../lib/types";
 import { DEFAULT_SETTINGS, RECENT_LIMIT } from "./defaults";
 
 export function makeId(prefix: string): string {
@@ -32,6 +33,15 @@ export function normalizePersistedKeybinds(
     return normalized;
 }
 
+function normalizeGraphColumns(columns: Partial<GraphColumnSettings> | undefined): GraphColumnSettings {
+    const normalized = { ...ALL_GRAPH_COLUMNS };
+    for (const { key } of GRAPH_COLUMNS) {
+        const value = columns?.[key];
+        if (typeof value === "boolean") normalized[key] = value;
+    }
+    return visibleGraphColumns(normalized).length ? normalized : { ...ALL_GRAPH_COLUMNS };
+}
+
 export function normalizePersistedState(state: PersistedState): PersistedState {
     const workspace: PersistedState["workspace"] = {
         version: 2,
@@ -48,6 +58,7 @@ export function normalizePersistedState(state: PersistedState): PersistedState {
         settings: {
             ...DEFAULT_SETTINGS,
             ...state.settings,
+            graph_columns: normalizeGraphColumns(state.settings?.graph_columns),
             keybinds: normalizePersistedKeybinds(state.settings?.keybinds),
             theme: { ...DEFAULT_SETTINGS.theme, ...state.settings?.theme },
         },

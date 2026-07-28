@@ -438,6 +438,15 @@ export type FileViewMode = "path" | "tree";
 
 export type DiffViewMode = "hunk" | "inline" | "split";
 
+export interface GraphColumnSettings {
+  refs: boolean;
+  graph: boolean;
+  message: boolean;
+  author: boolean;
+  date: boolean;
+  sha: boolean;
+}
+
 export interface AppSettings {
   default_pull_mode: PullMode;
   auto_fetch_interval_minutes: number;
@@ -447,6 +456,7 @@ export interface AppSettings {
   diff_max_bytes: number;
   file_view_mode: FileViewMode;
   diff_view_mode: DiffViewMode;
+  graph_columns: GraphColumnSettings;
   keybinds: KeybindSettings;
   theme: ThemeColors;
 }

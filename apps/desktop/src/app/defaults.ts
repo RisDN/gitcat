@@ -1,3 +1,4 @@
+import { ALL_GRAPH_COLUMNS } from "../lib/columns";
 import { DEFAULT_KEYBINDS } from "../lib/keybinds";
 import type { AppSettings, PersistedState } from "../lib/types";
 import type { CommitDraft } from "../components/worktree";
@@ -11,6 +12,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     diff_max_bytes: 8 * 1024 * 1024,
     file_view_mode: "path",
     diff_view_mode: "hunk",
+    graph_columns: ALL_GRAPH_COLUMNS,
     keybinds: DEFAULT_KEYBINDS,
     theme: {
         background: "#17191f",

@@ -4,15 +4,18 @@ import { useRef } from "react";
 import { CommitGraph, type CommitContextMenuRequest } from "../components/CommitGraph";
 import { DiffViewer, type DiffViewMode } from "../components/diff";
 import { ChangeCountSummary, type FileChangeCounts } from "../components/file-tree";
+import { GraphColumnMenu } from "../components/GraphColumnMenu";
 import { SearchBar } from "../components/SearchBar";
 import { Button, Spinner } from "../components/ui";
 import { gitcatApi } from "../lib/api";
+import { GRAPH_COLUMNS, graphColumnsMinWidth, graphColumnsTemplate } from "../lib/columns";
 import type {
     AppSettings,
     BranchInfo,
 
     CommitSummary,
     FileDiff,
+    GraphColumnSettings,
     HistoryPage,
     RepositorySnapshot,
 } from "../lib/types";
@@ -24,6 +27,7 @@ export interface HistoryPaneProps {
     centerView: "graph" | "diff";
     checkoutRemoteBranch: (branch: BranchInfo) => void;
     closeDiff: () => void;
+    columns: GraphColumnSettings;
     copySha: (oid: string) => Promise<void>;
     currentHeadOid: string | null;
     diff: FileDiff | null;
@@ -49,6 +53,7 @@ export interface HistoryPaneProps {
     selectWip: () => void;
     selectWipFromGraph: () => void;
     selectedOid: string | null;
+    setColumns: (columns: GraphColumnSettings) => void;
     setCommitMenu: (menu: CommitMenuState | null) => void;
     setDiffMode: (mode: DiffViewMode) => void;
     setSearchOpen: (open: boolean) => void;
@@ -69,6 +74,7 @@ export function HistoryPane({
     centerView,
     checkoutRemoteBranch,
     closeDiff,
+    columns,
     copySha,
     currentHeadOid,
     diff,
@@ -94,6 +100,7 @@ export function HistoryPane({
     selectWip,
     selectWipFromGraph,
     selectedOid,
+    setColumns,
     setCommitMenu,
     setDiffMode,
     setSearchOpen,
@@ -108,6 +115,9 @@ export function HistoryPane({
     worktreeReachable,
 }: HistoryPaneProps) {
     const graphHeaderRef = useRef<HTMLDivElement | null>(null);
+    const conflictBadge = activeConflictCount ? (
+        <span className="gc-wip-row__conflicts"><AlertTriangle size={12} /> {activeConflictCount}</span>
+    ) : null;
 
     return (
         <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background" aria-label="Repository history" style={{ gridColumn: 3 }}>
@@ -136,21 +146,21 @@ export function HistoryPane({
             ) : (
                 <div
                     className="flex min-h-0 min-w-0 flex-1 flex-col"
-                    style={{ "--gc-graph-column-width": `${graphColumnWidth}px` } as React.CSSProperties}
+                    style={{
+                        "--gc-graph-column-width": `${graphColumnWidth}px`,
+                        "--gc-graph-columns-template": graphColumnsTemplate(columns),
+                        "--gc-graph-columns-min-width": `${graphColumnsMinWidth(columns, graphColumnWidth)}px`,
+                    } as React.CSSProperties}
                 >
-                    <div
-                        aria-hidden="true"
-                        className="gc-graph-header"
-                        ref={graphHeaderRef}
-                    >
-                        <div className="gc-graph-columns">
-                            <span>Branch / Tag</span>
-                            <span>Graph</span>
-                            <span>Commit message</span>
-                            <span>Author</span>
-                            <span>Date / Time</span>
-                            <span>SHA</span>
+                    <div className="gc-graph-header">
+                        <div aria-hidden="true" className="gc-graph-header__labels" ref={graphHeaderRef}>
+                            <div className="gc-graph-columns">
+                                {GRAPH_COLUMNS.filter((column) => columns[column.key]).map((column) => (
+                                    <span key={column.key}>{column.label}</span>
+                                ))}
+                            </div>
                         </div>
+                        <GraphColumnMenu columns={columns} onChange={setColumns} />
                     </div>
                     <div
                         className="min-h-0 min-w-0 flex-1 overflow-auto scrollbar-gutter-stable"
@@ -172,21 +182,24 @@ export function HistoryPane({
                             style={wipRowStyle}
                             type="button"
                         >
-                            <span className="gc-wip-row__refs" />
-                            <span className="gc-wip-row__rail"><i /></span>
-                            <span className="gc-wip-row__message">
-                                <strong>// WIP</strong>
-                                <ChangeCountSummary counts={wipStats} size="md" />
-                            </span>
-                            <span className={activeConflictCount ? "gc-wip-row__conflicts" : "text-muted"}>
-                                {activeConflictCount ? <><AlertTriangle size={12} /> {activeConflictCount}</> : ""}
-                            </span>
-                            <span />
+                            {columns.refs ? <span className="gc-wip-row__refs" /> : null}
+                            {columns.graph ? <span className="gc-wip-row__rail"><i /></span> : null}
+                            {columns.message ? (
+                                <span className="gc-wip-row__message">
+                                    <strong>// WIP</strong>
+                                    <ChangeCountSummary counts={wipStats} size="md" />
+                                    {columns.author ? null : conflictBadge}
+                                </span>
+                            ) : null}
+                            {columns.author ? <span className="min-w-0">{conflictBadge}</span> : null}
+                            {columns.date ? <span /> : null}
+                            {columns.sha ? <span /> : null}
                         </button>
                     ) : null}
                     {history ? (
                         <CommitGraph
                             beforeFirstSelected={wipSelected}
+                            columns={columns}
                             commits={history.commits}
                             headOid={currentHeadOid}
                             detachedHeadOid={snapshot?.head.kind === "detached" ? snapshot.head.oid : null}
