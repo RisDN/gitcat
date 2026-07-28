@@ -1,439 +1,65 @@
-import { AlertTriangle, CheckCircle2, Copy, Download, FolderInput, FolderPlus, FolderX, GitBranchPlus, GitCommitHorizontal, GitPullRequestArrow, LoaderCircle, Pencil, RotateCcw, Tag, Trash2, Upload, X, } from "lucide-react";
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState, } from "react";
+import { AlertTriangle, LoaderCircle, Tag, } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, } from "react";
 
-import { CommitDetails, CommitDetailsSkeleton } from "./components/commit-details";
-import { CommitGraph, getCommitGraphWidth, getCommitLaneX, getCommitRowBranchOrigin, getWipLane, getWipLaneColorVariable, type CommitContextMenuRequest, } from "./components/CommitGraph";
-import { ConflictResolverDialog } from "./components/conflict";
-import { ContextMenu, type ContextAction } from "./components/ContextMenu";
-import { DiffViewer, isWholeFileMode, type DiffViewMode } from "./components/diff";
-import { ChangeCountSummary, emptyChangeCounts, fileChangeCounts, orderedFilePaths, sumChangeCounts } from "./components/file-tree";
+import { getCommitGraphWidth, getCommitLaneX, getCommitRowBranchOrigin, getWipLane, getWipLaneColorVariable, } from "./components/CommitGraph";
+import { emptyChangeCounts, fileChangeCounts, sumChangeCounts } from "./components/file-tree";
 import type { FolderCollapseTarget } from "./components/file-tree";
 import { OperationBanner } from "./components/OperationBanner";
-import { PromptDialog } from "./components/PromptDialog";
-import {
-    RefSidebar,
-    branchNameWithoutRemote,
-    remoteNameOf,
-    type BranchContextMenuRequest,
-    type BranchScope,
-} from "./components/ref-sidebar";
-import { SearchBar } from "./components/SearchBar";
-import { SettingsDialog } from "./components/settings";
-import { CloneDialog, CreateDialog, StartPage } from "./components/start-page";
-import {
-    AppShell,
-    BuildIdentity,
-    Resizer,
-    StatusBar,
-    StatusItem,
-    StatusSpacer,
-    UpdateIndicator,
-} from "./components/shell";
-import { ToastRegion, type ToastMessage } from "./components/ToastRegion";
-import { ConfirmBar, PULL_LABELS, Toolbar, type ConflictIndicator } from "./components/toolbar";
+import { RefSidebar, type BranchContextMenuRequest } from "./components/ref-sidebar";
+import { StartPage } from "./components/start-page";
+import { AppShell, Resizer } from "./components/shell";
+import { ConfirmBar, Toolbar } from "./components/toolbar";
 import {
     TopTabs,
     type RepositoryTabContextMenuRequest,
     type TabGroupView,
     type TabView,
 } from "./components/top-tabs";
-import { Button, SidePanel, Spinner } from "./components/ui";
 import { UnavailableRepositoryView } from "./components/UnavailableRepositoryView";
 import { WelcomeView } from "./components/WelcomeView";
-import { WorktreePanel, type CommitDraft } from "./components/worktree";
-import { getApiError, gitcatApi } from "./lib/api";
-import { chooseDirectory } from "./lib/platform";
+import type { CommitDraft } from "./components/worktree";
+import type { DiffViewMode } from "./components/diff";
+import { gitcatApi } from "./lib/api";
 import { useAppUpdate } from "./lib/updates";
-import { conflictOperationLabel } from "./lib/conflicts";
-import { sameFileDiff } from "./lib/diffs";
-import { GRAPH_LANE_SLOTS } from "./lib/styles";
-import {
-    DEFAULT_KEYBINDS,
-    duplicateKeybinds,
-    isEditableTarget,
-    isPlainTypingKeybind,
-    keybindValidationError,
-    matchesKeybind,
-} from "./lib/keybinds";
 import type {
-    AppMetadata,
-    AppSettings,
-    BranchInfo,
-    ChangeKind,
-    ChangedFile,
-    CloneOptions,
     CommitActionAvailability,
-    CommitSummary,
     ConflictFileDetails,
-    ConflictPreflightResult,
-    ConflictResolution,
-    ContinueOperation,
     DiffRequest,
-    ExpectedState,
     FileDiff,
     FileViewMode,
     HistoryPage,
-    KeybindSettings,
-    MutationResult,
-    OpenedRepository,
     PersistedState,
-    PullMode,
-    RecentRepository,
-    RemoteInfo,
-    RepositoryInfo,
     RepositorySnapshot,
     RepositoryTab,
-    ResetMode,
     StashEntry,
-    StatusEntry,
 } from "./lib/types";
-
-const DEFAULT_SETTINGS: AppSettings = {
-    default_pull_mode: "merge",
-    auto_fetch_interval_minutes: 1,
-    auto_prune: true,
-    history_page_size: 200,
-    diff_context_lines: 3,
-    diff_max_bytes: 8 * 1024 * 1024,
-    file_view_mode: "path",
-    diff_view_mode: "hunk",
-    keybinds: DEFAULT_KEYBINDS,
-    theme: {
-        background: "#17191f",
-        surface: "#1d2027",
-        panel: "#242832",
-        border: "#343946",
-        text: "#f2f4f8",
-        muted_text: "#9aa3b2",
-        accent: "#20b8d8",
-        success: "#4dbd74",
-        warning: "#f0ad4e",
-        danger: "#e05d6f",
-        diff_addition: "#244d33",
-        diff_deletion: "#562e32",
-        graph_palette: ["#15a0bf", "#0669f7", "#8e00c2", "#c517b6", "#d90171", "#cd0101", "#f25d2e", "#f2ca33", "#7bd938", "#2ece9d"],
-    },
-};
-
-const EMPTY_STATE: PersistedState = {
-    settings: DEFAULT_SETTINGS,
-    workspace: { version: 2, ungrouped_tabs: [], groups: [], active_tab_id: null },
-    recents: [],
-};
-
-const RECENT_LIMIT = 30;
-
-const EMPTY_COMMIT_DRAFT: CommitDraft = { message: "", description: "", amend: false, signoff: false };
-
-interface RuntimeRepository {
-    repository_id: string;
-    info: RepositoryInfo;
-}
-
-type PromptState =
-    | { kind: "create_group"; tabId?: string }
-    | { kind: "rename_group"; groupId: string; current: string }
-    | { kind: "alias_tab"; tabId: string; current: string }
-    | { kind: "create_branch"; startOid: string }
-    | { kind: "rename_branch"; branch: BranchInfo }
-    | { kind: "create_tag"; oid: string }
-    | null;
-
-type ConfirmState =
-    | { kind: "delete_branch"; name: string; force: boolean }
-    | null;
-
-interface CommitMenuState {
-    x: number;
-    y: number;
-    commit: CommitSummary;
-}
-
-interface TabMenuState {
-    x: number;
-    y: number;
-    tab: TabView;
-    groupId: string | null;
-}
-
-interface BranchMenuState {
-    x: number;
-    y: number;
-    branch: BranchInfo;
-    scope: BranchScope;
-}
-
-function makeId(prefix: string): string {
-    return `${prefix}-${crypto.randomUUID()}`;
-}
-
-// `git pull` always integrates into HEAD, so a branch row only offers it when
-// pulling that branch is the same thing as pulling the checked-out branch.
-function branchAcceptsPull(
-    snapshot: RepositorySnapshot | null,
-    branch: BranchInfo,
-    scope: BranchScope,
-): boolean {
-    const head = snapshot?.local_branches.find((candidate) => candidate.is_head);
-    if (!head?.upstream) return false;
-    return scope === "local" ? branch.is_head : head.upstream === branch.name;
-}
-
-// Pushing a row needs a concrete remote/branch pair: the branch upstream for
-// local rows, the matching local branch for remote rows.
-function branchPushTarget(
-    snapshot: RepositorySnapshot | null,
-    branch: BranchInfo,
-    scope: BranchScope,
-): { remote: string; branch: string; setUpstream: boolean } | null {
-    if (scope === "remote") {
-        const shortName = branchNameWithoutRemote(branch.name);
-        const local = snapshot?.local_branches.find((candidate) => candidate.name === shortName);
-        return local ? { remote: remoteNameOf(branch.name), branch: shortName, setUpstream: false } : null;
-    }
-    if (branch.upstream) {
-        return { remote: remoteNameOf(branch.upstream), branch: branch.name, setUpstream: false };
-    }
-    const remotes = snapshot?.remotes ?? [];
-    return remotes.length === 1
-        ? { remote: remotes[0].name, branch: branch.name, setUpstream: true }
-        : null;
-}
-
-function isMutationResult(value: unknown): value is MutationResult {
-    if (typeof value !== "object" || value === null) return false;
-    return Array.isArray((value as Partial<MutationResult>).conflicts)
-        && typeof (value as Partial<MutationResult>).needs_user_action === "boolean";
-}
-
-function isNotFullyMerged(error: unknown): boolean {
-    const apiError = getApiError(error);
-    return /not fully merged/i.test(`${apiError.message} ${apiError.details ?? ""}`);
-}
-
-function workspaceTabs(state: PersistedState["workspace"]): RepositoryTab[] {
-    return [
-        ...(state.ungrouped_tabs ?? []),
-        ...state.groups.flatMap((group) => group.tabs),
-    ];
-}
-
-function normalizePersistedKeybinds(
-    keybinds: Partial<KeybindSettings> | undefined,
-): KeybindSettings {
-    const actions = Object.keys(DEFAULT_KEYBINDS) as (keyof KeybindSettings)[];
-    const normalized = { ...DEFAULT_KEYBINDS };
-    for (const action of actions) {
-        const candidate = keybinds?.[action];
-        normalized[action] = typeof candidate === "string" && !keybindValidationError(candidate)
-            ? candidate
-            : DEFAULT_KEYBINDS[action];
-    }
-    for (let pass = 0; pass < actions.length; pass += 1) {
-        const duplicates = duplicateKeybinds(normalized);
-        if (!duplicates.size) break;
-        for (const action of duplicates) normalized[action] = DEFAULT_KEYBINDS[action];
-    }
-    return normalized;
-}
-
-function normalizePersistedState(state: PersistedState): PersistedState {
-    const workspace: PersistedState["workspace"] = {
-        version: 2,
-        active_tab_id: state.workspace?.active_tab_id ?? null,
-        groups: state.workspace?.groups ?? [],
-        ungrouped_tabs: state.workspace?.ungrouped_tabs ?? [],
-    };
-    const recents = state.recents?.length
-        ? state.recents
-        : workspaceTabs(workspace)
-            .filter((tab) => tab.kind !== "start")
-            .map((tab) => ({ path: tab.repository_path, name: tab.display_name, opened_at: 0 }));
-    return {
-        settings: {
-            ...DEFAULT_SETTINGS,
-            ...state.settings,
-            keybinds: normalizePersistedKeybinds(state.settings?.keybinds),
-            theme: { ...DEFAULT_SETTINGS.theme, ...state.settings?.theme },
-        },
-        workspace,
-        recents: recents.slice(0, RECENT_LIMIT),
-    };
-}
-
-function expectedState(snapshot: RepositorySnapshot): ExpectedState {
-    return {
-        generation: snapshot.generation,
-        head_oid: snapshot.head.kind === "unborn" ? null : snapshot.head.oid,
-    };
-}
-
-function currentBranch(snapshot: RepositorySnapshot | null): string {
-    if (!snapshot) return "-";
-    if (snapshot.head.kind === "branch") return snapshot.head.name;
-    if (snapshot.head.kind === "detached") return `detached @ ${snapshot.head.oid.slice(0, 7)}`;
-    return snapshot.head.intended_branch;
-}
-
-function githubOwnerFromRemoteUrl(url: string): string | null {
-    const trimmed = url.trim();
-    const httpsMatch = /^https?:\/\/github\.com\/([^/\s]+)\/([^/\s]+?)(?:\.git)?(?:[/?#].*)?$/i.exec(trimmed);
-    if (httpsMatch) return httpsMatch[1];
-
-    const sshMatch = /^(?:ssh:\/\/)?git@github\.com[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?$/i.exec(trimmed);
-    if (sshMatch) return sshMatch[1];
-
-    return null;
-}
-
-function githubRemoteIconUrls(remotes: readonly RemoteInfo[]): Map<string, string> {
-    const iconUrls = new Map<string, string>();
-    for (const remote of remotes) {
-        const owner = githubOwnerFromRemoteUrl(remote.fetch_url) ?? githubOwnerFromRemoteUrl(remote.push_url);
-        if (owner) iconUrls.set(remote.name, `https://github.com/${encodeURIComponent(owner)}.png?size=32`);
-    }
-    return iconUrls;
-}
-
-function defaultConflictPreflightTarget(snapshot: RepositorySnapshot | null): string | null {
-    return snapshot?.default_conflict_target ?? null;
-}
-
-function continuableOperation(
-    operation: RepositorySnapshot["operation_state"],
-): ContinueOperation | null {
-    switch (operation) {
-        case "merge":
-        case "rebase":
-        case "cherry_pick":
-        case "revert":
-            return operation;
-        case "normal":
-        case "bisect":
-            return null;
-    }
-}
-
-type WorktreeStageAction = "stage" | "unstage";
-
-function stagedKindFromWorktree(kind: ChangeKind): ChangeKind {
-    return kind === "untracked" || kind === "ignored" ? "added" : kind;
-}
-
-function worktreeKindFromIndex(kind: ChangeKind): ChangeKind {
-    if (kind === "added" || kind === "copied") return "untracked";
-    if (kind === "renamed") return "modified";
-    return kind;
-}
-
-function wipChangeKind(entry: StatusEntry): ChangeKind | null {
-    if (entry.conflicted) return "unmerged";
-    const kinds = [entry.index, entry.worktree].filter((kind): kind is ChangeKind => Boolean(kind));
-    if (kinds.includes("deleted")) return "deleted";
-    return kinds.find((kind) => kind === "added" || kind === "untracked" || kind === "copied") ?? kinds[0] ?? null;
-}
-
-function matchesStatusPath(entry: StatusEntry, paths: Set<string>): boolean {
-    return paths.has(entry.path) || (entry.old_path ? paths.has(entry.old_path) : false);
-}
-
-function compactStatusEntries(entries: StatusEntry[]): StatusEntry[] {
-    return entries.filter((entry) => entry.conflicted || entry.index || entry.worktree);
-}
-
-function optimisticWorktreeSnapshot(
-    current: RepositorySnapshot,
-    action: WorktreeStageAction,
-    paths: string[],
-): RepositorySnapshot {
-    const selected = new Set(paths);
-    if (!selected.size) return current;
-
-    const entries = compactStatusEntries(current.status.entries.map((entry) => {
-        if (entry.conflicted || !matchesStatusPath(entry, selected)) return entry;
-
-        if (action === "stage") {
-            if (!entry.worktree) return entry;
-            return {
-                ...entry,
-                index: stagedKindFromWorktree(entry.worktree),
-                worktree: undefined,
-            };
-        }
-
-        if (!entry.index) return entry;
-        return {
-            ...entry,
-            index: undefined,
-            old_path: entry.index === "renamed" ? undefined : entry.old_path,
-            worktree: entry.worktree ?? worktreeKindFromIndex(entry.index),
-        };
-    }));
-
-    return {
-        ...current,
-        status: {
-            ...current.status,
-            clean: entries.length === 0,
-            entries,
-        },
-    };
-}
-
-function optimisticWorktreeSelection(
-    current: { path: string; staged: boolean } | null,
-    action: WorktreeStageAction,
-    paths: string[],
-): { path: string; staged: boolean } | null {
-    if (!current || !paths.includes(current.path)) return current;
-    return { ...current, staged: action === "stage" };
-}
-
-function worktreeSectionPaths(entries: StatusEntry[], staged: boolean): string[] {
-    return entries
-        .filter((entry) => (staged ? Boolean(entry.index) && !entry.conflicted : Boolean(entry.worktree) || entry.conflicted))
-        .map((entry) => entry.path);
-}
-
-function nextWorktreeSelection(
-    entries: StatusEntry[],
-    current: { path: string; staged: boolean },
-    action: WorktreeStageAction,
-    paths: string[],
-    mode: FileViewMode,
-): { path: string; staged: boolean } {
-    const ordered = orderedFilePaths(worktreeSectionPaths(entries, current.staged), mode);
-    const index = ordered.indexOf(current.path);
-    const moved = new Set(paths);
-    const following = ordered.slice(index + 1).find((path) => !moved.has(path));
-    if (following) return { path: following, staged: current.staged };
-    const preceding = ordered.slice(0, Math.max(index, 0)).filter((path) => !moved.has(path)).at(-1);
-    if (preceding) return { path: preceding, staged: current.staged };
-    return { path: current.path, staged: action === "stage" };
-}
-
-function applyTheme(settings: AppSettings): void {
-    const root = document.documentElement;
-    const theme = settings.theme;
-    const variables: Record<string, string> = {
-        "--gc-background": theme.background,
-        "--gc-surface": theme.surface,
-        "--gc-panel": theme.panel,
-        "--gc-border": theme.border,
-        "--gc-text": theme.text,
-        "--gc-muted": theme.muted_text,
-        "--gc-accent": theme.accent,
-        "--gc-success": theme.success,
-        "--gc-warning": theme.warning,
-        "--gc-danger": theme.danger,
-        "--gc-diff-add": theme.diff_addition,
-        "--gc-diff-delete": theme.diff_deletion,
-    };
-    for (const [name, value] of Object.entries(variables)) root.style.setProperty(name, value);
-    for (let index = 0; index < GRAPH_LANE_SLOTS; index += 1) {
-        root.style.setProperty(`--gc-lane-${index}`, theme.graph_palette[index % theme.graph_palette.length]);
-    }
-}
+import { currentBranch, githubRemoteIconUrls } from "./app/branches";
+import { EMPTY_COMMIT_DRAFT, EMPTY_STATE } from "./app/defaults";
+import { continuableOperation } from "./app/snapshot";
+import type { BranchMenuState, CommitMenuState, ConfirmState, PromptState, RuntimeRepository, TabMenuState } from "./app/state";
+import { AppDialogs } from "./app/AppDialogs";
+import { AppStatusBar } from "./app/AppStatusBar";
+import { HistoryPane } from "./app/HistoryPane";
+import { InspectorPane } from "./app/InspectorPane";
+import { useAppChrome } from "./app/useAppChrome";
+import { useAutoRefresh } from "./app/useAutoRefresh";
+import { useCommitSearch } from "./app/useCommitSearch";
+import { useCommitSelection } from "./app/useCommitSelection";
+import { useConflictActions } from "./app/useConflictActions";
+import { useConflictPreflight } from "./app/useConflictPreflight";
+import { useContextMenuActions } from "./app/useContextMenuActions";
+import { useDialogActions } from "./app/useDialogActions";
+import { useDiffPane } from "./app/useDiffPane";
+import { useGlobalKeybinds } from "./app/useGlobalKeybinds";
+import { usePanelLayout } from "./app/usePanelLayout";
+import { useRepositoryCommands } from "./app/useRepositoryCommands";
+import { useRepositoryOverview } from "./app/useRepositoryOverview";
+import { useRepositoryTabs } from "./app/useRepositoryTabs";
+import { useToasts } from "./app/useToasts";
+import { useWorkspaceBootstrap } from "./app/useWorkspaceBootstrap";
+import { useWorktreeMutations } from "./app/useWorktreeMutations";
+import { workspaceTabs } from "./app/workspace";
+import { wipChangeKind } from "./app/worktree";
 
 function App() {
     const [persisted, setPersisted] = useState<PersistedState>(EMPTY_STATE);
@@ -461,32 +87,23 @@ function App() {
     const [overviewLoading, setOverviewLoading] = useState(false);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [initializing, setInitializing] = useState(true);
-    const [searchOpen, setSearchOpen] = useState(false);
-    const [searchFocusToken, setSearchFocusToken] = useState(0);
-    const [searchQuery, setSearchQuery] = useState("");
-    const [searchOids, setSearchOids] = useState<string[]>([]);
-    const [searchIndex, setSearchIndex] = useState(0);
-    const [searchBusy, setSearchBusy] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [prompt, setPrompt] = useState<PromptState>(null);
     const [startDialog, setStartDialog] = useState<"clone" | "create" | null>(null);
     const [confirmRequest, setConfirmRequest] = useState<ConfirmState>(null);
     const [commitMenu, setCommitMenu] = useState<CommitMenuState | null>(null);
-    const [commitMenuActions, setCommitMenuActions] = useState<{
-        oid: string;
-        actions: CommitActionAvailability[];
-    } | null>(null);
     const [tabMenu, setTabMenu] = useState<TabMenuState | null>(null);
     const [branchMenu, setBranchMenu] = useState<BranchMenuState | null>(null);
-    const [toasts, setToasts] = useState<ToastMessage[]>([]);
-    const [sidebarWidth, setSidebarWidth] = useState(252);
-    const [detailsWidth, setDetailsWidth] = useState(370);
-    const [leftPanelVisible, setLeftPanelVisible] = useState(true);
-    const [rightPanelVisible, setRightPanelVisible] = useState(true);
-    const [appMetadata, setAppMetadata] = useState<AppMetadata>({ version: "unknown", commit: "unknown" });
+    const {
+        beginResize,
+        detailsWidth,
+        leftPanelVisible,
+        rightPanelVisible,
+        setLeftPanelVisible,
+        setRightPanelVisible,
+        sidebarWidth,
+    } = usePanelLayout();
     const appUpdate = useAppUpdate();
-    const [conflictPreflight, setConflictPreflight] = useState<ConflictPreflightResult | null>(null);
-    const [conflictPreflightLoading, setConflictPreflightLoading] = useState(false);
     const [conflictEditor, setConflictEditor] = useState<ConflictFileDetails | null>(null);
     const [commitDrafts, setCommitDrafts] = useState<Record<string, CommitDraft>>({});
     const [overviewRepositoryId, setOverviewRepositoryId] = useState<string | null>(null);
@@ -504,11 +121,8 @@ function App() {
     const workspaceRef = useRef(persisted.workspace);
     const overviewLoadSequence = useRef(0);
     const detailsLoadSequence = useRef(0);
-    const commitMenuActionSequence = useRef(0);
     const diffLoadSequence = useRef(0);
     const historyLoadSequence = useRef(0);
-    const searchSequence = useRef(0);
-    const conflictPreflightSequence = useRef(0);
 
     const changeFileViewMode = useCallback((mode: FileViewMode) => {
         setPersisted((current) => (
@@ -535,929 +149,220 @@ function App() {
     const activeTabKind = activeTab?.kind;
     const activeTabPath = activeTab?.repository_path;
 
-    useEffect(() => {
-        activeRepositoryIdRef.current = activeRepository?.repository_id ?? null;
-    }, [activeRepository]);
+    const appMetadata = useAppChrome({
+        activeRepository,
+        activeRepositoryIdRef,
+        activeTabId,
+        setBranchMenu,
+        setCommitMenu,
+        setConfirmRequest,
+        setConflictEditor,
+        setPrompt,
+        setStartDialog,
+        setTabMenu,
+    });
 
-    useEffect(() => {
-        setPrompt(null);
-        setStartDialog(null);
-        setConfirmRequest(null);
-        setCommitMenu(null);
-        setTabMenu(null);
-        setBranchMenu(null);
-        setConflictEditor(null);
-    }, [activeTabId]);
+    const { addToast, dismissToast, showError, toasts } = useToasts();
 
-    useEffect(() => {
-        const preventNativeContextMenu = (event: MouseEvent) => event.preventDefault();
-        document.addEventListener("contextmenu", preventNativeContextMenu, true);
-        return () => document.removeEventListener("contextmenu", preventNativeContextMenu, true);
-    }, []);
-
-    useEffect(() => {
-        void gitcatApi.appMetadata()
-            .then(setAppMetadata)
-            .catch(() => undefined);
-    }, []);
-
-    const addToast = useCallback((toast: Omit<ToastMessage, "id">) => {
-        const id = makeId("toast");
-        setToasts((current) => [...current.slice(-3), { ...toast, id }]);
-        window.setTimeout(() => setToasts((current) => current.filter((item) => item.id !== id)), 5000);
-    }, []);
-
-    const showError = useCallback((title: string, error: unknown) => {
-        const apiError = getApiError(error);
-        const details = apiError.details?.replace(/^(exit code \d+|terminated):\s*/i, "");
-        const fileRemovalBusy = apiError.message === "Some files could not be removed because another process is using them";
-        const detail = fileRemovalBusy
-            ? apiError.message
-            : apiError.details
-            ? `${apiError.message}\n${details}`
-            : apiError.message;
-        addToast({ tone: "error", title, detail });
-    }, [addToast]);
-
-    const openStoredRepositories = useCallback(async (state: PersistedState) => {
-        const tabs = workspaceTabs(state.workspace).filter((tab) => tab.kind !== "start");
-        if (!tabs.length) return;
-        const opened = await Promise.all(tabs.map(async (
-            tab,
-        ): Promise<{ tabId: string; repository?: RuntimeRepository; error?: string }> => {
-            try {
-                return { tabId: tab.id, repository: await gitcatApi.openRepository(tab.repository_path) };
-            } catch (error) {
-                return { tabId: tab.id, error: getApiError(error).message };
-            }
-        }));
-        const next: Record<string, RuntimeRepository> = {};
-        const failed: Record<string, string> = {};
-        for (const result of opened) {
-            if (result.repository) next[result.tabId] = result.repository;
-            else failed[result.tabId] = result.error ?? "Repository could not be opened";
-        }
-        setRuntime(next);
-        setTabErrors(failed);
-        const preferred = state.workspace.active_tab_id;
-        const preferredIsStartTab = workspaceTabs(state.workspace)
-            .some((tab) => tab.id === preferred && tab.kind === "start");
-        if (!preferred || (!next[preferred] && !preferredIsStartTab)) {
-            const fallback = Object.keys(next)[0] ?? null;
-            setPersisted((current) => ({ ...current, workspace: { ...current.workspace, active_tab_id: fallback } }));
-        }
-    }, []);
-
-    const openTabRepository = useCallback(async (tabId: string, path: string) => {
-        if (openingTabsRef.current.has(tabId)) return;
-        openingTabsRef.current.add(tabId);
-        setOpeningTabIds((current) => [...current, tabId]);
-        try {
-            const opened = await gitcatApi.openRepository(path);
-            setRuntime((current) => ({ ...current, [tabId]: opened }));
-            setTabErrors((current) => {
-                if (!(tabId in current)) return current;
-                const next = { ...current };
-                delete next[tabId];
-                return next;
-            });
-        } catch (error) {
-            setTabErrors((current) => ({ ...current, [tabId]: getApiError(error).message }));
-            showError("Repository could not be opened", error);
-        } finally {
-            openingTabsRef.current.delete(tabId);
-            setOpeningTabIds((current) => current.filter((id) => id !== tabId));
-        }
-    }, [showError]);
-
-    useEffect(() => {
-        if (initializing || !activeTabId || activeRepository) return;
-        if (!activeTabPath || activeTabKind === "start") return;
-        void openTabRepository(activeTabId, activeTabPath);
-    }, [activeRepository, activeTabId, activeTabKind, activeTabPath, initializing, openTabRepository]);
-
-    useEffect(() => {
-        let alive = true;
-        void (async () => {
-            try {
-                const state = normalizePersistedState(await gitcatApi.loadPersistedState());
-                if (!alive) return;
-                setPersisted(state);
-                applyTheme(state.settings);
-                await openStoredRepositories(state);
-            } catch (error) {
-                if (alive) showError("Could not load preferences", error);
-            } finally {
-                if (alive) {
-                    setHydrated(true);
-                    setInitializing(false);
-                }
-            }
-        })();
-        return () => { alive = false; };
-    }, [openStoredRepositories, showError]);
-
-    useEffect(() => {
-        applyTheme(persisted.settings);
-        if (!hydrated) return;
-        const timer = window.setTimeout(() => {
-            void gitcatApi.savePersistedState(persisted).catch((error) => showError("Could not save workspace", error));
-        }, 250);
-        return () => window.clearTimeout(timer);
-    }, [hydrated, persisted, showError]);
+    const { openTabRepository } = useWorkspaceBootstrap({
+        activeRepository,
+        activeTabId,
+        activeTabKind,
+        activeTabPath,
+        hydrated,
+        initializing,
+        openingTabsRef,
+        persisted,
+        setHydrated,
+        setInitializing,
+        setOpeningTabIds,
+        setPersisted,
+        setRuntime,
+        setTabErrors,
+        showError,
+    });
 
     useEffect(() => { selectedOidRef.current = selectedOid; }, [selectedOid]);
     useEffect(() => { workspaceRef.current = persisted.workspace; }, [persisted.workspace]);
 
-    const loadOverview = useCallback(async (
-        repository: RuntimeRepository,
-        preserveSelection = true,
-        showLoading = true,
-    ) => {
-        const sequence = ++overviewLoadSequence.current;
-        if (showLoading && activeRepositoryIdRef.current === repository.repository_id) {
-            ++historyLoadSequence.current;
-            setHistoryLoading(false);
-            setOverviewLoading(true);
-        }
-        try {
-            const overview = await gitcatApi.loadRepositoryOverview(repository.repository_id, {
-                scope: { kind: "all_refs" },
-                cursor: null,
-                limit: persisted.settings.history_page_size,
-            });
-            if (
-                sequence !== overviewLoadSequence.current
-                || activeRepositoryIdRef.current !== repository.repository_id
-            ) return;
-            startTransition(() => {
-                setOverviewRepositoryId(repository.repository_id);
-                setSnapshot(overview.snapshot);
-                setHistory(overview.history);
-                setStashes(overview.stashes);
-                const pending = pendingSelectionRef.current;
-                pendingSelectionRef.current = null;
-                // A reword rebuilds the commit under a new oid; re-find it by
-                // position (the replay keeps the order) and fall back to subject.
-                const rewritten = pending
-                    ? overview.history.commits[pending.index]?.subject === pending.subject
-                        ? overview.history.commits[pending.index]
-                        : overview.history.commits.find((commit) => commit.subject === pending.subject)
-                    : undefined;
-                const previous = preserveSelection ? selectedOidRef.current : null;
-                if (rewritten) {
-                    setSelectedOid(rewritten.oid);
-                    setWipSelected(false);
-                } else if (previous && overview.history.commits.some((commit) => commit.oid === previous)) {
-                    setSelectedOid(previous);
-                    setWipSelected(false);
-                } else if (
-                    !overview.snapshot.status.clean
-                    || continuableOperation(overview.snapshot.operation_state)
-                ) {
-                    setSelectedOid(null);
-                    setWipSelected(true);
-                } else {
-                    setSelectedOid(overview.history.commits[0]?.oid ?? null);
-                    setWipSelected(false);
-                }
-            });
-        } finally {
-            if (
-                showLoading
-                && sequence === overviewLoadSequence.current
-                && activeRepositoryIdRef.current === repository.repository_id
-            ) setOverviewLoading(false);
-        }
-    }, [persisted.settings.history_page_size]);
-
-    useEffect(() => {
-        ++overviewLoadSequence.current;
-        ++detailsLoadSequence.current;
-        ++diffLoadSequence.current;
-        ++historyLoadSequence.current;
-        setHistoryLoading(false);
-        setOverviewLoading(false);
-        setOverviewRepositoryId(null);
-        setSnapshot(null);
-        setHistory(null);
-        setDetails(null);
-        setDiff(null);
-        setConflictEditor(null);
-        setSelectedPath(undefined);
-        setSelectedWorktreeFile(null);
-        setDiffLoading(false);
-        setCenterView("graph");
-        if (!activeRepository) return;
-        void loadOverview(activeRepository, false)
-            .catch((error) => showError("Repository could not be loaded", error));
-    }, [activeRepository, loadOverview, showError]);
-
-    useEffect(() => {
-        if (
-            !activeRepository
-            || overviewRepositoryId !== activeRepository.repository_id
-            || !selectedOid
-            || wipSelected
-        ) {
-            ++detailsLoadSequence.current;
-            setDetails(null);
-            setCommitActions([]);
-            return;
-        }
-        const repositoryId = activeRepository.repository_id;
-        const sequence = ++detailsLoadSequence.current;
-        setDetails(null);
-        setCommitActions([]);
-        void gitcatApi.loadCommitPanel(activeRepository.repository_id, selectedOid)
-            .then((panel) => {
-                if (
-                    sequence !== detailsLoadSequence.current
-                    || activeRepositoryIdRef.current !== repositoryId
-                ) return;
-                setDetails(panel.details);
-                setCommitActions(panel.actions);
-            })
-            .catch((error) => {
-                if (
-                    sequence === detailsLoadSequence.current
-                    && activeRepositoryIdRef.current === repositoryId
-                ) showError("Commit details could not be loaded", error);
-            });
-    }, [activeRepository, overviewRepositoryId, selectedOid, showError, wipSelected]);
-
-    const closeDiff = useCallback(() => {
-        ++diffLoadSequence.current;
-        setDiff(null);
-        setDiffLoading(false);
-        setSelectedPath(undefined);
-        setSelectedWorktreeFile(null);
-        setCenterView("graph");
-    }, []);
-
-    useEffect(() => {
-        if (!selectedWorktreeFile || !snapshot) return;
-        const selectedEntry = snapshot.status.entries.find((entry) => entry.path === selectedWorktreeFile.path);
-        const stillVisible = selectedWorktreeFile.staged
-            ? Boolean(selectedEntry?.index && !selectedEntry.conflicted)
-            : Boolean(selectedEntry?.worktree || selectedEntry?.conflicted);
-        if (!stillVisible) closeDiff();
-    }, [closeDiff, selectedWorktreeFile, snapshot]);
-
-    useEffect(() => {
-        const sequence = ++searchSequence.current;
-        if (!searchOpen || !activeRepository || !searchQuery.trim()) {
-            setSearchOids([]);
-            setSearchIndex(0);
-            setSearchBusy(false);
-            return;
-        }
-        const repositoryId = activeRepository.repository_id;
-        setSearchBusy(true);
-        const timer = window.setTimeout(() => {
-            void gitcatApi.searchCommits(activeRepository.repository_id, {
-                query: searchQuery,
-                scope: { kind: "all_refs" },
-                limit: 1000,
-            }).then((result) => {
-                if (
-                    sequence !== searchSequence.current
-                    || activeRepositoryIdRef.current !== repositoryId
-                ) return;
-                setSearchOids(result.hits.map((hit) => hit.oid));
-                setSearchIndex(0);
-                if (result.hits[0]) {
-                    ++diffLoadSequence.current;
-                    setSelectedOid(result.hits[0].oid);
-                    setWipSelected(false);
-                    setSelectedPath(undefined);
-                    setSelectedWorktreeFile(null);
-                    setDiff(null);
-                    setDiffLoading(false);
-                    setCenterView("graph");
-                }
-            }).catch((error) => {
-                if (
-                    sequence === searchSequence.current
-                    && activeRepositoryIdRef.current === repositoryId
-                ) showError("Commit search failed", error);
-            })
-                .finally(() => { if (sequence === searchSequence.current) setSearchBusy(false); });
-        }, 180);
-        return () => window.clearTimeout(timer);
-    }, [activeRepository, searchOpen, searchQuery, showError]);
-
-    const applyOptimisticWorktreeMutation = useCallback((
-        action: WorktreeStageAction,
-        paths: string[],
-        selection?: { path: string; staged: boolean } | null,
-    ) => {
-        if (!activeRepository || !snapshot || !paths.length) return undefined;
-        const repositoryId = activeRepository.repository_id;
-        const previousSnapshot = snapshot;
-        const previousSelectedWorktreeFile = selectedWorktreeFile;
-
-        setSnapshot((current) => {
-            if (!current || activeRepositoryIdRef.current !== repositoryId) return current;
-            return optimisticWorktreeSnapshot(current, action, paths);
-        });
-        setSelectedWorktreeFile((current) => {
-            if (activeRepositoryIdRef.current !== repositoryId) return current;
-            return selection ?? optimisticWorktreeSelection(current, action, paths);
-        });
-
-        return () => {
-            if (activeRepositoryIdRef.current !== repositoryId) return;
-            setSnapshot(previousSnapshot);
-            setSelectedWorktreeFile(previousSelectedWorktreeFile);
-        };
-    }, [activeRepository, selectedWorktreeFile, snapshot]);
-
-    const runMutation = useCallback(async (
-        title: string,
-        operation: (repository: RuntimeRepository) => Promise<unknown>,
-        options?: {
-            silent?: boolean;
-            optimistic?: () => (() => void) | undefined;
-            onError?: (error: unknown) => boolean;
-        },
-    ): Promise<boolean> => {
-        if (!activeRepository || busy || overviewLoading) return false;
-        let rollbackOptimistic: (() => void) | undefined;
-        let operationCompleted = false;
-        ++overviewLoadSequence.current;
-        setBusy(true);
-        try {
-            rollbackOptimistic = options?.optimistic?.();
-            const result = await operation(activeRepository);
-            operationCompleted = true;
-            if (activeRepositoryIdRef.current === activeRepository.repository_id) {
-                await loadOverview(activeRepository, true)
-                    .catch((error) => showError("Refresh failed", error));
-            }
-            if (isMutationResult(result) && result.conflicts.length) {
-                addToast({
-                    tone: "info",
-                    title: `${title}: attention required`,
-                    detail: `${result.conflicts.length} conflict${result.conflicts.length === 1 ? " remains" : "s remain"}. Resolve them in the Working tree panel.`,
-                });
-            } else if (!options?.silent) {
-                addToast({ tone: "success", title });
-            }
-            return true;
-        } catch (error) {
-            if (!operationCompleted) rollbackOptimistic?.();
-            if (!options?.onError?.(error)) showError(`${title} failed`, error);
-            return false;
-        } finally {
-            setBusy(false);
-        }
-    }, [activeRepository, addToast, busy, loadOverview, overviewLoading, showError]);
-
-    const rewordCommit = useCallback((oid: string, message: string) => {
-        if (!snapshot) return Promise.resolve(false);
-        const index = history?.commits.findIndex((commit) => commit.oid === oid) ?? -1;
-        const expected = expectedState(snapshot);
-        return runMutation("Commit message updated", (repository) => gitcatApi
-            .rewordCommit(repository.repository_id, oid, message, expected)
-            .then((result) => {
-                if (index >= 0) pendingSelectionRef.current = { index, subject: message.split("\n")[0].trim() };
-                return result;
-            }));
-    }, [history, runMutation, snapshot]);
-
-    const worktreeDiffFollowUp = useCallback((action: WorktreeStageAction, paths: string[]) => {
-        if (!activeRepository || busy || overviewLoading) return null;
-        if (!snapshot || centerView !== "diff" || !selectedWorktreeFile) return null;
-        if (selectedWorktreeFile.staged !== (action === "unstage")) return null;
-        if (!paths.includes(selectedWorktreeFile.path)) return null;
-        return nextWorktreeSelection(
-            snapshot.status.entries,
-            selectedWorktreeFile,
-            action,
-            paths,
-            persisted.settings.file_view_mode,
-        );
-    }, [
+    const { loadMoreHistory, loadOverview } = useRepositoryOverview({
         activeRepository,
+        activeRepositoryIdRef,
+        busy,
+        detailsLoadSequence,
+        diffLoadSequence,
+        history,
+        historyLoadSequence,
+        historyLoading,
+        historyPageSize: persisted.settings.history_page_size,
+        overviewLoadSequence,
+        overviewLoading,
+        overviewRepositoryId,
+        pendingSelectionRef,
+        selectedOid,
+        selectedOidRef,
+        setCenterView,
+        setCommitActions,
+        setConflictEditor,
+        setDetails,
+        setDiff,
+        setDiffLoading,
+        setHistory,
+        setHistoryLoading,
+        setOverviewLoading,
+        setOverviewRepositoryId,
+        setSelectedOid,
+        setSelectedPath,
+        setSelectedWorktreeFile,
+        setSnapshot,
+        setStashes,
+        setWipSelected,
+        showError,
+        wipSelected,
+    });
+
+    const {
+        closeDiff,
+        loadDiff,
+        openCommitFile,
+        openWorktreeDiff,
+        openWorktreeFileDiff,
+        reloadOpenWorktreeDiff,
+        swapWorktreeDiffSide,
+    } = useDiffPane({
+        activeRepository,
+        activeRepositoryIdRef,
+        autoReloadDiffRef,
+        diffContextLines: persisted.settings.diff_context_lines,
+        diffLoadSequence,
+        diffLoading,
+        diffMaxBytes: persisted.settings.diff_max_bytes,
+        diffMode,
+        diffWholeFileRef,
+        openDiffRequestRef,
+        openWorktreeDiffRef,
+        selectedOid,
+        selectedWorktreeFile,
+        setCenterView,
+        setDiff,
+        setDiffLoading,
+        setSelectedPath,
+        setSelectedWorktreeFile,
+        showError,
+        snapshot,
+        swapWorktreeDiffSideRef,
+    });
+
+    const {
+        navigateSearch,
+        openSearch,
+        searchBusy,
+        searchFocusToken,
+        searchIndex,
+        searchOids,
+        searchOpen,
+        searchQuery,
+        setSearchOpen,
+        setSearchQuery,
+    } = useCommitSearch({
+        activeRepository,
+        activeRepositoryIdRef,
+        diffLoadSequence,
+        setCenterView,
+        setCommitActions,
+        setDetails,
+        setDiff,
+        setDiffLoading,
+        setSelectedOid,
+        setSelectedPath,
+        setSelectedWorktreeFile,
+        setWipSelected,
+        showError,
+    });
+
+    const { createPatchFile, rewordCommit, runMutation, stagePaths, unstagePaths } = useWorktreeMutations({
+        activeRepository,
+        activeRepositoryIdRef,
+        addToast,
         busy,
         centerView,
+        fileViewMode: persisted.settings.file_view_mode,
+        history,
+        loadOverview,
+        openWorktreeDiffRef,
+        overviewLoadSequence,
         overviewLoading,
-        persisted.settings.file_view_mode,
+        pendingSelectionRef,
         selectedWorktreeFile,
+        setBusy,
+        setSelectedWorktreeFile,
+        setSnapshot,
+        setStageCollapse,
+        showError,
         snapshot,
-    ]);
+        swapWorktreeDiffSideRef,
+    });
 
-    const stagePaths = useCallback((paths: string[], collapse?: FolderCollapseTarget) => {
-        if (collapse) setStageCollapse((current) => ({ target: collapse, staged: true, token: (current?.token ?? 0) + 1 }));
-        const followUp = worktreeDiffFollowUp("stage", paths);
-        const crossed = followUp?.staged === true;
-        if (followUp && !crossed) openWorktreeDiffRef.current(followUp.path, followUp.staged);
-        void runMutation(
-            "Files staged",
-            (repository) => gitcatApi.stagePaths(repository.repository_id, paths),
-            {
-                silent: true,
-                optimistic: () => applyOptimisticWorktreeMutation("stage", paths, followUp),
-            },
-        ).then((done) => {
-            if (done && followUp && crossed) swapWorktreeDiffSideRef.current(followUp.path, followUp.staged);
-        });
-    }, [applyOptimisticWorktreeMutation, runMutation, worktreeDiffFollowUp]);
+    const {
+        chooseRepository,
+        cloneRepository,
+        closeTab,
+        createRepository,
+        forgetRecentRepository,
+        moveRepositoryTab,
+        openRepositoryPath,
+        openStartTab,
+        reopenClosedRepository,
+    } = useRepositoryTabs({
+        addToast,
+        busy,
+        closedTabsRef,
+        runtime,
+        setBusy,
+        setCommitDrafts,
+        setPersisted,
+        setRuntime,
+        setTabErrors,
+        showError,
+        workspace: persisted.workspace,
+        workspaceRef,
+    });
 
-    const unstagePaths = useCallback((paths: string[], collapse?: FolderCollapseTarget) => {
-        if (collapse) setStageCollapse((current) => ({ target: collapse, staged: false, token: (current?.token ?? 0) + 1 }));
-        const followUp = worktreeDiffFollowUp("unstage", paths);
-        const crossed = followUp?.staged === false;
-        if (followUp && !crossed) openWorktreeDiffRef.current(followUp.path, followUp.staged);
-        void runMutation(
-            "Files unstaged",
-            (repository) => gitcatApi.unstagePaths(repository.repository_id, paths),
-            {
-                silent: true,
-                optimistic: () => applyOptimisticWorktreeMutation("unstage", paths, followUp),
-            },
-        ).then((done) => {
-            if (done && followUp && crossed) swapWorktreeDiffSideRef.current(followUp.path, followUp.staged);
-        });
-    }, [applyOptimisticWorktreeMutation, runMutation, worktreeDiffFollowUp]);
+    const {
+        focusWorktree,
+        jumpToCommit,
+        selectCommit,
+        selectCommitOid,
+        selectFirstCommitFromWip,
+        selectWip,
+        selectWipFromGraph,
+    } = useCommitSelection({
+        diffLoadSequence,
+        history,
+        selectedOidRef,
+        setCenterView,
+        setCommitActions,
+        setDetails,
+        setDiff,
+        setDiffLoading,
+        setRightPanelVisible,
+        setSelectedOid,
+        setSelectedPath,
+        setSelectedWorktreeFile,
+        setWipSelected,
+        wipRowRef,
+        wipSelected,
+    });
 
-    const createPatchFile = useCallback(async (paths: string[], staged: boolean) => {
-        if (!activeRepository) return;
-        const repositoryId = activeRepository.repository_id;
-        try {
-            let destination = `${paths[0]?.split(/[\\/]/).at(-1) ?? "changes"}.patch`;
-            if (gitcatApi.runtime === "tauri") {
-                const { save } = await import("@tauri-apps/plugin-dialog");
-                const chosen = await save({
-                    title: "Save patch",
-                    defaultPath: destination,
-                    filters: [{ name: "Patch", extensions: ["patch", "diff"] }],
-                });
-                if (!chosen) return;
-                destination = chosen;
-            }
-            await gitcatApi.savePatch(repositoryId, paths, staged, destination);
-            addToast({ tone: "success", title: "Patch created", detail: destination });
-        } catch (error) {
-            showError("Create patch failed", error);
-        }
-    }, [activeRepository, addToast, showError]);
-
-    const adoptRepository = useCallback((opened: OpenedRepository, targetTabId: string | null) => {
-        const tabId = targetTabId ?? makeId("tab");
-        setRuntime((current) => ({ ...current, [tabId]: opened }));
-        setTabErrors((current) => {
-            if (!(tabId in current)) return current;
-            const next = { ...current };
-            delete next[tabId];
-            return next;
-        });
-        setPersisted((current) => {
-            const filled = (tab: RepositoryTab): RepositoryTab => (
-                tab.id === tabId
-                    ? {
-                        ...tab,
-                        kind: "repository",
-                        repository_path: opened.info.root,
-                        display_name: opened.info.name,
-                    }
-                    : tab
-            );
-            const reused = workspaceTabs(current.workspace).some((tab) => tab.id === tabId);
-            const workspace = reused
-                ? {
-                    ...current.workspace,
-                    ungrouped_tabs: current.workspace.ungrouped_tabs.map(filled),
-                    groups: current.workspace.groups.map((group) => ({ ...group, tabs: group.tabs.map(filled) })),
-                    active_tab_id: tabId,
-                }
-                : {
-                    ...current.workspace,
-                    ungrouped_tabs: [
-                        ...current.workspace.ungrouped_tabs,
-                        {
-                            id: tabId,
-                            repository_path: opened.info.root,
-                            display_name: opened.info.name,
-                            order: current.workspace.ungrouped_tabs.length,
-                            kind: "repository" as const,
-                        },
-                    ],
-                    active_tab_id: tabId,
-                };
-            const recent: RecentRepository = {
-                path: opened.info.root,
-                name: opened.info.name,
-                opened_at: Date.now(),
-            };
-            return {
-                ...current,
-                workspace,
-                recents: [recent, ...current.recents.filter((entry) => entry.path !== recent.path)]
-                    .slice(0, RECENT_LIMIT),
-            };
-        });
-    }, []);
-
-    const forgetRecentRepository = useCallback((path: string) => {
-        setPersisted((current) => ({
-            ...current,
-            recents: current.recents.filter((entry) => entry.path !== path),
-        }));
-    }, []);
-
-    const openRepositoryPath = useCallback(async (path: string, targetTabId: string | null = null) => {
-        if (busy) return;
-        const existing = workspaceTabs(persisted.workspace)
-            .find((tab) => tab.kind !== "start" && tab.repository_path === path);
-        if (existing) {
-            setPersisted((current) => {
-                const drop = (tabs: RepositoryTab[]) => tabs.filter((tab) => tab.id !== targetTabId);
-                return {
-                    ...current,
-                    workspace: {
-                        ...current.workspace,
-                        ungrouped_tabs: drop(current.workspace.ungrouped_tabs),
-                        groups: current.workspace.groups.map((group) => ({
-                            ...group,
-                            collapsed: group.tabs.some((tab) => tab.id === existing.id) ? false : group.collapsed,
-                            tabs: drop(group.tabs),
-                        })),
-                        active_tab_id: existing.id,
-                    },
-                };
-            });
-            return;
-        }
-        setBusy(true);
-        try {
-            adoptRepository(await gitcatApi.openRepository(path), targetTabId);
-        } catch (error) {
-            showError("Repository could not be opened", error);
-        } finally {
-            setBusy(false);
-        }
-    }, [adoptRepository, busy, persisted.workspace, showError]);
-
-    const chooseRepository = useCallback(async (targetTabId: string | null = null) => {
-        if (busy) return;
-        try {
-            let path = "C:\\Users\\demo\\aurora-engine";
-            if (gitcatApi.runtime === "tauri") {
-                const selected = await chooseDirectory("Open Git repository");
-                if (!selected) return;
-                path = selected;
-            }
-            await openRepositoryPath(path, targetTabId);
-        } catch (error) {
-            showError("Repository could not be opened", error);
-        }
-    }, [busy, openRepositoryPath, showError]);
-
-    const cloneRepository = useCallback(async (options: CloneOptions, targetTabId: string | null) => {
-        if (busy) return;
-        setBusy(true);
-        try {
-            const opened = await gitcatApi.cloneRepository(options);
-            adoptRepository(opened, targetTabId);
-            addToast({ tone: "success", title: "Repository cloned", detail: opened.info.root });
-        } catch (error) {
-            showError("Clone failed", error);
-        } finally {
-            setBusy(false);
-        }
-    }, [addToast, adoptRepository, busy, showError]);
-
-    const createRepository = useCallback(async (
-        path: string,
-        defaultBranch: string,
-        ignorePatterns: string[],
-        targetTabId: string | null,
-    ) => {
-        if (busy) return;
-        setBusy(true);
-        try {
-            const opened = await gitcatApi.initRepository(path, defaultBranch);
-            if (ignorePatterns.length) {
-                await gitcatApi.appendGitignore(opened.repository_id, ignorePatterns);
-            }
-            adoptRepository(opened, targetTabId);
-            addToast({ tone: "success", title: "Repository created", detail: opened.info.root });
-        } catch (error) {
-            showError("Create repository failed", error);
-        } finally {
-            setBusy(false);
-        }
-    }, [addToast, adoptRepository, busy, showError]);
-
-    const openStartTab = useCallback(() => {
-        if (busy) return;
-        const tabId = makeId("tab");
-        setPersisted((current) => ({
-            ...current,
-            workspace: {
-                ...current.workspace,
-                ungrouped_tabs: [
-                    ...current.workspace.ungrouped_tabs,
-                    {
-                        id: tabId,
-                        repository_path: "",
-                        display_name: "New Tab",
-                        order: current.workspace.ungrouped_tabs.length,
-                        kind: "start" as const,
-                    },
-                ],
-                active_tab_id: tabId,
-            },
-        }));
-    }, [busy]);
-
-    const closeTab = useCallback((tabId: string) => {
-        if (busy) return;
-        const closedTab = workspaceTabs(workspaceRef.current)
-            .find((tab) => tab.id === tabId && tab.kind !== "start");
-        if (closedTab) {
-            closedTabsRef.current = [
-                ...closedTabsRef.current.filter((tab) => tab.repository_path !== closedTab.repository_path),
-                closedTab,
-            ].slice(-20);
-        }
-        const repository = runtime[tabId];
-        if (repository) void gitcatApi.closeRepository(repository.repository_id).catch(() => undefined);
-        setRuntime((current) => {
-            const next = { ...current };
-            delete next[tabId];
-            return next;
-        });
-        setTabErrors((current) => {
-            if (!(tabId in current)) return current;
-            const next = { ...current };
-            delete next[tabId];
-            return next;
-        });
-        setCommitDrafts((current) => {
-            if (!(tabId in current)) return current;
-            const next = { ...current };
-            delete next[tabId];
-            return next;
-        });
-        setPersisted((current) => {
-            const groups = current.workspace.groups.map((group) => ({ ...group, tabs: group.tabs.filter((tab) => tab.id !== tabId) }));
-            const ungrouped_tabs = current.workspace.ungrouped_tabs.filter((tab) => tab.id !== tabId);
-            const remaining = [...ungrouped_tabs, ...groups.flatMap((group) => group.tabs)];
-            const active = current.workspace.active_tab_id === tabId ? remaining[0]?.id ?? null : current.workspace.active_tab_id;
-            return { ...current, workspace: { ...current.workspace, ungrouped_tabs, groups, active_tab_id: active } };
-        });
-    }, [busy, runtime]);
-
-    const reopenClosedRepository = useCallback(async () => {
-        if (busy) return;
-        let restore: RepositoryTab | undefined;
-        while (closedTabsRef.current.length) {
-            const candidate = closedTabsRef.current[closedTabsRef.current.length - 1];
-            closedTabsRef.current = closedTabsRef.current.slice(0, -1);
-            if (!workspaceTabs(workspaceRef.current).some((tab) => tab.repository_path === candidate.repository_path)) {
-                restore = candidate;
-                break;
-            }
-        }
-        if (!restore) return;
-        setBusy(true);
-        try {
-            const opened: OpenedRepository = await gitcatApi.openRepository(restore.repository_path);
-            const tab: RepositoryTab = { ...restore, id: makeId("tab"), repository_path: opened.info.root, order: 0 };
-            setRuntime((current) => ({ ...current, [tab.id]: opened }));
-            setPersisted((current) => {
-                const ungrouped_tabs = [
-                    ...current.workspace.ungrouped_tabs,
-                    { ...tab, order: current.workspace.ungrouped_tabs.length },
-                ];
-                return { ...current, workspace: { ...current.workspace, ungrouped_tabs, active_tab_id: tab.id } };
-            });
-        } catch (error) {
-            showError("Repository could not be reopened", error);
-        } finally {
-            setBusy(false);
-        }
-    }, [busy, showError]);
-
-    const moveRepositoryTab = useCallback((tabId: string, groupId: string | null) => {
-        setPersisted((current) => {
-            let moved = current.workspace.ungrouped_tabs.find((tab) => tab.id === tabId);
-            const ungroupedWithout = current.workspace.ungrouped_tabs.filter((tab) => tab.id !== tabId);
-            const groupsWithout = current.workspace.groups.map((group) => ({
-                ...group,
-                tabs: group.tabs.filter((tab) => {
-                    if (tab.id === tabId) moved = tab;
-                    return tab.id !== tabId;
-                }),
-            }));
-            const movedTab = moved;
-            if (!movedTab) return current;
-            if (groupId === null) {
-                const ungrouped_tabs = [...ungroupedWithout, { ...movedTab, order: ungroupedWithout.length }];
-                return { ...current, workspace: { ...current.workspace, ungrouped_tabs, groups: groupsWithout } };
-            }
-            const groups = groupsWithout.map((group) => group.id === groupId
-                ? { ...group, collapsed: false, tabs: [...group.tabs, { ...movedTab, order: group.tabs.length }] }
-                : group);
-            return { ...current, workspace: { ...current.workspace, ungrouped_tabs: ungroupedWithout, groups } };
-        });
-    }, []);
-
-    const selectCommitOid = useCallback((oid: string) => {
-        if (!wipSelected && selectedOidRef.current === oid) return;
-
-        ++diffLoadSequence.current;
-        setSelectedOid(oid);
-        setWipSelected(false);
-        setDetails(null);
-        setCommitActions([]);
-        setSelectedPath(undefined);
-        setSelectedWorktreeFile(null);
-        setDiff(null);
-        setDiffLoading(false);
-        setCenterView("graph");
-    }, [wipSelected]);
-
-    const selectCommit = useCallback((commit: CommitSummary) => {
-        selectCommitOid(commit.oid);
-    }, [selectCommitOid]);
-
-    const jumpToCommit = useCallback((oid: string) => {
-        selectCommitOid(oid);
-        requestAnimationFrame(() => {
-            document.querySelector<HTMLElement>(`[data-oid="${oid}"]`)?.scrollIntoView({ block: "center" });
-        });
-    }, [selectCommitOid]);
-
-    const selectWip = useCallback(() => {
-        ++diffLoadSequence.current;
-        setWipSelected(true);
-        setSelectedOid(null);
-        setDetails(null);
-        setCommitActions([]);
-        setSelectedPath(undefined);
-        setSelectedWorktreeFile(null);
-        setDiff(null);
-        setDiffLoading(false);
-        setCenterView("graph");
-    }, []);
-
-    const focusWorktree = useCallback(() => {
-        selectWip();
-        setRightPanelVisible(true);
-    }, [selectWip]);
-
-    const selectFirstCommitFromWip = useCallback(() => {
-        const firstCommit = history?.commits[0];
-        if (!firstCommit) return;
-
-        document.querySelector<HTMLElement>("[data-commit-list]")?.focus();
-        selectCommit(firstCommit);
-    }, [history, selectCommit]);
-
-    const selectWipFromGraph = useCallback(() => {
-        selectWip();
-        wipRowRef.current?.focus();
-    }, [selectWip]);
-
-    const loadDiff = useCallback(async (request: DiffRequest, silent = false) => {
-        if (!activeRepository) return;
-        const repositoryId = activeRepository.repository_id;
-        const sequence = ++diffLoadSequence.current;
-        openDiffRequestRef.current = { sequence, request };
-        if (!silent) {
-            setSelectedPath(request.path);
-            setCenterView("diff");
-            setDiff(null);
-            setDiffLoading(true);
-        }
-        try {
-            const nextDiff = await gitcatApi.diff(repositoryId, request);
-            if (
-                sequence !== diffLoadSequence.current
-                || activeRepositoryIdRef.current !== repositoryId
-            ) return;
-            setDiff((current) => (current && sameFileDiff(current, nextDiff) ? current : nextDiff));
-        } catch (error) {
-            if (
-                !silent
-                && sequence === diffLoadSequence.current
-                && activeRepositoryIdRef.current === repositoryId
-            ) showError("Diff could not be loaded", error);
-        } finally {
-            if (!silent && sequence === diffLoadSequence.current) setDiffLoading(false);
-        }
-    }, [activeRepository, showError]);
-
-    const reloadOpenWorktreeDiff = useCallback(() => {
-        const open = openDiffRequestRef.current;
-        if (!activeRepository || !open || diffLoading) return;
-        if (open.sequence !== diffLoadSequence.current) return;
-        const target = open.request.target.kind;
-        if (target !== "worktree" && target !== "staged") return;
-        void loadDiff(open.request, true);
-    }, [activeRepository, diffLoading, loadDiff]);
-
-    useEffect(() => {
-        autoReloadDiffRef.current = reloadOpenWorktreeDiff;
-    }, [reloadOpenWorktreeDiff]);
-
-    useEffect(() => {
-        const wholeFile = isWholeFileMode(diffMode);
-        diffWholeFileRef.current = wholeFile;
-        const open = openDiffRequestRef.current;
-        if (!open || open.sequence !== diffLoadSequence.current) return;
-        if (open.request.whole_file === wholeFile) return;
-        void loadDiff({ ...open.request, whole_file: wholeFile }, true);
-    }, [diffMode, loadDiff]);
-
-    const openCommitFile = useCallback((file: ChangedFile) => {
-        if (!selectedOid) return;
-        setSelectedWorktreeFile(null);
-        void loadDiff({
-            target: { kind: "commit", oid: selectedOid, parent_index: 0 },
-            path: file.new_path,
-            context_lines: persisted.settings.diff_context_lines,
-            ignore_whitespace: false,
-            max_bytes: persisted.settings.diff_max_bytes,
-            whole_file: diffWholeFileRef.current,
-        });
-    }, [loadDiff, persisted.settings.diff_context_lines, persisted.settings.diff_max_bytes, selectedOid]);
-
-    const openWorktreeFileDiff = useCallback((path: string, staged: boolean) => {
-        setSelectedWorktreeFile({ path, staged });
-        void loadDiff({
-            target: { kind: staged ? "staged" : "worktree" },
-            path,
-            context_lines: persisted.settings.diff_context_lines,
-            ignore_whitespace: false,
-            max_bytes: persisted.settings.diff_max_bytes,
-            whole_file: diffWholeFileRef.current,
-        });
-    }, [loadDiff, persisted.settings.diff_context_lines, persisted.settings.diff_max_bytes]);
-
-    const openWorktreeDiff = useCallback((entry: StatusEntry, staged: boolean) => {
-        openWorktreeFileDiff(entry.path, staged);
-    }, [openWorktreeFileDiff]);
-
-    const swapWorktreeDiffSide = useCallback((path: string, staged: boolean) => {
-        const open = openDiffRequestRef.current;
-        if (!open || open.sequence !== diffLoadSequence.current || open.request.path !== path) return;
-        const kind = open.request.target.kind;
-        if (kind !== "worktree" && kind !== "staged") return;
-        setSelectedWorktreeFile({ path, staged });
-        void loadDiff({ ...open.request, target: { kind: staged ? "staged" : "worktree" } }, true);
-    }, [loadDiff]);
-
-    useEffect(() => {
-        openWorktreeDiffRef.current = openWorktreeFileDiff;
-        swapWorktreeDiffSideRef.current = swapWorktreeDiffSide;
-    }, [openWorktreeFileDiff, swapWorktreeDiffSide]);
-
-    const openConflictEditor = useCallback(async (entry: StatusEntry) => {
-        if (!activeRepository || busy) return;
-        const repositoryId = activeRepository.repository_id;
-        setBusy(true);
-        try {
-            const next = await gitcatApi.conflictDetails(repositoryId, entry.path);
-            if (activeRepositoryIdRef.current === repositoryId) setConflictEditor(next);
-        } catch (error) {
-            if (activeRepositoryIdRef.current === repositoryId) showError("Conflict editor could not be opened", error);
-        } finally {
-            setBusy(false);
-        }
-    }, [activeRepository, busy, showError]);
-
-    const resolveConflictEntry = useCallback((entry: StatusEntry, resolution: ConflictResolution) => {
-        if (resolution === "delete" && !window.confirm(`Delete '${entry.path}' as the conflict resolution?`)) return;
-        void runMutation("Conflict resolved", async (repository) => {
-            const conflict = await gitcatApi.conflictDetails(repository.repository_id, entry.path);
-            return gitcatApi.resolveConflict(
-                repository.repository_id,
-                entry.path,
-                resolution,
-                conflict.expected_state,
-            );
-        });
-    }, [runMutation]);
-
-    const resolveConflictPaths = useCallback((paths: string[], resolution: ConflictResolution) => {
-        if (!paths.length) return;
-        const count = `${paths.length} conflicted file${paths.length === 1 ? "" : "s"}`;
-        const question = resolution === "mark_resolved"
-            ? `Stage the current working copy of ${count} as resolved?`
-            : resolution === "delete"
-                ? `Delete ${count} as the conflict resolution?`
-                : `Take the ${resolution === "ours" ? "current" : "incoming"} version for ${count}?`;
-        if (!window.confirm(question)) return;
-        void runMutation(
-            `${paths.length} conflict${paths.length === 1 ? "" : "s"} resolved`,
-            (repository) => gitcatApi.resolveConflicts(repository.repository_id, paths, resolution),
-        );
-    }, [runMutation]);
+    const { openConflictEditor, resolveConflictEntry, resolveConflictPaths } = useConflictActions({
+        activeRepository,
+        activeRepositoryIdRef,
+        busy,
+        runMutation,
+        setBusy,
+        setConflictEditor,
+        showError,
+    });
 
     const copySha = useCallback(async (oid: string) => {
         try {
@@ -1468,193 +373,48 @@ function App() {
         }
     }, [addToast, showError]);
 
-    const navigateSearch = useCallback((direction: 1 | -1) => {
-        if (!searchOids.length) return;
-        const next = (searchIndex + direction + searchOids.length) % searchOids.length;
-        ++diffLoadSequence.current;
-        setSearchIndex(next);
-        setSelectedOid(searchOids[next]);
-        setWipSelected(false);
-        setDetails(null);
-        setCommitActions([]);
-        setSelectedPath(undefined);
-        setSelectedWorktreeFile(null);
-        setDiff(null);
-        setDiffLoading(false);
-        setCenterView("graph");
-    }, [searchIndex, searchOids]);
 
-    const fetchActiveRepository = useCallback(() => {
-        void runMutation("Fetch complete", (repository) => gitcatApi.fetch(repository.repository_id, {
-            remote: null,
-            prune: persisted.settings.auto_prune,
-            tags: false,
-        }));
-    }, [persisted.settings.auto_prune, runMutation]);
+    const {
+        abortActiveOperation,
+        autoResolveActiveConflicts,
+        continueActiveOperation,
+        createBranchAtHead,
+        fetchActiveRepository,
+        focusCommitMessage,
+        popLatestStash,
+        pullActiveRepository,
+        pushActiveRepository,
+        skipActiveOperation,
+        stashActiveRepository,
+    } = useRepositoryCommands({
+        addToast,
+        autoPrune: persisted.settings.auto_prune,
+        defaultPullMode: persisted.settings.default_pull_mode,
+        runMutation,
+        selectWip,
+        setRightPanelVisible,
+        setPrompt,
+        snapshot,
+        stashes,
+    });
 
-    const pullActiveRepository = useCallback((mode: PullMode = persisted.settings.default_pull_mode) => {
-        void runMutation("Pull complete", (repository) => gitcatApi.pull(repository.repository_id, {
-            remote: null,
-            branch: null,
-            mode,
-            prune: persisted.settings.auto_prune,
-            autostash: true,
-        }));
-    }, [persisted.settings.auto_prune, persisted.settings.default_pull_mode, runMutation]);
-
-    const pushActiveRepository = useCallback(() => {
-        void runMutation("Push complete", (repository) => gitcatApi.push(repository.repository_id, {
-            remote: null,
-            branch: null,
-            set_upstream: false,
-        }));
-    }, [runMutation]);
-
-    const createBranchAtHead = useCallback(() => {
-        if (!snapshot) return;
-        const oid = snapshot.head.kind === "unborn" ? null : snapshot.head.oid;
-        if (oid) setPrompt({ kind: "create_branch", startOid: oid });
-        else addToast({ tone: "info", title: "Create the first commit before branching" });
-    }, [addToast, snapshot]);
-
-    const stashActiveRepository = useCallback(() => {
-        void runMutation("Changes stashed", (repository) => gitcatApi.stashPush(repository.repository_id, null, true));
-    }, [runMutation]);
-
-    const popLatestStash = useCallback(() => {
-        if (!stashes.length) return;
-        void runMutation("Stash popped", (repository) => gitcatApi.stashApply(repository.repository_id, stashes[0].index, true));
-    }, [runMutation, stashes]);
-
-    const continueActiveOperation = useCallback(() => {
-        const operation = snapshot ? continuableOperation(snapshot.operation_state) : null;
-        if (operation) void runMutation("Operation continued", (repository) => gitcatApi.continueOperation(repository.repository_id, operation));
-    }, [runMutation, snapshot]);
-
-    const abortActiveOperation = useCallback(() => {
-        const operation = snapshot ? continuableOperation(snapshot.operation_state) : null;
-        if (!operation || !window.confirm(`Abort the active ${operation.replace("_", "-")} operation and discard its in-progress state?`)) return;
-        void runMutation("Operation aborted", (repository) => gitcatApi.abortOperation(repository.repository_id, operation));
-    }, [runMutation, snapshot]);
-
-    const skipActiveOperation = useCallback(() => {
-        const operation = snapshot ? continuableOperation(snapshot.operation_state) : null;
-        if (!operation || operation === "merge") return;
-        const label = operation.replace("_", "-");
-        if (!window.confirm(`Skip the commit currently being applied by this ${label} and drop its changes?`)) return;
-        void runMutation("Commit skipped", (repository) => gitcatApi.skipOperation(repository.repository_id, operation));
-    }, [runMutation, snapshot]);
-
-    const autoResolveActiveConflicts = useCallback(() => {
-        if (!snapshot?.status.entries.some((entry) => entry.conflicted)) return;
-        void runMutation("Recorded conflict resolutions applied", (repository) => gitcatApi.autoResolveConflicts(repository.repository_id));
-    }, [runMutation, snapshot]);
-
-    const focusCommitMessage = useCallback(() => {
-        if (!snapshot) return;
-        selectWip();
-        setRightPanelVisible(true);
-        requestAnimationFrame(() => document.getElementById("commit-message")?.focus());
-    }, [selectWip, snapshot]);
-
-    const openSearch = useCallback(() => {
-        setSearchOpen(true);
-        setSearchFocusToken((token) => token + 1);
-        setCenterView("graph");
-    }, []);
-
-    const refreshActiveRepository = useCallback(() => {
-        if (!activeRepository || busy || overviewLoading) return;
-        reloadOpenWorktreeDiff();
-        void loadOverview(activeRepository, true)
-            .catch((error) => showError("Refresh failed", error));
-    }, [activeRepository, busy, loadOverview, overviewLoading, reloadOpenWorktreeDiff, showError]);
-
-    const backgroundRefreshActiveRepository = useCallback(() => {
-        if (!activeRepository || busy || overviewLoading) return;
-        void loadOverview(activeRepository, true, false)
-            .catch((error) => showError("Refresh failed", error));
-    }, [activeRepository, busy, loadOverview, overviewLoading, showError]);
-
-    // Keep the latest refresh behind a ref so the long-lived filesystem-change
-    // listener below always calls the current one without re-subscribing.
-    useEffect(() => {
-        autoRefreshRef.current = backgroundRefreshActiveRepository;
-    }, [backgroundRefreshActiveRepository]);
-
-    const autoFetchActiveRepository = useCallback(() => {
-        if (!activeRepository || busy || overviewLoading) return;
-        if (!snapshot?.remotes.length) return;
-        const repository = activeRepository;
-        lastAutoFetchRef.current.set(repository.repository_id, Date.now());
-        void gitcatApi.fetch(repository.repository_id, {
-            remote: null,
-            prune: persisted.settings.auto_prune,
-            tags: false,
-        })
-            .then(() => {
-                if (activeRepositoryIdRef.current !== repository.repository_id) return;
-                return loadOverview(repository, true, false);
-            })
-            .catch(() => undefined);
-    }, [
+    const { refreshActiveRepository } = useAutoRefresh({
         activeRepository,
+        activeRepositoryIdRef,
+        autoFetchIntervalMinutes: persisted.settings.auto_fetch_interval_minutes,
+        autoFetchRef,
+        autoPrune: persisted.settings.auto_prune,
+        autoRefreshRef,
+        autoReloadDiffRef,
         busy,
+        lastAutoFetchRef,
         loadOverview,
         overviewLoading,
-        persisted.settings.auto_prune,
-        snapshot?.remotes.length,
-    ]);
-
-    useEffect(() => {
-        autoFetchRef.current = autoFetchActiveRepository;
-    }, [autoFetchActiveRepository]);
-
-    useEffect(() => {
-        const minutes = persisted.settings.auto_fetch_interval_minutes;
-        if (!minutes) return;
-        const timer = window.setInterval(() => autoFetchRef.current(), minutes * 60_000);
-        return () => window.clearInterval(timer);
-    }, [persisted.settings.auto_fetch_interval_minutes]);
-
-    useEffect(() => {
-        const minutes = persisted.settings.auto_fetch_interval_minutes;
-        if (!minutes || !overviewRepositoryId) return;
-        const lastFetchedAt = lastAutoFetchRef.current.get(overviewRepositoryId) ?? 0;
-        if (Date.now() - lastFetchedAt < minutes * 60_000) return;
-        autoFetchRef.current();
-    }, [overviewRepositoryId, persisted.settings.auto_fetch_interval_minutes]);
-
-    useEffect(() => {
-        if (gitcatApi.runtime !== "tauri") return;
-        const repositoryId = activeRepository?.repository_id;
-        if (repositoryId) void gitcatApi.watchRepository(repositoryId).catch(() => undefined);
-        else void gitcatApi.unwatchRepository().catch(() => undefined);
-    }, [activeRepository?.repository_id]);
-
-    useEffect(() => {
-        if (gitcatApi.runtime !== "tauri") return;
-        let unlisten: (() => void) | undefined;
-        let disposed = false;
-        void (async () => {
-            const { listen } = await import("@tauri-apps/api/event");
-            const stop = await listen<{ repository_id: string }>(
-                "repository:changed",
-                (event) => {
-                    if (event.payload.repository_id === activeRepositoryIdRef.current) {
-                        autoRefreshRef.current();
-                        autoReloadDiffRef.current();
-                    }
-                },
-            );
-            if (disposed) stop();
-            else unlisten = stop;
-        })();
-        return () => {
-            disposed = true;
-            unlisten?.();
-        };
-    }, []);
+        overviewRepositoryId,
+        reloadOpenWorktreeDiff,
+        showError,
+        snapshot,
+    });
 
     const orderedTabIds = useMemo(
         () => workspaceTabs(persisted.workspace).map((tab) => tab.id),
@@ -1682,170 +442,15 @@ function App() {
         activateRepositoryTab(orderedTabIds[nextIndex]);
     }, [activateRepositoryTab, activeTabId, orderedTabIds]);
 
-    useEffect(() => {
-        const onKeyDown = (event: KeyboardEvent) => {
-            if (event.defaultPrevented) return;
-            const keybinds = persisted.settings.keybinds;
-            const editable = isEditableTarget(event.target);
-            const matches = (binding: string) => (
-                matchesKeybind(event, binding)
-                && !(editable && isPlainTypingKeybind(binding))
-            );
-            if (settingsOpen || conflictEditor || prompt || startDialog || commitMenu || tabMenu) {
-                if (Object.values(keybinds).some((binding) => matches(binding))) event.preventDefault();
-                return;
-            }
-            if (matches(keybinds.next_repository)) {
-                event.preventDefault();
-                if (orderedTabIds.length > 1) cycleRepository(1);
-            } else if (matches(keybinds.previous_repository)) {
-                event.preventDefault();
-                if (orderedTabIds.length > 1) cycleRepository(-1);
-            } else if ([
-                keybinds.repository_1,
-                keybinds.repository_2,
-                keybinds.repository_3,
-                keybinds.repository_4,
-                keybinds.repository_5,
-                keybinds.repository_6,
-                keybinds.repository_7,
-                keybinds.repository_8,
-                keybinds.repository_9,
-            ].some(matches)) {
-                event.preventDefault();
-                const directBindings = [
-                    keybinds.repository_1,
-                    keybinds.repository_2,
-                    keybinds.repository_3,
-                    keybinds.repository_4,
-                    keybinds.repository_5,
-                    keybinds.repository_6,
-                    keybinds.repository_7,
-                    keybinds.repository_8,
-                    keybinds.repository_9,
-                ];
-                activateRepositoryTab(orderedTabIds[directBindings.findIndex(matches)]);
-            } else if (matches(keybinds.new_repository_tab)) {
-                event.preventDefault();
-                openStartTab();
-            } else if (matches(keybinds.close_repository)) {
-                event.preventDefault();
-                if (activeTabId) closeTab(activeTabId);
-            } else if (matches(keybinds.reopen_closed_repository)) {
-                event.preventDefault();
-                if (!busy) void reopenClosedRepository();
-            } else if (matches(keybinds.search_commits)) {
-                event.preventDefault();
-                if (activeRepository) openSearch();
-            } else if (matches(keybinds.open_repository)) {
-                event.preventDefault();
-                if (!busy) void chooseRepository();
-            } else if (matches(keybinds.open_repository_folder)) {
-                event.preventDefault();
-                if (activeRepository) {
-                    void gitcatApi.openRepositoryFolder(activeRepository.repository_id)
-                        .catch((error) => showError("Could not open repository folder", error));
-                }
-            } else if (matches(keybinds.open_settings)) {
-                event.preventDefault();
-                setSettingsOpen(true);
-            } else if (matches(keybinds.refresh_repository)) {
-                event.preventDefault();
-                refreshActiveRepository();
-            } else if (matches(keybinds.toggle_left_panel)) {
-                event.preventDefault();
-                if (activeRepository) setLeftPanelVisible((visible) => !visible);
-            } else if (matches(keybinds.toggle_right_panel)) {
-                event.preventDefault();
-                if (activeRepository) setRightPanelVisible((visible) => !visible);
-            } else if (matches(keybinds.fetch)) {
-                event.preventDefault();
-                if (activeRepository && !busy) fetchActiveRepository();
-            } else if (matches(keybinds.pull)) {
-                event.preventDefault();
-                if (activeRepository && !busy) pullActiveRepository();
-            } else if (matches(keybinds.push)) {
-                event.preventDefault();
-                if (activeRepository && !busy) pushActiveRepository();
-            } else if (matches(keybinds.create_branch)) {
-                event.preventDefault();
-                if (activeRepository && !busy) createBranchAtHead();
-            } else if (matches(keybinds.stash)) {
-                event.preventDefault();
-                if (activeRepository && !busy) stashActiveRepository();
-            } else if (matches(keybinds.show_worktree)) {
-                event.preventDefault();
-                if (activeRepository) {
-                    selectWip();
-                    setRightPanelVisible(true);
-                }
-            } else if (matches(keybinds.show_graph)) {
-                event.preventDefault();
-                if (activeRepository) setCenterView("graph");
-            } else if (matches(keybinds.diff_inline)) {
-                event.preventDefault();
-                if (diff) setDiffMode("inline");
-            } else if (matches(keybinds.diff_split)) {
-                event.preventDefault();
-                if (diff) setDiffMode("split");
-            } else if (matches(keybinds.copy_selected_sha)) {
-                event.preventDefault();
-                if (selectedOid) void copySha(selectedOid);
-            } else if (matches(keybinds.continue_operation)) {
-                event.preventDefault();
-                if (!busy) continueActiveOperation();
-            } else if (matches(keybinds.abort_operation)) {
-                event.preventDefault();
-                if (!busy) abortActiveOperation();
-            } else if (
-                matches(keybinds.stage_all)
-            ) {
-                event.preventDefault();
-                if (activeRepository && snapshot && wipSelected) {
-                    const paths = snapshot.status.entries
-                        .filter((entry) => entry.worktree && !entry.conflicted)
-                        .map((entry) => entry.path);
-                    if (paths.length) stagePaths(paths, "all");
-                }
-            } else if (
-                matches(keybinds.unstage_all)
-            ) {
-                event.preventDefault();
-                if (activeRepository && snapshot && wipSelected) {
-                    const paths = snapshot.status.entries.filter((entry) => entry.index && !entry.conflicted).map((entry) => entry.path);
-                    if (paths.length) unstagePaths(paths, "all");
-                }
-            } else if (matches(keybinds.focus_commit_message)) {
-                event.preventDefault();
-                focusCommitMessage();
-            } else if (matches(keybinds.auto_resolve_conflicts)) {
-                event.preventDefault();
-                if (!busy) autoResolveActiveConflicts();
-            } else if (matches(keybinds.commit)) {
-                event.preventDefault();
-                window.dispatchEvent(new Event("gitcat:commit"));
-            } else if (event.key === "Escape") {
-                if (centerView === "diff" || diff || diffLoading || selectedWorktreeFile) {
-                    event.preventDefault();
-                    closeDiff();
-                } else {
-                    setCommitMenu(null);
-                    setTabMenu(null);
-                    setBranchMenu(null);
-                }
-            }
-        };
-        window.addEventListener("keydown", onKeyDown);
-        return () => window.removeEventListener("keydown", onKeyDown);
-    }, [
-        activeRepository,
-        activeTabId,
+    useGlobalKeybinds({
         abortActiveOperation,
         activateRepositoryTab,
+        activeRepository,
+        activeTabId,
         autoResolveActiveConflicts,
         busy,
-        chooseRepository,
         centerView,
+        chooseRepository,
         closeDiff,
         closeTab,
         commitMenu,
@@ -1858,394 +463,83 @@ function App() {
         diffLoading,
         fetchActiveRepository,
         focusCommitMessage,
-        overviewLoading,
-        orderedTabIds.length,
-        orderedTabIds,
+        keybinds: persisted.settings.keybinds,
         openSearch,
         openStartTab,
-        persisted.settings.keybinds,
+        orderedTabIds,
+        overviewLoading,
         prompt,
         pullActiveRepository,
         pushActiveRepository,
         refreshActiveRepository,
         reopenClosedRepository,
         runMutation,
+        selectWip,
+        selectedOid,
+        selectedWorktreeFile,
+        setBranchMenu,
+        setCenterView,
+        setCommitMenu,
+        setDiffMode,
+        setLeftPanelVisible,
+        setRightPanelVisible,
+        setSettingsOpen,
+        setTabMenu,
         settingsOpen,
         showError,
-        startDialog,
-        selectWip,
-        selectedWorktreeFile,
         snapshot,
         stagePaths,
         stashActiveRepository,
+        startDialog,
         tabMenu,
         unstagePaths,
         wipSelected,
-    ]);
+    });
 
-    useEffect(() => {
-        if (!commitMenu || !activeRepository) {
-            ++commitMenuActionSequence.current;
-            setCommitMenuActions(null);
-            return;
-        }
+    const {
+        branchContextActions,
+        checkoutRemoteBranch,
+        contextActions,
+        executeBranchAction,
+        executeCommitAction,
+        executeTabAction,
+        tabContextActions,
+    } = useContextMenuActions({
+        activateRepositoryTab,
+        activeRepository,
+        activeRepositoryIdRef,
+        addToast,
+        branchMenu,
+        closeTab,
+        commitActions,
+        commitMenu,
+        copySha,
+        defaultPullMode: persisted.settings.default_pull_mode,
+        detailsOid: details?.oid,
+        moveRepositoryTab,
+        pullActiveRepository,
+        runMutation,
+        setBranchMenu,
+        setCommitMenu,
+        setConfirmRequest,
+        setPersisted,
+        setPrompt,
+        setTabMenu,
+        showError,
+        snapshot,
+        tabMenu,
+        workspace: persisted.workspace,
+    });
 
-        if (details?.oid === commitMenu.commit.oid) {
-            ++commitMenuActionSequence.current;
-            setCommitMenuActions({ oid: commitMenu.commit.oid, actions: commitActions });
-            return;
-        }
-
-        const repositoryId = activeRepository.repository_id;
-        const oid = commitMenu.commit.oid;
-        const sequence = ++commitMenuActionSequence.current;
-        setCommitMenuActions({ oid, actions: [] });
-        void gitcatApi.commitActionAvailability(repositoryId, oid)
-            .then((actions) => {
-                if (
-                    sequence !== commitMenuActionSequence.current
-                    || activeRepositoryIdRef.current !== repositoryId
-                ) return;
-                setCommitMenuActions({ oid, actions });
-            })
-            .catch((error) => {
-                if (
-                    sequence === commitMenuActionSequence.current
-                    && activeRepositoryIdRef.current === repositoryId
-                ) showError("Commit actions could not be loaded", error);
-            });
-    }, [activeRepository, commitActions, commitMenu, details?.oid, showError]);
-
-    const commitMenuActionMap = useMemo(() => {
-        if (!commitMenuActions || commitMenuActions.oid !== commitMenu?.commit.oid) return new Map();
-        return new Map(commitMenuActions.actions.map((action) => [action.kind, action]));
-    }, [commitMenu?.commit.oid, commitMenuActions]);
-
-    const contextActions = useMemo<ContextAction[]>(() => {
-        if (!commitMenu) return [];
-        const enabled = (kind: CommitActionAvailability["kind"]) => (
-            commitMenuActionMap.get(kind)?.enabled ?? false
-        );
-        const resetTarget = snapshot?.head.kind === "branch" ? snapshot.head.name : "branch";
-        return [
-            { id: "checkout", label: "Checkout commit (detached)", icon: <GitCommitHorizontal size={15} />, disabled: !enabled("checkout") },
-            { id: "branch", label: "Create branch here…", icon: <GitBranchPlus size={15} />, disabled: !enabled("create_branch") },
-            { id: "tag", label: "Create tag here…", icon: <Tag size={15} />, disabled: !enabled("create_tag") },
-            { id: "cherry_pick", label: "Cherry-pick commit", icon: <GitPullRequestArrow size={15} />, disabled: !enabled("cherry_pick"), separatorBefore: true },
-            { id: "revert", label: "Revert commit", icon: <RotateCcw size={15} />, disabled: !enabled("revert") },
-            {
-                id: "reset",
-                label: `Reset ${resetTarget} to this commit`,
-                icon: <Trash2 size={15} />,
-                disabled: !enabled("reset"),
-                separatorBefore: true,
-                submenu: [
-                    { id: "reset:soft", label: "Soft - keep all changes" },
-                    { id: "reset:mixed", label: "Mixed - keep working copy but reset index" },
-                    { id: "reset:hard", label: "Hard - discard all changes" },
-                ],
-            },
-            { id: "copy", label: "Copy full commit SHA", icon: <Copy size={15} />, separatorBefore: true },
-        ];
-    }, [commitMenu, commitMenuActionMap, snapshot?.head]);
-
-    const executeCommitAction = useCallback((action: string) => {
-        if (!commitMenu) return;
-        const commit = commitMenu.commit;
-        setCommitMenu(null);
-        switch (action) {
-            case "copy":
-                void copySha(commit.oid);
-                break;
-            case "branch":
-                setPrompt({ kind: "create_branch", startOid: commit.oid });
-                break;
-            case "tag":
-                setPrompt({ kind: "create_tag", oid: commit.oid });
-                break;
-            case "checkout":
-                if (window.confirm(`Check out ${commit.short_oid} in detached HEAD state?`)) {
-                    void runMutation("Commit checked out", (repository) => gitcatApi.checkoutCommit(repository.repository_id, commit.oid));
-                }
-                break;
-            case "cherry_pick": {
-                const mainline = commit.parent_oids.length > 1 ? Number(window.prompt("Mainline parent number", "1")) : null;
-                if (commit.parent_oids.length > 1 && (!mainline || mainline < 1)) break;
-                void runMutation("Commit cherry-picked", (repository) => gitcatApi.cherryPick(repository.repository_id, commit.oid, mainline));
-                break;
-            }
-            case "revert": {
-                const mainline = commit.parent_oids.length > 1 ? Number(window.prompt("Mainline parent number", "1")) : null;
-                if (commit.parent_oids.length > 1 && (!mainline || mainline < 1)) break;
-                void runMutation("Commit reverted", (repository) => gitcatApi.revertCommit(repository.repository_id, commit.oid, mainline));
-                break;
-            }
-            case "reset:soft":
-            case "reset:mixed":
-            case "reset:hard": {
-                if (!snapshot) break;
-                const mode = action.slice("reset:".length) as ResetMode;
-                const branchName = snapshot.head.kind === "branch" ? snapshot.head.name : "branch";
-                if (
-                    mode === "hard"
-                    && !window.confirm(`Hard reset ${branchName} to ${commit.short_oid}? This will discard uncommitted changes and cannot be undone.`)
-                ) break;
-                void runMutation("Branch reset", (repository) => gitcatApi.resetCommit(
-                    repository.repository_id,
-                    commit.oid,
-                    mode,
-                    mode === "hard",
-                    expectedState(snapshot),
-                ));
-                break;
-            }
-        }
-    }, [commitMenu, copySha, runMutation, snapshot]);
-
-    const tabContextActions = useMemo<ContextAction[]>(() => {
-        if (!tabMenu) return [];
-        const orderedTabs = workspaceTabs(persisted.workspace);
-        const tabIndex = orderedTabs.findIndex((tab) => tab.id === tabMenu.tab.id);
-        return [
-            { id: "activate", label: "Activate repository", icon: <GitCommitHorizontal size={15} /> },
-            {
-                id: "move:ungrouped",
-                label: tabMenu.groupId === null ? "No folder (current)" : "Move to no folder",
-                icon: <FolderX size={15} />,
-                disabled: tabMenu.groupId === null,
-                separatorBefore: true,
-            },
-            ...persisted.workspace.groups.map((group) => ({
-                id: `move:${group.id}`,
-                label: group.id === tabMenu.groupId ? `${group.name} (current)` : `Move to ${group.name}`,
-                icon: <FolderInput size={15} />,
-                disabled: group.id === tabMenu.groupId,
-            })),
-            { id: "new_folder", label: "Move to new folder…", icon: <FolderPlus size={15} /> },
-            { id: "alias", label: "Rename tab…", icon: <Tag size={15} />, separatorBefore: true },
-            { id: "copy_path", label: "Copy repository path", icon: <Copy size={15} /> },
-            { id: "close_others", label: "Close other repositories", icon: <X size={15} />, disabled: orderedTabs.length <= 1, separatorBefore: true },
-            { id: "close_right", label: "Close repositories to the right", icon: <X size={15} />, disabled: tabIndex < 0 || tabIndex === orderedTabs.length - 1 },
-            { id: "close", label: "Close repository", icon: <X size={15} /> },
-        ];
-    }, [persisted.workspace.groups, tabMenu]);
-
-    const executeTabAction = useCallback((action: string) => {
-        if (!tabMenu) return;
-        const selectedTab = tabMenu.tab;
-        setTabMenu(null);
-        if (action === "activate") {
-            setPersisted((current) => ({ ...current, workspace: { ...current.workspace, active_tab_id: selectedTab.id } }));
-        } else if (action === "move:ungrouped") {
-            moveRepositoryTab(selectedTab.id, null);
-        } else if (action.startsWith("move:")) {
-            moveRepositoryTab(selectedTab.id, action.slice("move:".length));
-        } else if (action === "new_folder") {
-            setPrompt({ kind: "create_group", tabId: selectedTab.id });
-        } else if (action === "alias") {
-            setPrompt({ kind: "alias_tab", tabId: selectedTab.id, current: selectedTab.label });
-        } else if (action === "copy_path") {
-            void navigator.clipboard.writeText(selectedTab.path)
-                .then(() => addToast({ tone: "success", title: "Repository path copied" }))
-                .catch((error) => showError("Could not copy repository path", error));
-        } else if (action === "close_others") {
-            workspaceTabs(persisted.workspace)
-                .filter((tab) => tab.id !== selectedTab.id)
-                .forEach((tab) => closeTab(tab.id));
-            activateRepositoryTab(selectedTab.id);
-        } else if (action === "close_right") {
-            const tabs = workspaceTabs(persisted.workspace);
-            const index = tabs.findIndex((tab) => tab.id === selectedTab.id);
-            tabs.slice(index + 1).forEach((tab) => closeTab(tab.id));
-        } else if (action === "close") {
-            closeTab(selectedTab.id);
-        }
-    }, [activateRepositoryTab, addToast, closeTab, moveRepositoryTab, persisted.workspace, showError, tabMenu]);
-
-    const checkoutRemoteBranch = useCallback((branch: BranchInfo) => {
-        const localName = branchNameWithoutRemote(branch.name);
-        void runMutation(`Checked out ${localName}`, (repository) => gitcatApi.checkoutBranch(repository.repository_id, localName));
-    }, [runMutation]);
-
-    const branchContextActions = useMemo<ContextAction[]>(() => {
-        if (!branchMenu) return [];
-        const { branch, scope } = branchMenu;
-        const isLocal = scope === "local";
-        const displayName = isLocal ? branch.name : branchNameWithoutRemote(branch.name);
-        return [
-            {
-                id: "pull",
-                label: PULL_LABELS[persisted.settings.default_pull_mode],
-                icon: <Download size={15} />,
-                disabled: !branchAcceptsPull(snapshot, branch, scope),
-            },
-            {
-                id: "push",
-                label: "Push",
-                icon: <Upload size={15} />,
-                disabled: !branchPushTarget(snapshot, branch, scope),
-            },
-            { id: "create_branch", label: "Create branch here…", icon: <GitBranchPlus size={15} />, separatorBefore: true },
-            { id: "rename", label: `Rename ${displayName}…`, icon: <Pencil size={15} />, disabled: !isLocal, separatorBefore: true },
-            {
-                id: "delete",
-                label: `Delete ${displayName}…`,
-                icon: <Trash2 size={15} />,
-                danger: true,
-                disabled: !isLocal || branch.is_head,
-            },
-            { id: "copy", label: "Copy branch name", icon: <Copy size={15} />, separatorBefore: true },
-        ];
-    }, [branchMenu, persisted.settings.default_pull_mode, snapshot]);
-
-    const executeBranchAction = useCallback((action: string) => {
-        if (!branchMenu) return;
-        const { branch, scope } = branchMenu;
-        const isLocal = scope === "local";
-        const displayName = isLocal ? branch.name : branchNameWithoutRemote(branch.name);
-        setBranchMenu(null);
-        switch (action) {
-            case "pull":
-                pullActiveRepository();
-                break;
-            case "push": {
-                const target = branchPushTarget(snapshot, branch, scope);
-                if (!target) break;
-                void runMutation("Push complete", (repository) => gitcatApi.push(repository.repository_id, {
-                    remote: target.remote,
-                    branch: target.branch,
-                    set_upstream: target.setUpstream,
-                }));
-                break;
-            }
-            case "create_branch":
-                setPrompt({ kind: "create_branch", startOid: branch.oid });
-                break;
-            case "rename":
-                if (isLocal) setPrompt({ kind: "rename_branch", branch });
-                break;
-            case "delete":
-                if (isLocal) setConfirmRequest({ kind: "delete_branch", name: branch.name, force: false });
-                break;
-            case "copy":
-                void navigator.clipboard.writeText(displayName)
-                    .then(() => addToast({ tone: "success", title: "Branch name copied" }))
-                    .catch((error) => showError("Could not copy branch name", error));
-                break;
-        }
-    }, [addToast, branchMenu, pullActiveRepository, runMutation, showError, snapshot]);
-
-    const submitPrompt = useCallback((value: string) => {
-        if (!prompt) return;
-        const currentPrompt = prompt;
-        setPrompt(null);
-        switch (currentPrompt.kind) {
-            case "create_group":
-                setPersisted((current) => {
-                    const groupId = makeId("group");
-                    let moved = currentPrompt.tabId
-                        ? current.workspace.ungrouped_tabs.find((tab) => tab.id === currentPrompt.tabId)
-                        : undefined;
-                    const ungrouped_tabs = currentPrompt.tabId
-                        ? current.workspace.ungrouped_tabs.filter((tab) => tab.id !== currentPrompt.tabId)
-                        : current.workspace.ungrouped_tabs;
-                    const groupsWithout = current.workspace.groups.map((group) => ({
-                        ...group,
-                        tabs: currentPrompt.tabId ? group.tabs.filter((tab) => {
-                            if (tab.id === currentPrompt.tabId) moved = tab;
-                            return tab.id !== currentPrompt.tabId;
-                        }) : group.tabs,
-                    }));
-                    const group = {
-                        id: groupId,
-                        name: value,
-                        collapsed: false,
-                        order: groupsWithout.length,
-                        tabs: moved ? [{ ...moved, order: 0 }] : [],
-                    };
-                    return {
-                        ...current,
-                        workspace: { ...current.workspace, ungrouped_tabs, groups: [...groupsWithout, group] },
-                    };
-                });
-                break;
-            case "rename_group":
-                setPersisted((current) => ({ ...current, workspace: { ...current.workspace, groups: current.workspace.groups.map((group) => group.id === currentPrompt.groupId ? { ...group, name: value } : group) } }));
-                break;
-            case "alias_tab":
-                setPersisted((current) => ({
-                    ...current,
-                    workspace: {
-                        ...current.workspace,
-                        ungrouped_tabs: current.workspace.ungrouped_tabs.map((tab) => tab.id === currentPrompt.tabId ? { ...tab, display_name: value } : tab),
-                        groups: current.workspace.groups.map((group) => ({
-                            ...group,
-                            tabs: group.tabs.map((tab) => tab.id === currentPrompt.tabId ? { ...tab, display_name: value } : tab),
-                        })),
-                    },
-                }));
-                break;
-            case "create_branch":
-                void runMutation("Branch created", (repository) => gitcatApi.createBranch(repository.repository_id, value, currentPrompt.startOid, true));
-                break;
-            case "rename_branch":
-                void runMutation("Branch renamed", (repository) => gitcatApi.renameBranch(repository.repository_id, currentPrompt.branch.name, value));
-                break;
-            case "create_tag":
-                void runMutation("Tag created", (repository) => gitcatApi.createTag(repository.repository_id, value, currentPrompt.oid, null));
-                break;
-        }
-    }, [prompt, runMutation]);
-
-    const promptConfig = useMemo(() => {
-        if (!prompt) return null;
-        switch (prompt.kind) {
-            case "create_group": return { title: "New repository group", label: "Group name", placeholder: "Client work", confirmLabel: "Create group" };
-            case "rename_group": return { title: "Rename repository group", label: "Group name", initialValue: prompt.current, confirmLabel: "Rename" };
-            case "alias_tab": return { title: "Rename repository tab", label: "Tab name", initialValue: prompt.current, confirmLabel: "Rename" };
-            case "create_branch": return { title: "Create branch", label: "Branch name", placeholder: "feature/short-name", confirmLabel: "Create and checkout" };
-            case "rename_branch": return { title: "Rename branch", label: "New branch name", initialValue: prompt.branch.name, confirmLabel: "Rename" };
-            case "create_tag": return { title: "Create tag", label: "Tag name", placeholder: "v1.0.0", confirmLabel: "Create tag" };
-        }
-    }, [prompt]);
-
-    const submitConfirm = useCallback(() => {
-        if (!confirmRequest || !snapshot) return;
-        const request = confirmRequest;
-        setConfirmRequest(null);
-        switch (request.kind) {
-            case "delete_branch":
-                void runMutation("Branch deleted", (repository) => gitcatApi.deleteBranch(
-                    repository.repository_id,
-                    request.name,
-                    request.force,
-                    true,
-                    expectedState(snapshot),
-                ), {
-                    onError: (error) => {
-                        if (request.force || !isNotFullyMerged(error)) return false;
-                        setConfirmRequest({ kind: "delete_branch", name: request.name, force: true });
-                        return true;
-                    },
-                });
-                break;
-        }
-    }, [confirmRequest, runMutation, snapshot]);
-
-    const confirmConfig = useMemo(() => {
-        if (!confirmRequest) return null;
-        switch (confirmRequest.kind) {
-            case "delete_branch": return confirmRequest.force
-                ? {
-                    message: `"${confirmRequest.name}" is not fully merged. Force deleting it discards commits that exist only on this branch.`,
-                    confirmLabel: "Force delete",
-                }
-                : {
-                    message: `This is a destructive operation, are you sure you want to delete "${confirmRequest.name}"?`,
-                    confirmLabel: "Delete",
-                };
-        }
-    }, [confirmRequest]);
+    const { confirmConfig, promptConfig, submitConfirm, submitPrompt } = useDialogActions({
+        confirmRequest,
+        prompt,
+        runMutation,
+        setConfirmRequest,
+        setPersisted,
+        setPrompt,
+        snapshot,
+    });
 
     const activeConflictCount =snapshot?.status.entries.filter((entry) => entry.conflicted).length ?? 0;
     const wipStats = useMemo(() => {
@@ -2255,130 +549,31 @@ function App() {
             return kind ? fileChangeCounts(kind) : emptyChangeCounts;
         }));
     }, [snapshot?.status.entries]);
-    const conflictTarget = activeTab?.conflict_target_disabled
-        ? null
-        : activeTab?.conflict_target ?? defaultConflictPreflightTarget(snapshot);
-    const conflictTargets = useMemo(() => {
-        if (!snapshot) return conflictTarget ? [conflictTarget] : [];
-        const candidates = [
-            ...snapshot.local_branches.filter((branch) => !branch.is_head).map((branch) => branch.name),
-            ...snapshot.remote_branches.map((branch) => branch.name),
-        ];
-        if (conflictTarget) candidates.push(conflictTarget);
-        return [...new Set(candidates)].sort((left, right) => left.localeCompare(right));
-    }, [conflictTarget, snapshot]);
-    const conflictHeadOid = snapshot?.head.kind === "unborn" ? null : snapshot?.head.oid ?? null;
-    const conflictTargetOid = snapshot
-        ? [...snapshot.local_branches, ...snapshot.remote_branches].find((branch) => branch.name === conflictTarget)?.oid ?? null
-        : null;
+    const {
+        conflictIndicator,
+        conflictTarget,
+        conflictTargets,
+        selectConflictTarget,
+        showConflictIndicator,
+    } = useConflictPreflight({
+        activeConflictCount,
+        activeRepository,
+        activeRepositoryIdRef,
+        activeTab,
+        activeTabId,
+        addToast,
+        setCenterView,
+        setPersisted,
+        setRightPanelVisible,
+        setSelectedOid,
+        setWipSelected,
+        snapshot,
+    });
 
-    const selectConflictTarget = useCallback((target: string | null) => {
-        if (!activeTabId) return;
-        setPersisted((current) => ({
-            ...current,
-            workspace: {
-                ...current.workspace,
-                ungrouped_tabs: current.workspace.ungrouped_tabs.map((tab) => (
-                    tab.id === activeTabId
-                        ? { ...tab, conflict_target: target, conflict_target_disabled: target === null }
-                        : tab
-                )),
-                groups: current.workspace.groups.map((group) => ({
-                    ...group,
-                    tabs: group.tabs.map((tab) => (
-                        tab.id === activeTabId
-                            ? { ...tab, conflict_target: target, conflict_target_disabled: target === null }
-                            : tab
-                    )),
-                })),
-            },
-        }));
-    }, [activeTabId]);
-
-    useEffect(() => {
-        const sequence = ++conflictPreflightSequence.current;
-        if (!activeRepository || activeConflictCount || !conflictTarget) {
-            setConflictPreflight(null);
-            setConflictPreflightLoading(false);
-            return;
-        }
-
-        const repositoryId = activeRepository.repository_id;
-        setConflictPreflight(null);
-        setConflictPreflightLoading(true);
-        void gitcatApi.conflictPreflight(repositoryId, conflictTarget)
-            .then((result) => {
-                if (
-                    sequence !== conflictPreflightSequence.current
-                    || activeRepositoryIdRef.current !== repositoryId
-                ) return;
-                setConflictPreflight(result);
-            })
-            .catch((error) => {
-                if (
-                    sequence !== conflictPreflightSequence.current
-                    || activeRepositoryIdRef.current !== repositoryId
-                ) return;
-                const apiError = getApiError(error);
-                setConflictPreflight({
-                    target: conflictTarget,
-                    target_oid: "",
-                    state: "unavailable",
-                    conflicting_paths: [],
-                    unavailable_reason: apiError.details ?? apiError.message,
-                });
-            })
-            .finally(() => {
-                if (sequence === conflictPreflightSequence.current) setConflictPreflightLoading(false);
-            });
-    }, [activeConflictCount, activeRepository, conflictHeadOid, conflictTarget, conflictTargetOid]);
 
     const operationPending = snapshot ? continuableOperation(snapshot.operation_state) !== null : false;
     const worktreeReachable = snapshot ? !snapshot.status.clean || operationPending : false;
 
-    const conflictIndicator: ConflictIndicator = activeConflictCount
-        ? {
-            state: "active",
-            count: activeConflictCount,
-            label: `${activeConflictCount} unresolved ${conflictOperationLabel(snapshot?.operation_state ?? "normal")} conflict${activeConflictCount === 1 ? "" : "s"}`,
-        }
-        : conflictPreflightLoading
-            ? { state: "checking", label: `Checking conflicts against ${conflictTarget ?? "upstream"}` }
-            : conflictPreflight?.state === "clean"
-                ? { state: "clean", label: `No conflicts detected against ${conflictPreflight.target}` }
-                : conflictPreflight?.state === "conflicting"
-                    ? {
-                        state: "conflicting",
-                        count: conflictPreflight.conflicting_paths.length,
-                        label: `${conflictPreflight.conflicting_paths.length} potential conflict${conflictPreflight.conflicting_paths.length === 1 ? "" : "s"} against ${conflictPreflight.target}`,
-                    }
-                    : {
-                        state: "unavailable",
-                        label: conflictPreflight?.unavailable_reason
-                            ?? (conflictTarget ? `Conflict check unavailable for ${conflictTarget}` : "Choose a comparison target to enable conflict checks"),
-                    };
-
-    const showConflictIndicator = useCallback(() => {
-        if (activeConflictCount) {
-            setSelectedOid(null);
-            setWipSelected(true);
-            setRightPanelVisible(true);
-            setCenterView("graph");
-            addToast({ tone: "info", title: conflictIndicator.label, detail: "Resolve each file in the Working tree panel." });
-            return;
-        }
-        if (conflictPreflight?.state === "conflicting") {
-            const preview = conflictPreflight.conflicting_paths.slice(0, 4).join(", ");
-            const remainder = conflictPreflight.conflicting_paths.length - 4;
-            addToast({
-                tone: "info",
-                title: conflictIndicator.label,
-                detail: `${preview}${remainder > 0 ? `, and ${remainder} more` : ""}`,
-            });
-            return;
-        }
-        addToast({ tone: conflictPreflight?.state === "clean" ? "success" : "info", title: conflictIndicator.label });
-    }, [activeConflictCount, addToast, conflictIndicator.label, conflictPreflight]);
     const toTabView = useCallback((tab: RepositoryTab): TabView => ({
         id: tab.id,
         label: tab.display_name,
@@ -2397,23 +592,6 @@ function App() {
         collapsed: group.collapsed,
         tabs: group.tabs.map(toTabView),
     })), [persisted.workspace.groups, toTabView]);
-
-    const beginResize = (side: "left" | "right", startEvent: React.PointerEvent) => {
-        startEvent.currentTarget.setPointerCapture(startEvent.pointerId);
-        const startX = startEvent.clientX;
-        const startWidth = side === "left" ? sidebarWidth : detailsWidth;
-        const move = (event: PointerEvent) => {
-            const delta = event.clientX - startX;
-            if (side === "left") setSidebarWidth(Math.max(190, Math.min(380, startWidth + delta)));
-            else setDetailsWidth(Math.max(300, Math.min(560, startWidth - delta)));
-        };
-        const up = () => {
-            window.removeEventListener("pointermove", move);
-            window.removeEventListener("pointerup", up);
-        };
-        window.addEventListener("pointermove", move);
-        window.addEventListener("pointerup", up);
-    };
 
     const graphMatches = useMemo(() => new Set(searchOids), [searchOids]);
     const remoteIconUrls = useMemo(
@@ -2596,288 +774,135 @@ function App() {
                         </div>
                         <Resizer hidden={!leftPanelVisible} onPointerDown={(event) => beginResize("left", event)} style={{ gridColumn: 2 }} />
 
-                        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background" aria-label="Repository history" style={{ gridColumn: 3 }}>
-                            {searchOpen && centerView === "graph" ? (
-                                <SearchBar
-                                    activeIndex={searchIndex}
-                                    busy={searchBusy}
-                                    count={searchOids.length}
-                                    focusToken={searchFocusToken}
-                                    onChange={setSearchQuery}
-                                    onClose={() => { setSearchOpen(false); setSearchQuery(""); }}
-                                    onNext={() => navigateSearch(1)}
-                                    onPrevious={() => navigateSearch(-1)}
-                                    value={searchQuery}
-                                />
-                            ) : null}
-                            {centerView === "diff" ? (
-                                <DiffViewer
-                                    closeKeybind={persisted.settings.keybinds.show_graph}
-                                    diff={diff}
-                                    loading={diffLoading}
-                                    mode={diffMode}
-                                    onClose={closeDiff}
-                                    onModeChange={setDiffMode}
-                                />
-                            ) : (
-                                <div
-                                    className="min-h-0 min-w-0 flex-1 overflow-auto"
-                                    style={{ "--gc-graph-column-width": `${graphColumnWidth}px` } as React.CSSProperties}
-                                >
-                                    <div className="gc-graph-columns" aria-hidden="true">
-                                        <span>Branch / Tag</span>
-                                        <span>Graph</span>
-                                        <span>Commit message</span>
-                                        <span>Author</span>
-                                        <span>Date / Time</span>
-                                        <span>SHA</span>
-                                    </div>
-                                    {worktreeReachable ? (
-                                        <button
-                                            className={`gc-wip-row ${wipSelected ? "gc-wip-row--selected" : ""}`}
-                                            onClick={selectWip}
-                                            onKeyDown={(event) => {
-                                                if (event.key === "ArrowDown") {
-                                                    event.preventDefault();
-                                                    selectFirstCommitFromWip();
-                                                }
-                                            }}
-                                            ref={wipRowRef}
-                                            style={wipRowStyle}
-                                            type="button"
-                                        >
-                                            <span className="gc-wip-row__refs" />
-                                            <span className="gc-wip-row__rail"><i /></span>
-                                            <span className="gc-wip-row__message">
-                                                <strong>// WIP</strong>
-                                                <ChangeCountSummary counts={wipStats} size="md" />
-                                            </span>
-                                            <span className={activeConflictCount ? "gc-wip-row__conflicts" : "text-muted"}>
-                                                {activeConflictCount ? <><AlertTriangle size={12} /> {activeConflictCount}</> : ""}
-                                            </span>
-                                            <span />
-                                        </button>
-                                    ) : null}
-                                    {history ? (
-                                        <CommitGraph
-                                            beforeFirstSelected={wipSelected}
-                                            commits={history.commits}
-                                            headOid={currentHeadOid}
-                                            detachedHeadOid={snapshot?.head.kind === "detached" ? snapshot.head.oid : null}
-                                            hideHeadDecoration={false}
-                                            onNavigateBeforeFirst={worktreeReachable ? selectWipFromGraph : undefined}
-                                            onCommitContextMenu={(request: CommitContextMenuRequest) => setCommitMenu({ x: request.clientX, y: request.clientY, commit: request.commit })}
-                                            onCopySha={(oid) => void copySha(oid)}
-                                            onRefDoubleClick={(decoration) => {
-                                                if (decoration.kind === "local_branch" && !decoration.is_head) {
-                                                    void runMutation(`Checked out ${decoration.name}`, (repository) => gitcatApi.checkoutBranch(repository.repository_id, decoration.name));
-                                                    return;
-                                                }
-                                                if (decoration.kind === "remote_branch") {
-                                                    const branch = snapshot?.remote_branches.find((candidate) => candidate.full_name === decoration.full_name);
-                                                    if (branch) checkoutRemoteBranch(branch);
-                                                }
-                                            }}
-                                            onSelect={selectCommit}
-                                            remoteIconUrls={remoteIconUrls}
-                                            searchMatchOids={graphMatches}
-                                            selectedOid={selectedOid}
-                                            wip={snapshot && !snapshot.status.clean
-                                                ? { lane: wipLane, headOid: currentHeadOid }
-                                                : undefined}
-                                        />
-                                    ) : (
-                                        <div className="flex h-40 items-center justify-center gap-2 text-muted">
-                                            <Spinner label="Loading history" /> Loading history…
-                                        </div>
-                                    )}
-                                    {history?.has_more && history.next_cursor ? (
-                                        <Button
-                                            className="mx-auto mb-5 mt-3 flex"
-                                            disabled={busy || overviewLoading || historyLoading}
-                                            onClick={() => {
-                                                if (!activeRepository || busy || overviewLoading || historyLoading) return;
-                                                const repositoryId = activeRepository.repository_id;
-                                                const sequence = ++historyLoadSequence.current;
-                                                setHistoryLoading(true);
-                                                void gitcatApi.history(repositoryId, {
-                                                    scope: { kind: "all_refs" },
-                                                    cursor: history.next_cursor,
-                                                    limit: persisted.settings.history_page_size,
-                                                }).then((page) => {
-                                                    if (
-                                                        sequence !== historyLoadSequence.current
-                                                        || activeRepositoryIdRef.current !== repositoryId
-                                                    ) return;
-                                                    setHistory((current) => current
-                                                        ? { ...page, commits: [...current.commits, ...page.commits] }
-                                                        : page);
-                                                }).catch((error) => {
-                                                    if (
-                                                        sequence === historyLoadSequence.current
-                                                        && activeRepositoryIdRef.current === repositoryId
-                                                    ) showError("More commits could not be loaded", error);
-                                                }).finally(() => {
-                                                    if (
-                                                        sequence === historyLoadSequence.current
-                                                        && activeRepositoryIdRef.current === repositoryId
-                                                    ) setHistoryLoading(false);
-                                                });
-                                            }}
-                                        >{historyLoading ? "Loading older commits…" : "Load older commits"}</Button>
-                                    ) : null}
-                                </div>
-                            )}
-                        </section>
+                        <HistoryPane
+                            activeConflictCount={activeConflictCount}
+                            busy={busy}
+                            centerView={centerView}
+                            checkoutRemoteBranch={checkoutRemoteBranch}
+                            closeDiff={closeDiff}
+                            copySha={copySha}
+                            currentHeadOid={currentHeadOid}
+                            diff={diff}
+                            diffLoading={diffLoading}
+                            diffMode={diffMode}
+                            graphColumnWidth={graphColumnWidth}
+                            graphMatches={graphMatches}
+                            history={history}
+                            historyLoading={historyLoading}
+                            loadMoreHistory={loadMoreHistory}
+                            navigateSearch={navigateSearch}
+                            overviewLoading={overviewLoading}
+                            remoteIconUrls={remoteIconUrls}
+                            runMutation={runMutation}
+                            searchBusy={searchBusy}
+                            searchFocusToken={searchFocusToken}
+                            searchIndex={searchIndex}
+                            searchOids={searchOids}
+                            searchOpen={searchOpen}
+                            searchQuery={searchQuery}
+                            selectCommit={selectCommit}
+                            selectFirstCommitFromWip={selectFirstCommitFromWip}
+                            selectWip={selectWip}
+                            selectWipFromGraph={selectWipFromGraph}
+                            selectedOid={selectedOid}
+                            setCommitMenu={setCommitMenu}
+                            setDiffMode={setDiffMode}
+                            setSearchOpen={setSearchOpen}
+                            setSearchQuery={setSearchQuery}
+                            settings={persisted.settings}
+                            snapshot={snapshot}
+                            wipLane={wipLane}
+                            wipRowRef={wipRowRef}
+                            wipRowStyle={wipRowStyle}
+                            wipSelected={wipSelected}
+                            wipStats={wipStats}
+                            worktreeReachable={worktreeReachable}
+                        />
 
                         <Resizer hidden={!rightPanelVisible} onPointerDown={(event) => beginResize("right", event)} style={{ gridColumn: 4 }} />
                         <div className="min-h-0 min-w-0 overflow-hidden" hidden={!rightPanelVisible} style={{ gridColumn: 5 }}>
-                            {wipSelected && snapshot ? (
-                                <WorktreePanel
-                                    busy={busy}
-                                    branchName={currentBranch(snapshot)}
-                                    collapse={stageCollapse ?? undefined}
-                                    commitKeybind={persisted.settings.keybinds.commit}
-                                    draft={activeCommitDraft}
-                                    fileViewMode={persisted.settings.file_view_mode}
-                                    onFileViewModeChange={changeFileViewMode}
-                                    onAutoResolveConflicts={autoResolveActiveConflicts}
-                                    onCommit={(message, amend, signoff) => runMutation(amend ? "Commit amended" : "Commit created", (repository) => gitcatApi.createCommit(repository.repository_id, { message, amend, signoff }))}
-                                    onDraftChange={updateActiveCommitDraft}
-                                    onOpenDiff={openWorktreeDiff}
-                                    onOpenConflict={(entry) => void openConflictEditor(entry)}
-                                    onResolveConflict={resolveConflictEntry}
-                                    onResolveConflicts={resolveConflictPaths}
-                                    onContinueOperation={continueActiveOperation}
-                                    onSkipOperation={skipActiveOperation}
-                                    onAbortOperation={abortActiveOperation}
-                                    operationProgress={snapshot.operation_progress ?? null}
-                                    onStage={stagePaths}
-                                    onUnstage={unstagePaths}
-                                    onDiscard={(paths) => {
-                                        if (!window.confirm(`Discard all changes to ${paths.length === 1 ? paths[0] : `${paths.length} files`}? This cannot be undone.`)) return;
-                                        void runMutation("Changes discarded", (repository) => gitcatApi.discardPaths(repository.repository_id, paths));
-                                    }}
-                                    onStashFile={(paths) => void runMutation("File stashed", (repository) => gitcatApi.stashFile(repository.repository_id, paths, null))}
-                                    onIgnore={(patterns) => void runMutation("Updated .gitignore", (repository) => gitcatApi.appendGitignore(repository.repository_id, patterns))}
-                                    onCreatePatch={(paths, staged) => void createPatchFile(paths, staged)}
-                                    onOpenFolder={(path) => {
-                                        if (!activeRepository) return;
-                                        void gitcatApi.openRepositoryFolder(activeRepository.repository_id, path)
-                                            .catch((error) => showError("Could not open folder", error));
-                                    }}
-                                    operation={snapshot.operation_state}
-                                    selectedFile={selectedWorktreeFile}
-                                    status={snapshot.status}
-                                />
-                            ) : details ? (
-                                <CommitDetails
-                                    busy={busy || overviewLoading}
-                                    details={details}
-                                    fileViewMode={persisted.settings.file_view_mode}
-                                    onFileViewModeChange={changeFileViewMode}
-                                    onCopySha={() => void copySha(details.oid)}
-                                    onJumpToCommit={jumpToCommit}
-                                    onReword={snapshot ? (message) => rewordCommit(details.oid, message) : undefined}
-                                    onSelectFile={openCommitFile}
-                                    selectedPath={selectedPath}
-                                />
-                            ) : selectedOid && !wipSelected ? (
-                                <CommitDetailsSkeleton />
-                            ) : (
-                                <SidePanel className="items-center justify-center gap-2.25 text-muted">
-                                    <Spinner label="Loading commit details" /> Select a commit
-                                </SidePanel>
-                            )}
+                            <InspectorPane
+                                abortActiveOperation={abortActiveOperation}
+                                activeCommitDraft={activeCommitDraft}
+                                activeRepository={activeRepository}
+                                autoResolveActiveConflicts={autoResolveActiveConflicts}
+                                busy={busy}
+                                changeFileViewMode={changeFileViewMode}
+                                continueActiveOperation={continueActiveOperation}
+                                copySha={copySha}
+                                createPatchFile={createPatchFile}
+                                details={details}
+                                jumpToCommit={jumpToCommit}
+                                openCommitFile={openCommitFile}
+                                openConflictEditor={openConflictEditor}
+                                openWorktreeDiff={openWorktreeDiff}
+                                overviewLoading={overviewLoading}
+                                resolveConflictEntry={resolveConflictEntry}
+                                resolveConflictPaths={resolveConflictPaths}
+                                rewordCommit={rewordCommit}
+                                runMutation={runMutation}
+                                selectedOid={selectedOid}
+                                selectedPath={selectedPath}
+                                selectedWorktreeFile={selectedWorktreeFile}
+                                settings={persisted.settings}
+                                showError={showError}
+                                skipActiveOperation={skipActiveOperation}
+                                snapshot={snapshot}
+                                stageCollapse={stageCollapse}
+                                stagePaths={stagePaths}
+                                unstagePaths={unstagePaths}
+                                updateActiveCommitDraft={updateActiveCommitDraft}
+                                wipSelected={wipSelected}
+                            />
                         </div>
                     </main>
 
                 </>
             )}
 
-            <StatusBar>
-                <StatusItem className={gitcatApi.runtime === "tauri" ? "text-success" : "text-warning"}>
-                    {gitcatApi.runtime === "tauri" ? "Native Git" : "Browser demo"}
-                </StatusItem>
-                {snapshot ? <StatusItem>{snapshot.status.clean ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />} {snapshot.status.clean ? "Working tree clean" : `${snapshot.status.entries.length} changed`}</StatusItem> : null}
-                {activeConflictCount ? <StatusItem className="text-danger"><AlertTriangle size={12} /> {activeConflictCount} conflicts</StatusItem> : null}
-                {snapshot?.status.ahead ? <StatusItem>↑ {snapshot.status.ahead} ahead</StatusItem> : null}
-                {snapshot?.status.behind ? <StatusItem>↓ {snapshot.status.behind} behind</StatusItem> : null}
-                <StatusSpacer />
-                {activeRepository ? <StatusItem>{stashes.length} stashes</StatusItem> : null}
-                {activeRepository ? <StatusItem>{activeRepository.info.object_format.toUpperCase()}</StatusItem> : null}
-                <UpdateIndicator update={appUpdate} />
-                <BuildIdentity title={`Build commit ${appMetadata.commit}`}>
-                    GitCat v{appMetadata.version} · {appMetadata.commit}
-                </BuildIdentity>
-            </StatusBar>
+            <AppStatusBar
+                activeConflictCount={activeConflictCount}
+                activeRepository={activeRepository}
+                appMetadata={appMetadata}
+                appUpdate={appUpdate}
+                snapshot={snapshot}
+                stashes={stashes}
+            />
 
-            {settingsOpen ? (
-                <SettingsDialog
-                    defaults={DEFAULT_SETTINGS}
-                    onClose={() => setSettingsOpen(false)}
-                    onSave={(settings) => { setPersisted((current) => ({ ...current, settings })); setSettingsOpen(false); }}
-                    settings={persisted.settings}
-                />
-            ) : null}
-            {prompt && promptConfig ? <PromptDialog {...promptConfig} onClose={() => setPrompt(null)} onConfirm={submitPrompt} /> : null}
-            {startDialog === "clone" ? (
-                <CloneDialog
-                    busy={busy}
-                    onClose={() => { if (!busy) setStartDialog(null); }}
-                    onSubmit={(options) => {
-                        setStartDialog(null);
-                        void cloneRepository(options, activeTab?.kind === "start" ? activeTab.id : null);
-                    }}
-                />
-            ) : null}
-            {startDialog === "create" ? (
-                <CreateDialog
-                    busy={busy}
-                    onClose={() => { if (!busy) setStartDialog(null); }}
-                    onSubmit={(path, defaultBranch, ignorePatterns) => {
-                        setStartDialog(null);
-                        void createRepository(
-                            path,
-                            defaultBranch,
-                            ignorePatterns,
-                            activeTab?.kind === "start" ? activeTab.id : null,
-                        );
-                    }}
-                />
-            ) : null}
-            {conflictEditor && snapshot ? (
-                <ConflictResolverDialog
-                    branchName={currentBranch(snapshot)}
-                    busy={busy}
-                    details={conflictEditor}
-                    onClose={() => { if (!busy) setConflictEditor(null); }}
-                    onResolve={(resolution) => {
-                        const current = conflictEditor;
-                        void runMutation("Conflict resolved", (repository) => gitcatApi.resolveConflict(
-                            repository.repository_id,
-                            current.path,
-                            resolution,
-                            current.expected_state,
-                        )).then((success) => { if (success) setConflictEditor(null); });
-                    }}
-                    onSave={(text, lineEnding) => {
-                        const current = conflictEditor;
-                        void runMutation("Conflict result saved", (repository) => gitcatApi.saveConflictResult(
-                            repository.repository_id,
-                            current.path,
-                            text,
-                            lineEnding,
-                            current.expected_state,
-                        )).then((success) => { if (success) setConflictEditor(null); });
-                    }}
-                    operation={snapshot.operation_state}
-                />
-            ) : null}
-            {commitMenu ? <ContextMenu actions={contextActions} onAction={executeCommitAction} onClose={() => setCommitMenu(null)} x={commitMenu.x} y={commitMenu.y} /> : null}
-            {tabMenu ? <ContextMenu actions={tabContextActions} onAction={executeTabAction} onClose={() => setTabMenu(null)} x={tabMenu.x} y={tabMenu.y} /> : null}
-            {branchMenu ? <ContextMenu actions={branchContextActions} onAction={executeBranchAction} onClose={() => setBranchMenu(null)} x={branchMenu.x} y={branchMenu.y} /> : null}
-            <ToastRegion onDismiss={(id) => setToasts((current) => current.filter((toast) => toast.id !== id))} toasts={toasts} />
+            <AppDialogs
+                activeTab={activeTab}
+                branchContextActions={branchContextActions}
+                branchMenu={branchMenu}
+                busy={busy}
+                cloneRepository={cloneRepository}
+                commitMenu={commitMenu}
+                conflictEditor={conflictEditor}
+                contextActions={contextActions}
+                createRepository={createRepository}
+                dismissToast={dismissToast}
+                executeBranchAction={executeBranchAction}
+                executeCommitAction={executeCommitAction}
+                executeTabAction={executeTabAction}
+                prompt={prompt}
+                promptConfig={promptConfig}
+                runMutation={runMutation}
+                setBranchMenu={setBranchMenu}
+                setCommitMenu={setCommitMenu}
+                setConflictEditor={setConflictEditor}
+                setPersisted={setPersisted}
+                setPrompt={setPrompt}
+                setSettingsOpen={setSettingsOpen}
+                setStartDialog={setStartDialog}
+                setTabMenu={setTabMenu}
+                settings={persisted.settings}
+                settingsOpen={settingsOpen}
+                snapshot={snapshot}
+                startDialog={startDialog}
+                submitPrompt={submitPrompt}
+                tabContextActions={tabContextActions}
+                tabMenu={tabMenu}
+                toasts={toasts}
+            />
         </AppShell>
     );
 }

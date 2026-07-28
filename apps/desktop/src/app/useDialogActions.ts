@@ -1,0 +1,141 @@
+import { useCallback, useMemo, type Dispatch, type SetStateAction } from "react";
+
+import { gitcatApi } from "../lib/api";
+import type { PersistedState, RepositorySnapshot } from "../lib/types";
+import { expectedState, isNotFullyMerged } from "./snapshot";
+import type { ConfirmState, PromptState, RunMutation } from "./state";
+import { makeId } from "./workspace";
+
+export interface DialogActionsParams {
+    confirmRequest: ConfirmState;
+    prompt: PromptState;
+    runMutation: RunMutation;
+    setConfirmRequest: Dispatch<SetStateAction<ConfirmState>>;
+    setPersisted: Dispatch<SetStateAction<PersistedState>>;
+    setPrompt: Dispatch<SetStateAction<PromptState>>;
+    snapshot: RepositorySnapshot | null;
+}
+
+export function useDialogActions({
+    confirmRequest,
+    prompt,
+    runMutation,
+    setConfirmRequest,
+    setPersisted,
+    setPrompt,
+    snapshot,
+}: DialogActionsParams) {
+    const submitPrompt = useCallback((value: string) => {
+        if (!prompt) return;
+        const currentPrompt = prompt;
+        setPrompt(null);
+        switch (currentPrompt.kind) {
+            case "create_group":
+                setPersisted((current) => {
+                    const groupId = makeId("group");
+                    let moved = currentPrompt.tabId
+                        ? current.workspace.ungrouped_tabs.find((tab) => tab.id === currentPrompt.tabId)
+                        : undefined;
+                    const ungrouped_tabs = currentPrompt.tabId
+                        ? current.workspace.ungrouped_tabs.filter((tab) => tab.id !== currentPrompt.tabId)
+                        : current.workspace.ungrouped_tabs;
+                    const groupsWithout = current.workspace.groups.map((group) => ({
+                        ...group,
+                        tabs: currentPrompt.tabId ? group.tabs.filter((tab) => {
+                            if (tab.id === currentPrompt.tabId) moved = tab;
+                            return tab.id !== currentPrompt.tabId;
+                        }) : group.tabs,
+                    }));
+                    const group = {
+                        id: groupId,
+                        name: value,
+                        collapsed: false,
+                        order: groupsWithout.length,
+                        tabs: moved ? [{ ...moved, order: 0 }] : [],
+                    };
+                    return {
+                        ...current,
+                        workspace: { ...current.workspace, ungrouped_tabs, groups: [...groupsWithout, group] },
+                    };
+                });
+                break;
+            case "rename_group":
+                setPersisted((current) => ({ ...current, workspace: { ...current.workspace, groups: current.workspace.groups.map((group) => group.id === currentPrompt.groupId ? { ...group, name: value } : group) } }));
+                break;
+            case "alias_tab":
+                setPersisted((current) => ({
+                    ...current,
+                    workspace: {
+                        ...current.workspace,
+                        ungrouped_tabs: current.workspace.ungrouped_tabs.map((tab) => tab.id === currentPrompt.tabId ? { ...tab, display_name: value } : tab),
+                        groups: current.workspace.groups.map((group) => ({
+                            ...group,
+                            tabs: group.tabs.map((tab) => tab.id === currentPrompt.tabId ? { ...tab, display_name: value } : tab),
+                        })),
+                    },
+                }));
+                break;
+            case "create_branch":
+                void runMutation("Branch created", (repository) => gitcatApi.createBranch(repository.repository_id, value, currentPrompt.startOid, true));
+                break;
+            case "rename_branch":
+                void runMutation("Branch renamed", (repository) => gitcatApi.renameBranch(repository.repository_id, currentPrompt.branch.name, value));
+                break;
+            case "create_tag":
+                void runMutation("Tag created", (repository) => gitcatApi.createTag(repository.repository_id, value, currentPrompt.oid, null));
+                break;
+        }
+    }, [prompt, runMutation]);
+
+    const promptConfig = useMemo(() => {
+        if (!prompt) return null;
+        switch (prompt.kind) {
+            case "create_group": return { title: "New repository group", label: "Group name", placeholder: "Client work", confirmLabel: "Create group" };
+            case "rename_group": return { title: "Rename repository group", label: "Group name", initialValue: prompt.current, confirmLabel: "Rename" };
+            case "alias_tab": return { title: "Rename repository tab", label: "Tab name", initialValue: prompt.current, confirmLabel: "Rename" };
+            case "create_branch": return { title: "Create branch", label: "Branch name", placeholder: "feature/short-name", confirmLabel: "Create and checkout" };
+            case "rename_branch": return { title: "Rename branch", label: "New branch name", initialValue: prompt.branch.name, confirmLabel: "Rename" };
+            case "create_tag": return { title: "Create tag", label: "Tag name", placeholder: "v1.0.0", confirmLabel: "Create tag" };
+        }
+    }, [prompt]);
+
+    const submitConfirm = useCallback(() => {
+        if (!confirmRequest || !snapshot) return;
+        const request = confirmRequest;
+        setConfirmRequest(null);
+        switch (request.kind) {
+            case "delete_branch":
+                void runMutation("Branch deleted", (repository) => gitcatApi.deleteBranch(
+                    repository.repository_id,
+                    request.name,
+                    request.force,
+                    true,
+                    expectedState(snapshot),
+                ), {
+                    onError: (error) => {
+                        if (request.force || !isNotFullyMerged(error)) return false;
+                        setConfirmRequest({ kind: "delete_branch", name: request.name, force: true });
+                        return true;
+                    },
+                });
+                break;
+        }
+    }, [confirmRequest, runMutation, snapshot]);
+
+    const confirmConfig = useMemo(() => {
+        if (!confirmRequest) return null;
+        switch (confirmRequest.kind) {
+            case "delete_branch": return confirmRequest.force
+                ? {
+                    message: `"${confirmRequest.name}" is not fully merged. Force deleting it discards commits that exist only on this branch.`,
+                    confirmLabel: "Force delete",
+                }
+                : {
+                    message: `This is a destructive operation, are you sure you want to delete "${confirmRequest.name}"?`,
+                    confirmLabel: "Delete",
+                };
+        }
+    }, [confirmRequest]);
+
+    return { confirmConfig, promptConfig, submitConfirm, submitPrompt };
+}
