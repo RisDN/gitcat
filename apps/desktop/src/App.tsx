@@ -584,6 +584,7 @@ function App() {
         id: tab.id,
         label: tab.display_name,
         path: tab.repository_path,
+        kind: tab.kind ?? "repository",
         dirty: tab.id === activeTabId && snapshot ? !snapshot.status.clean : false,
         conflictCount: tab.id === activeTabId ? activeConflictCount : 0,
         unavailable: tab.kind !== "start" && !runtime[tab.id],
