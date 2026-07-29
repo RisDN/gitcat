@@ -1,9 +1,18 @@
 import { GRAPH_LANE_SLOTS } from "../lib/styles";
-import type { AppSettings } from "../lib/types";
+import type { AppSettings, AppTheme, ThemeColors } from "../lib/types";
+import { DEFAULT_THEME_COLORS } from "./themePresets";
+
+export function activeTheme(settings: Pick<AppSettings, "active_theme_id" | "themes">): AppTheme | undefined {
+    return settings.themes.find((theme) => theme.id === settings.active_theme_id) ?? settings.themes[0];
+}
+
+export function activeThemeColors(settings: Pick<AppSettings, "active_theme_id" | "themes">): ThemeColors {
+    return activeTheme(settings)?.colors ?? DEFAULT_THEME_COLORS;
+}
 
 export function applyTheme(settings: AppSettings): void {
     const root = document.documentElement;
-    const theme = settings.theme;
+    const theme = activeThemeColors(settings);
     const variables: Record<string, string> = {
         "--gc-background": theme.background,
         "--gc-surface": theme.surface,

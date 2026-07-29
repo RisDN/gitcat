@@ -434,6 +434,13 @@ export interface ThemeColors {
   graph_palette: string[];
 }
 
+export interface AppTheme {
+  id: string;
+  name: string;
+  built_in: boolean;
+  colors: ThemeColors;
+}
+
 export type FileViewMode = "path" | "tree";
 
 export type DiffViewMode = "hunk" | "inline" | "split";
@@ -458,7 +465,8 @@ export interface AppSettings {
   diff_view_mode: DiffViewMode;
   graph_columns: GraphColumnSettings;
   keybinds: KeybindSettings;
-  theme: ThemeColors;
+  active_theme_id: string;
+  themes: AppTheme[];
 }
 
 export interface KeybindSettings {

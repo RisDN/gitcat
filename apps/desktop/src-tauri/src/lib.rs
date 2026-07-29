@@ -4,14 +4,14 @@ mod window_state;
 use std::sync::Arc;
 
 use gitcat_contracts::{
-    ApiError, ApiResult, AppMetadata, CloneOptions, CommitActionAvailability, CommitDetails,
-    CommitOptions, CommitSearchQuery, CommitSearchResult, ConflictExpectedState,
+    ApiError, ApiResult, AppMetadata, AppSettings, CloneOptions, CommitActionAvailability,
+    CommitDetails, CommitOptions, CommitSearchQuery, CommitSearchResult, ConflictExpectedState,
     ConflictFileDetails, ConflictLineEndingPolicy, ConflictPreflightResult, ConflictResolution,
     ContinueOperation, DiffRequest, ErrorCode, ExpectedState, FetchOptions, FileDiff, GitVersion,
     HistoryPage, HistoryQuery, MutationResult, PersistedState, PullOptions, PushOptions,
     RepositoryId, RepositoryInfo, RepositorySnapshot, ResetMode, StashEntry,
 };
-use gitcat_core::{CoreApi, JsonStateStore};
+use gitcat_core::{CoreApi, JsonStateStore, export_settings, import_settings};
 use gitcat_git_cli::GitCliBackend;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State, WindowEvent};
@@ -606,6 +606,20 @@ async fn persisted_state_save(
         .map_err(task_join_error)?
 }
 
+#[tauri::command]
+async fn settings_export(settings: AppSettings, destination: String) -> ApiResult<()> {
+    tauri::async_runtime::spawn_blocking(move || export_settings(&settings, destination))
+        .await
+        .map_err(task_join_error)?
+}
+
+#[tauri::command]
+async fn settings_import(source: String) -> ApiResult<AppSettings> {
+    tauri::async_runtime::spawn_blocking(move || import_settings(source))
+        .await
+        .map_err(task_join_error)?
+}
+
 fn task_join_error(error: impl std::fmt::Display) -> ApiError {
     ApiError::new(
         gitcat_contracts::ErrorCode::Internal,
@@ -692,6 +706,8 @@ pub fn run() {
             stash_drop,
             persisted_state_load,
             persisted_state_save,
+            settings_export,
+            settings_import,
         ])
         .run(tauri::generate_context!())
         .expect("error while running GitCat");

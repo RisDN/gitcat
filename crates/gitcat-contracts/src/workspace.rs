@@ -137,6 +137,139 @@ impl Default for ThemeColors {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AppTheme {
+    pub id: String,
+    pub name: String,
+    pub built_in: bool,
+    pub colors: ThemeColors,
+}
+
+impl Default for AppTheme {
+    fn default() -> Self {
+        default_themes().into_iter().next().unwrap_or_else(|| Self {
+            id: "gitcat-midnight".into(),
+            name: "GitCat Midnight".into(),
+            built_in: true,
+            colors: ThemeColors::default(),
+        })
+    }
+}
+
+fn colors(values: [&str; 12], graph_palette: &[&str]) -> ThemeColors {
+    let [
+        background,
+        surface,
+        panel,
+        border,
+        text,
+        muted_text,
+        accent,
+        success,
+        warning,
+        danger,
+        diff_addition,
+        diff_deletion,
+    ] = values;
+    ThemeColors {
+        background: background.into(),
+        surface: surface.into(),
+        panel: panel.into(),
+        border: border.into(),
+        text: text.into(),
+        muted_text: muted_text.into(),
+        accent: accent.into(),
+        success: success.into(),
+        warning: warning.into(),
+        danger: danger.into(),
+        diff_addition: diff_addition.into(),
+        diff_deletion: diff_deletion.into(),
+        graph_palette: graph_palette.iter().map(|color| (*color).into()).collect(),
+    }
+}
+
+pub fn default_themes() -> Vec<AppTheme> {
+    vec![
+        AppTheme {
+            id: "gitcat-midnight".into(),
+            name: "GitCat Midnight".into(),
+            built_in: true,
+            colors: ThemeColors::default(),
+        },
+        AppTheme {
+            id: "gitkraken-dark".into(),
+            name: "GitKraken Dark".into(),
+            built_in: true,
+            colors: colors(
+                [
+                    "#141422", "#1b1b2b", "#242438", "#3b3b54", "#f5f3ff", "#a5a2bb", "#18d6b3",
+                    "#42d392", "#f7b955", "#ff6680", "#183f35", "#4b2935",
+                ],
+                &[
+                    "#18d6b3", "#7b61ff", "#f252d2", "#ff9f43", "#3fc5f0", "#7ed957",
+                ],
+            ),
+        },
+        AppTheme {
+            id: "github-desktop-dark".into(),
+            name: "GitHub Desktop Dark".into(),
+            built_in: true,
+            colors: colors(
+                [
+                    "#1e1f22", "#25262a", "#2b2d31", "#41434a", "#f3f4f6", "#a7abb4", "#8a63d2",
+                    "#3fb950", "#d29922", "#f85149", "#183d25", "#4b2226",
+                ],
+                &[
+                    "#8a63d2", "#58a6ff", "#3fb950", "#d29922", "#f85149", "#db61a2",
+                ],
+            ),
+        },
+        AppTheme {
+            id: "github-desktop-light".into(),
+            name: "GitHub Desktop Light".into(),
+            built_in: true,
+            colors: colors(
+                [
+                    "#f6f8fa", "#ffffff", "#eef1f4", "#d0d7de", "#24292f", "#57606a", "#8250df",
+                    "#1a7f37", "#9a6700", "#cf222e", "#dafbe1", "#ffebe9",
+                ],
+                &[
+                    "#8250df", "#0969da", "#1a7f37", "#bf8700", "#cf222e", "#bf3989",
+                ],
+            ),
+        },
+        AppTheme {
+            id: "paper-light".into(),
+            name: "Paper Light".into(),
+            built_in: true,
+            colors: colors(
+                [
+                    "#f4f2ed", "#fffefa", "#e9e6df", "#cbc6bc", "#26241f", "#6e6a61", "#087f8c",
+                    "#2f855a", "#a35b00", "#c43d4b", "#dcefe3", "#f7dddd",
+                ],
+                &[
+                    "#087f8c", "#4c6fff", "#8b5cf6", "#cc5de8", "#e8590c", "#2f9e44",
+                ],
+            ),
+        },
+        AppTheme {
+            id: "oled-black".into(),
+            name: "OLED Black".into(),
+            built_in: true,
+            colors: colors(
+                [
+                    "#000000", "#080808", "#101010", "#292929", "#f5f5f5", "#929292", "#35cfff",
+                    "#4ade80", "#fbbf24", "#fb7185", "#123821", "#421821",
+                ],
+                &[
+                    "#35cfff", "#818cf8", "#c084fc", "#f472b6", "#fb923c", "#4ade80",
+                ],
+            ),
+        },
+    ]
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FileViewMode {
@@ -191,7 +324,10 @@ pub struct AppSettings {
     pub diff_view_mode: DiffViewMode,
     pub graph_columns: GraphColumnSettings,
     pub keybinds: KeybindSettings,
-    pub theme: ThemeColors,
+    pub active_theme_id: String,
+    pub themes: Vec<AppTheme>,
+    #[serde(default, rename = "theme", skip_serializing)]
+    pub legacy_theme: Option<ThemeColors>,
 }
 
 impl Default for AppSettings {
@@ -207,8 +343,56 @@ impl Default for AppSettings {
             diff_view_mode: DiffViewMode::default(),
             graph_columns: GraphColumnSettings::default(),
             keybinds: KeybindSettings::default(),
-            theme: ThemeColors::default(),
+            active_theme_id: "gitcat-midnight".into(),
+            themes: default_themes(),
+            legacy_theme: None,
         }
+    }
+}
+
+impl AppSettings {
+    pub fn migrate_legacy_theme(&mut self) {
+        if self.themes.is_empty() {
+            self.themes = default_themes();
+        }
+        if self.active_theme_id.is_empty()
+            || !self
+                .themes
+                .iter()
+                .any(|theme| theme.id == self.active_theme_id)
+        {
+            self.active_theme_id = self
+                .themes
+                .first()
+                .map(|theme| theme.id.clone())
+                .unwrap_or_else(|| "gitcat-midnight".into());
+        }
+
+        let Some(legacy) = self.legacy_theme.take() else {
+            return;
+        };
+        let active_matches = self
+            .themes
+            .iter()
+            .find(|theme| theme.id == self.active_theme_id)
+            .is_some_and(|theme| theme.colors == legacy);
+        if active_matches {
+            return;
+        }
+
+        let mut id = "migrated-theme".to_string();
+        let mut suffix = 2;
+        while self.themes.iter().any(|theme| theme.id == id) {
+            id = format!("migrated-theme-{suffix}");
+            suffix += 1;
+        }
+        self.themes.push(AppTheme {
+            id: id.clone(),
+            name: "Migrated theme".into(),
+            built_in: false,
+            colors: legacy,
+        });
+        self.active_theme_id = id;
     }
 }
 

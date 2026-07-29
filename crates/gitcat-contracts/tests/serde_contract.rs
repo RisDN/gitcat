@@ -48,8 +48,13 @@ fn defaults_include_theme_and_bounded_queries() {
     let settings = AppSettings::default();
     assert_eq!(settings.history_page_size, 200);
     assert_eq!(settings.diff_context_lines, 3);
-    assert!(settings.theme.graph_palette.len() >= 4);
-    assert!(settings.theme.accent.starts_with('#'));
+    let theme = settings
+        .themes
+        .iter()
+        .find(|theme| theme.id == settings.active_theme_id)
+        .unwrap();
+    assert!(theme.colors.graph_palette.len() >= 4);
+    assert!(theme.colors.accent.starts_with('#'));
 }
 
 #[test]

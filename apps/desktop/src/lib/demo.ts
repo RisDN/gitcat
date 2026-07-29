@@ -1,5 +1,6 @@
 import type { GitCatApi } from "./api";
 import packageMetadata from "../../package.json";
+import { cloneDefaultThemes, DEFAULT_THEME_ID } from "../app/themePresets";
 import { DEFAULT_KEYBINDS } from "./keybinds";
 import type {
   AppMetadata,
@@ -327,21 +328,8 @@ const defaultState = (): PersistedState => ({
     diff_view_mode: "hunk",
     graph_columns: { refs: true, graph: true, message: true, author: true, date: true, sha: true },
     keybinds: { ...DEFAULT_KEYBINDS },
-    theme: {
-      background: "#17191f",
-      surface: "#1d2027",
-      panel: "#242832",
-      border: "#343946",
-      text: "#f2f4f8",
-      muted_text: "#9aa3b2",
-      accent: "#20b8d8",
-      success: "#4dbd74",
-      warning: "#f0ad4e",
-      danger: "#e05d6f",
-      diff_addition: "#244d33",
-      diff_deletion: "#562e32",
-      graph_palette: ["#15a0bf", "#0669f7", "#8e00c2", "#c517b6", "#d90171", "#cd0101", "#f25d2e", "#f2ca33", "#7bd938", "#2ece9d"],
-    },
+    active_theme_id: DEFAULT_THEME_ID,
+    themes: cloneDefaultThemes(),
   },
   workspace: {
     version: 2,

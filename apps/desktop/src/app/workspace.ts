@@ -1,7 +1,16 @@
 import { ALL_GRAPH_COLUMNS, GRAPH_COLUMNS, visibleGraphColumns } from "../lib/columns";
 import { DEFAULT_KEYBINDS, duplicateKeybinds, keybindValidationError } from "../lib/keybinds";
-import type { GraphColumnSettings, KeybindSettings, PersistedState, RepositoryTab } from "../lib/types";
+import type {
+    AppSettings,
+    AppTheme,
+    GraphColumnSettings,
+    KeybindSettings,
+    PersistedState,
+    RepositoryTab,
+    ThemeColors,
+} from "../lib/types";
 import { DEFAULT_SETTINGS, RECENT_LIMIT } from "./defaults";
+import { BUILTIN_THEME_IDS, cloneDefaultThemes, DEFAULT_THEME_COLORS, DEFAULT_THEME_ID } from "./themePresets";
 
 export function makeId(prefix: string): string {
     return `${prefix}-${crypto.randomUUID()}`;
@@ -42,6 +51,110 @@ function normalizeGraphColumns(columns: Partial<GraphColumnSettings> | undefined
     return visibleGraphColumns(normalized).length ? normalized : { ...ALL_GRAPH_COLUMNS };
 }
 
+const HEX_COLOR = /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i;
+const THEME_ID = /^[a-zA-Z0-9_-]{1,96}$/;
+const THEME_COLOR_KEYS: Array<Exclude<keyof ThemeColors, "graph_palette">> = [
+    "background",
+    "surface",
+    "panel",
+    "border",
+    "text",
+    "muted_text",
+    "accent",
+    "success",
+    "warning",
+    "danger",
+    "diff_addition",
+    "diff_deletion",
+];
+
+function normalizeThemeColors(value: unknown, fallback = DEFAULT_THEME_COLORS): ThemeColors | null {
+    if (!value || typeof value !== "object") return null;
+    const candidate = value as Partial<ThemeColors>;
+    const colors = { ...fallback, graph_palette: [...fallback.graph_palette] };
+    for (const key of THEME_COLOR_KEYS) {
+        if (typeof candidate[key] !== "string" || !HEX_COLOR.test(candidate[key])) return null;
+        colors[key] = candidate[key];
+    }
+    if (!Array.isArray(candidate.graph_palette)
+        || candidate.graph_palette.length < 1
+        || candidate.graph_palette.length > 64
+        || candidate.graph_palette.some((color) => typeof color !== "string" || !HEX_COLOR.test(color))) {
+        return null;
+    }
+    colors.graph_palette = [...candidate.graph_palette];
+    return colors;
+}
+
+function uniqueThemeId(base: string, used: ReadonlySet<string>): string {
+    if (!used.has(base.toLowerCase())) return base;
+    let suffix = 2;
+    while (used.has(`${base}-${suffix}`.toLowerCase())) suffix += 1;
+    return `${base}-${suffix}`;
+}
+
+type LegacyAppSettings = Partial<AppSettings> & { theme?: ThemeColors };
+
+function boundedNumber(value: unknown, fallback: number, minimum: number, maximum: number): number {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.min(maximum, Math.max(minimum, Math.trunc(number))) : fallback;
+}
+
+export function normalizeAppSettings(value: unknown): AppSettings {
+    const source = value && typeof value === "object" ? value as LegacyAppSettings : {};
+    const themes = cloneDefaultThemes();
+    const usedIds = new Set(themes.map((theme) => theme.id.toLowerCase()));
+
+    if (Array.isArray(source.themes)) {
+        for (const item of source.themes) {
+            if (!item || typeof item !== "object") continue;
+            const candidate = item as Partial<AppTheme>;
+            if (typeof candidate.id !== "string"
+                || !THEME_ID.test(candidate.id)
+                || BUILTIN_THEME_IDS.has(candidate.id)) continue;
+            const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
+            const colors = normalizeThemeColors(candidate.colors);
+            if (!name || name.length > 64 || !colors) continue;
+            const id = uniqueThemeId(candidate.id, usedIds);
+            themes.push({ id, name, built_in: false, colors });
+            usedIds.add(id.toLowerCase());
+        }
+    }
+
+    let activeThemeId = typeof source.active_theme_id === "string"
+        && themes.some((theme) => theme.id === source.active_theme_id)
+        ? source.active_theme_id
+        : DEFAULT_THEME_ID;
+
+    if (!Array.isArray(source.themes)) {
+        const legacyColors = normalizeThemeColors(source.theme);
+        if (legacyColors && JSON.stringify(legacyColors) !== JSON.stringify(DEFAULT_THEME_COLORS)) {
+            const id = uniqueThemeId("migrated-theme", usedIds);
+            themes.push({ id, name: "Migrated theme", built_in: false, colors: legacyColors });
+            activeThemeId = id;
+        }
+    }
+
+    return {
+        default_pull_mode: ["merge", "fast_forward_only", "rebase"].includes(source.default_pull_mode ?? "")
+            ? source.default_pull_mode!
+            : DEFAULT_SETTINGS.default_pull_mode,
+        auto_fetch_interval_minutes: boundedNumber(source.auto_fetch_interval_minutes, DEFAULT_SETTINGS.auto_fetch_interval_minutes, 0, 60),
+        auto_prune: typeof source.auto_prune === "boolean" ? source.auto_prune : DEFAULT_SETTINGS.auto_prune,
+        history_page_size: boundedNumber(source.history_page_size, DEFAULT_SETTINGS.history_page_size, 1, 500),
+        diff_context_lines: boundedNumber(source.diff_context_lines, DEFAULT_SETTINGS.diff_context_lines, 0, 100),
+        diff_max_bytes: boundedNumber(source.diff_max_bytes, DEFAULT_SETTINGS.diff_max_bytes, 1, 128 * 1024 * 1024),
+        file_view_mode: source.file_view_mode === "tree" ? "tree" : "path",
+        diff_view_mode: ["hunk", "inline", "split"].includes(source.diff_view_mode ?? "")
+            ? source.diff_view_mode!
+            : DEFAULT_SETTINGS.diff_view_mode,
+        graph_columns: normalizeGraphColumns(source.graph_columns),
+        keybinds: normalizePersistedKeybinds(source.keybinds),
+        active_theme_id: activeThemeId,
+        themes,
+    };
+}
+
 export function normalizePersistedState(state: PersistedState): PersistedState {
     const workspace: PersistedState["workspace"] = {
         version: 2,
@@ -55,13 +168,7 @@ export function normalizePersistedState(state: PersistedState): PersistedState {
             .filter((tab) => tab.kind !== "start")
             .map((tab) => ({ path: tab.repository_path, name: tab.display_name, opened_at: 0 }));
     return {
-        settings: {
-            ...DEFAULT_SETTINGS,
-            ...state.settings,
-            graph_columns: normalizeGraphColumns(state.settings?.graph_columns),
-            keybinds: normalizePersistedKeybinds(state.settings?.keybinds),
-            theme: { ...DEFAULT_SETTINGS.theme, ...state.settings?.theme },
-        },
+        settings: normalizeAppSettings(state.settings),
         workspace,
         recents: recents.slice(0, RECENT_LIMIT),
     };

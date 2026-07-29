@@ -57,7 +57,7 @@ export function KeybindEditor({
   };
 
   return (
-    <section className="col-span-full border-t border-border pt-4.25 max-[1080px]:col-span-1">
+    <section>
       <SectionHeading className="flex items-center gap-1.75"><Keyboard size={14} /> Keybinds</SectionHeading>
       <p className="-mt-1.25 mb-3 text-[10px] text-muted">
         Click a shortcut, then press the new key combination. Backspace/Delete clears it. Duplicate and reserved shortcuts are rejected.

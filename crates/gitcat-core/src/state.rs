@@ -12,6 +12,9 @@ const MAX_HISTORY_PAGE_SIZE: usize = 500;
 const MAX_DIFF_CONTEXT_LINES: u16 = 100;
 const MAX_DIFF_BYTES: usize = 128 * 1024 * 1024;
 const MAX_GRAPH_PALETTE_COLORS: usize = 64;
+const MAX_SETTINGS_IMPORT_BYTES: usize = 4 * 1024 * 1024;
+const SETTINGS_EXPORT_FORMAT: &str = "gitcat-settings";
+const SETTINGS_EXPORT_VERSION: u64 = 1;
 
 #[derive(Debug, Clone)]
 pub struct JsonStateStore {
@@ -58,9 +61,10 @@ impl JsonStateStore {
             Err(error) => return Err(io_error("read state", &self.path, error)),
         };
 
-        let state: PersistedState = serde_json::from_slice(&bytes).map_err(|error| {
+        let mut state: PersistedState = serde_json::from_slice(&bytes).map_err(|error| {
             invalid_settings("persisted state is not valid JSON").with_details(error.to_string())
         })?;
+        state.settings.migrate_legacy_theme();
         validate_settings(&state.settings)?;
         Ok(state)
     }
@@ -119,6 +123,65 @@ impl JsonStateStore {
             )
         })
     }
+}
+
+pub fn export_settings(settings: &AppSettings, destination: impl AsRef<Path>) -> ApiResult<()> {
+    validate_settings(settings)?;
+    let destination = destination.as_ref();
+    let parent = destination
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty());
+    if let Some(parent) = parent {
+        fs::create_dir_all(parent)
+            .map_err(|error| io_error("create settings export directory", parent, error))?;
+    }
+    let document = serde_json::json!({
+        "format": SETTINGS_EXPORT_FORMAT,
+        "version": SETTINGS_EXPORT_VERSION,
+        "settings": settings,
+    });
+    let encoded = serde_json::to_vec_pretty(&document).map_err(|error| {
+        ApiError::new(ErrorCode::Internal, "failed to serialize settings export")
+            .with_details(error.to_string())
+    })?;
+    fs::write(destination, encoded)
+        .map_err(|error| io_error("write settings export", destination, error))
+}
+
+pub fn import_settings(source: impl AsRef<Path>) -> ApiResult<AppSettings> {
+    let source = source.as_ref();
+    let bytes =
+        fs::read(source).map_err(|error| io_error("read settings import", source, error))?;
+    if bytes.len() > MAX_SETTINGS_IMPORT_BYTES {
+        return Err(invalid_settings(
+            "settings import must be no larger than 4 MiB",
+        ));
+    }
+    let document: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
+        invalid_settings("settings import is not valid JSON").with_details(error.to_string())
+    })?;
+
+    if let Some(format) = document.get("format") {
+        if format.as_str() != Some(SETTINGS_EXPORT_FORMAT) {
+            return Err(invalid_settings("settings import format is not supported"));
+        }
+        if document.get("version").and_then(serde_json::Value::as_u64)
+            != Some(SETTINGS_EXPORT_VERSION)
+        {
+            return Err(invalid_settings("settings import version is not supported"));
+        }
+        if document.get("settings").is_none() {
+            return Err(invalid_settings("settings import has an invalid structure"));
+        }
+    }
+
+    let settings_value = document.get("settings").unwrap_or(&document).clone();
+    let mut settings: AppSettings = serde_json::from_value(settings_value).map_err(|error| {
+        invalid_settings("settings import has an invalid structure").with_details(error.to_string())
+    })?;
+    settings.migrate_legacy_theme();
+    validate_settings(&settings)?;
+    Ok(settings)
 }
 
 pub fn validate_settings(settings: &AppSettings) -> ApiResult<()> {
@@ -216,7 +279,43 @@ pub fn validate_settings(settings: &AppSettings) -> ApiResult<()> {
         }
     }
 
-    validate_theme(&settings.theme)
+    if settings.themes.is_empty() {
+        return Err(invalid_settings("at least one theme is required"));
+    }
+    if !settings
+        .themes
+        .iter()
+        .any(|theme| theme.id == settings.active_theme_id)
+    {
+        return Err(invalid_settings("active theme does not exist"));
+    }
+
+    let mut theme_ids = HashSet::with_capacity(settings.themes.len());
+    for theme in &settings.themes {
+        if theme.id.is_empty()
+            || theme.id.len() > 96
+            || !theme
+                .id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        {
+            return Err(invalid_settings(
+                "theme ids must use 1 to 96 letters, numbers, dashes, or underscores",
+            ));
+        }
+        if !theme_ids.insert(theme.id.to_ascii_lowercase()) {
+            return Err(invalid_settings("theme ids must be unique"));
+        }
+        let name = theme.name.trim();
+        if name.is_empty() || name.chars().count() > 64 || name.chars().any(char::is_control) {
+            return Err(invalid_settings(
+                "theme names must contain 1 to 64 printable characters",
+            ));
+        }
+        validate_theme(&theme.colors)?;
+    }
+
+    Ok(())
 }
 
 fn is_reserved_keybind(binding: &str) -> bool {
@@ -363,7 +462,7 @@ mod tests {
         store.save(&valid).unwrap();
 
         let mut invalid = valid.clone();
-        invalid.settings.theme.accent = "red; background: url(x)".into();
+        invalid.settings.themes[0].colors.accent = "red; background: url(x)".into();
         let error = store.save(&invalid).unwrap_err();
 
         assert_eq!(error.code, ErrorCode::InvalidSettings);
@@ -447,6 +546,72 @@ mod tests {
     }
 
     #[test]
+    fn older_custom_color_state_becomes_an_active_custom_theme() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("state.json");
+        fs::write(
+            &path,
+            r##"{"settings":{"theme":{"accent":"#aabbcc"}},"workspace":{}}"##,
+        )
+        .unwrap();
+
+        let state = JsonStateStore::new(path).load().unwrap();
+        let theme = state
+            .settings
+            .themes
+            .iter()
+            .find(|theme| theme.id == state.settings.active_theme_id)
+            .unwrap();
+        assert_eq!(theme.name, "Migrated theme");
+        assert!(!theme.built_in);
+        assert_eq!(theme.colors.accent, "#aabbcc");
+    }
+
+    #[test]
+    fn settings_export_round_trips_themes_and_keybinds() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("gitcat-settings.json");
+        let mut settings = AppSettings::default();
+        let mut custom = settings.themes[0].clone();
+        custom.id = "custom-ocean".into();
+        custom.name = "Custom Ocean".into();
+        custom.built_in = false;
+        custom.colors.accent = "#0088cc".into();
+        settings.active_theme_id = custom.id.clone();
+        settings.themes.push(custom);
+        settings.keybinds.commit = "Ctrl+Alt+9".into();
+
+        export_settings(&settings, &path).unwrap();
+        let encoded: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(encoded["format"], SETTINGS_EXPORT_FORMAT);
+        assert_eq!(encoded["version"], SETTINGS_EXPORT_VERSION);
+        assert!(encoded["settings"].get("theme").is_none());
+        assert_eq!(import_settings(path).unwrap(), settings);
+    }
+
+    #[test]
+    fn settings_import_rejects_unknown_format() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("wrong.json");
+        fs::write(&path, r#"{"format":"other-app","version":1,"settings":{}}"#).unwrap();
+
+        let error = import_settings(path).unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidSettings);
+        assert_eq!(error.message, "settings import format is not supported");
+    }
+
+    #[test]
+    fn settings_import_rejects_versioned_document_without_settings() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("missing-settings.json");
+        fs::write(&path, r#"{"format":"gitcat-settings","version":1}"#).unwrap();
+
+        let error = import_settings(path).unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidSettings);
+        assert_eq!(error.message, "settings import has an invalid structure");
+    }
+
+    #[test]
     fn cloned_store_updates_do_not_lose_each_other() {
         let directory = tempdir().unwrap();
         let store = JsonStateStore::new(directory.path().join("state.json"));
@@ -487,10 +652,10 @@ mod tests {
     #[test]
     fn rgba_colors_are_accepted_and_empty_palette_is_rejected() {
         let mut settings = AppSettings::default();
-        settings.theme.accent = "#aabbcc80".into();
+        settings.themes[0].colors.accent = "#aabbcc80".into();
         validate_settings(&settings).unwrap();
 
-        settings.theme.graph_palette.clear();
+        settings.themes[0].colors.graph_palette.clear();
         assert_eq!(
             validate_settings(&settings).unwrap_err().code,
             ErrorCode::InvalidSettings
