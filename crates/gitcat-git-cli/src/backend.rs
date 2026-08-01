@@ -1481,7 +1481,12 @@ impl GitBackend for GitCliBackend {
         if paths.is_empty() {
             return self.mutation_result(path, self.head_oid(path).await?).await;
         }
-        let mut args = os_args(&["stash", "push", "--include-untracked"]);
+        let mut add_args = os_args(&["add", "-A", "--"]);
+        add_args.extend(paths.iter().map(OsString::from));
+        self.mutate(path, add_args, None, CancellationToken::new(), false)
+            .await?;
+
+        let mut args = os_args(&["stash", "push"]);
         let message = match message {
             Some(message) => Some(message.to_owned()),
             None => self.default_stash_message(path).await?,
@@ -1498,8 +1503,15 @@ impl GitBackend for GitCliBackend {
         }
         args.push("--".into());
         args.extend(paths.iter().map(OsString::from));
-        self.mutate(path, args, None, CancellationToken::new(), false)
-            .await
+        let result = self
+            .mutate(path, args, None, CancellationToken::new(), false)
+            .await;
+        if result.is_err() {
+            let mut restore_args = os_args(&["restore", "--staged", "--"]);
+            restore_args.extend(paths.iter().map(OsString::from));
+            let _ = self.read_allow_failure(Some(path), restore_args).await;
+        }
+        result
     }
 
     async fn append_gitignore(
@@ -2335,10 +2347,17 @@ impl GitBackend for GitCliBackend {
         message: Option<&str>,
         include_untracked: bool,
     ) -> ApiResult<MutationResult> {
-        let mut args = os_args(&["stash", "push"]);
         if include_untracked {
-            args.push("--include-untracked".into());
+            self.mutate(
+                path,
+                os_args(&["add", "-A", "--"]),
+                None,
+                CancellationToken::new(),
+                false,
+            )
+            .await?;
         }
+        let mut args = os_args(&["stash", "push"]);
         let message = match message {
             Some(message) => Some(message.to_owned()),
             None => self.default_stash_message(path).await?,
@@ -2353,8 +2372,15 @@ impl GitBackend for GitCliBackend {
             args.push("--message".into());
             args.push(message.into());
         }
-        self.mutate(path, args, None, CancellationToken::new(), false)
-            .await
+        let result = self
+            .mutate(path, args, None, CancellationToken::new(), false)
+            .await;
+        if include_untracked && result.is_err() {
+            let _ = self
+                .read_allow_failure(Some(path), os_args(&["restore", "--staged", "--", "."]))
+                .await;
+        }
+        result
     }
 
     async fn stash_apply(&self, path: &Path, index: usize, pop: bool) -> ApiResult<MutationResult> {
