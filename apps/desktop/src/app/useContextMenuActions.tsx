@@ -1,4 +1,4 @@
-import { Copy, Download, FolderInput, FolderPlus, FolderX, GitBranchPlus, GitCommitHorizontal, GitPullRequestArrow, Pencil, RotateCcw, Tag, Trash2, Upload, X, } from "lucide-react";
+import { Copy, Download, FolderInput, FolderPlus, FolderX, GitBranchPlus, GitCommitHorizontal, GitPullRequestArrow, PackageCheck, PackageOpen, Pencil, RotateCcw, Tag, Trash2, Upload, X, } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction, } from "react";
 
 import type { ContextAction } from "../components/ContextMenu";
@@ -136,6 +136,14 @@ export function useContextMenuActions({
 
     const contextActions = useMemo<ContextAction[]>(() => {
         if (!commitMenu) return [];
+        if (commitMenu.commit.stash) {
+            return [
+                { id: "stash_apply", label: "Apply Stash", icon: <PackageOpen size={15} /> },
+                { id: "stash_pop", label: "Pop Stash", icon: <PackageCheck size={15} /> },
+                { id: "stash_drop", label: "Delete Stash", icon: <Trash2 size={15} />, danger: true, separatorBefore: true },
+                { id: "copy", label: "Copy full commit SHA", icon: <Copy size={15} />, separatorBefore: true },
+            ];
+        }
         const enabled = (kind: CommitActionAvailability["kind"]) => (
             commitMenuActionMap.get(kind)?.enabled ?? false
         );
@@ -169,6 +177,21 @@ export function useContextMenuActions({
         switch (action) {
             case "copy":
                 void copySha(commit.oid);
+                break;
+            case "stash_apply":
+                if (commit.stash) {
+                    const { index } = commit.stash;
+                    void runMutation("Stash applied", (repository) => gitcatApi.stashApply(repository.repository_id, index, false));
+                }
+                break;
+            case "stash_pop":
+                if (commit.stash) {
+                    const { index } = commit.stash;
+                    void runMutation("Stash popped", (repository) => gitcatApi.stashApply(repository.repository_id, index, true));
+                }
+                break;
+            case "stash_drop":
+                if (commit.stash) setConfirmRequest({ kind: "delete_stash", index: commit.stash.index, selector: commit.stash.selector });
                 break;
             case "branch":
                 setPrompt({ kind: "create_branch", startOid: commit.oid });
@@ -213,7 +236,7 @@ export function useContextMenuActions({
                 break;
             }
         }
-    }, [commitMenu, copySha, runMutation, snapshot]);
+    }, [commitMenu, copySha, runMutation, setConfirmRequest, snapshot]);
 
     const tabContextActions = useMemo<ContextAction[]>(() => {
         if (!tabMenu) return [];

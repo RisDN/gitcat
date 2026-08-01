@@ -119,6 +119,14 @@ export function useDialogActions({
                     },
                 });
                 break;
+            case "delete_stash":
+                void runMutation("Stash deleted", (repository) => gitcatApi.stashDrop(
+                    repository.repository_id,
+                    request.index,
+                    true,
+                    expectedState(snapshot),
+                ));
+                break;
         }
     }, [confirmRequest, runMutation, snapshot]);
 
@@ -134,6 +142,10 @@ export function useDialogActions({
                     message: `This is a destructive operation, are you sure you want to delete "${confirmRequest.name}"?`,
                     confirmLabel: "Delete",
                 };
+            case "delete_stash": return {
+                message: `This is a destructive operation, are you sure you want to delete ${confirmRequest.selector}?`,
+                confirmLabel: "Delete",
+            };
         }
     }, [confirmRequest]);
 

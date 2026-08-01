@@ -19,6 +19,7 @@ export type PromptState =
 
 export type ConfirmState =
     | { kind: "delete_branch"; name: string; force: boolean }
+    | { kind: "delete_stash"; index: number; selector: string }
     | null;
 
 export interface CommitMenuState {
