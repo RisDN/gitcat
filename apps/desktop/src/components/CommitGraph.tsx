@@ -187,12 +187,9 @@ function buildBranchColors(
     const commit = commits[index];
     if (!commit.stash || groupOf.has(commit.oid)) continue;
 
-    const originOid = commit.graph.edges[0]?.parent_oid;
-    const originGroup = originOid === undefined ? undefined : groupOf.get(originOid);
-    const group = originGroup ?? openGroup(index, commit.graph.lane);
+    const group = openGroup(index, commit.graph.lane);
     groupOf.set(commit.oid, group);
     for (const edge of commit.graph.edges) extend(group, parentRow(edge.parent_oid));
-    anchorGroup ??= group;
   }
 
   if (anchorGroup === undefined) {
