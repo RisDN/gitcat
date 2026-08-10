@@ -168,7 +168,7 @@ export function SettingsDialog({ settings, defaults, onSave, onClose }: Settings
               {label}
             </button>
           ))}
-          <div className="mt-auto hidden rounded-[6px] border border-border bg-background/36 p-2.5 text-[9px] leading-[1.45] text-muted min-[721px]:block">
+          <div className="mt-auto hidden rounded-md border border-border bg-background/36 p-2.5 text-[9px] leading-[1.45] text-muted min-[721px]:block">
             Changes stay in preview until saved.
           </div>
         </nav>

@@ -82,7 +82,7 @@ function OverviewRow({
         </span>
         <span
           className={cx(
-            "mt-0.25 block overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[9.5px]",
+            "mt-px block overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[9.5px]",
             tab.unavailable ? "text-danger" : "text-muted",
           )}
         >
@@ -158,7 +158,7 @@ export function TabOverview({
         aria-haspopup="dialog"
         aria-label={`Browse ${tabCount} open ${tabCount === 1 ? "repository" : "repositories"}`}
         className={cx(
-          "relative size-8.5! rounded-[6px]!",
+          "relative size-8.5! rounded-md!",
           open && "border-border-strong! bg-control-hover! text-foreground!",
         )}
         disabled={disabled}
@@ -194,7 +194,7 @@ export function TabOverview({
                 type="search"
                 value={query}
               />
-              <kbd className="rounded border border-border bg-panel px-1 py-0.25 font-mono text-[8px] text-muted">Esc</kbd>
+              <kbd className="rounded border border-border bg-panel px-1 py-px font-mono text-[8px] text-muted">Esc</kbd>
             </label>
           </div>
 

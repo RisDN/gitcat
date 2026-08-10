@@ -133,7 +133,7 @@ export function TopTabs({
         <span aria-hidden="true" className="mx-0.5 h-5 w-px bg-border" />
         <IconButton
           aria-label="New repository folder"
-          className="size-8.5! rounded-[6px]!"
+          className="size-8.5! rounded-md!"
           disabled={actionsDisabled}
           onClick={onCreateGroup}
           title="New repository folder"
@@ -141,7 +141,7 @@ export function TopTabs({
           <FolderPlus size={16} />
         </IconButton>
         <button
-          className="inline-flex h-8.5 cursor-pointer items-center gap-1.25 rounded-[6px] border border-[color-mix(in_srgb,var(--gc-accent)_38%,var(--gc-border))] bg-[color-mix(in_srgb,var(--gc-accent)_10%,var(--gc-panel))] px-2.25 text-[11px] font-[680] text-foreground transition-colors enabled:hover:border-accent enabled:hover:bg-[color-mix(in_srgb,var(--gc-accent)_17%,var(--gc-panel))] focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex h-8.5 cursor-pointer items-center gap-1.25 rounded-md border border-[color-mix(in_srgb,var(--gc-accent)_38%,var(--gc-border))] bg-[color-mix(in_srgb,var(--gc-accent)_10%,var(--gc-panel))] px-2.25 text-[11px] font-[680] text-foreground transition-colors enabled:hover:border-accent enabled:hover:bg-[color-mix(in_srgb,var(--gc-accent)_17%,var(--gc-panel))] focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
           disabled={actionsDisabled}
           onClick={onOpen}
           title="Open repository"

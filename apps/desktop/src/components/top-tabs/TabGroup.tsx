@@ -29,7 +29,7 @@ export function TabStrip({ ariaLabel, collapsed = false, children, grouped = fal
         "relative flex flex-[0_0_auto] items-center gap-1 rounded-[7px] border border-transparent p-0.5 transition-[background-color,border-color] duration-100",
         grouped && "bg-background/18",
         collapsed && "px-0.5",
-        dropActive && "border-[color-mix(in_srgb,var(--gc-accent)_55%,var(--gc-border))] bg-[color-mix(in_srgb,var(--gc-accent)_8%,transparent)]",
+        dropActive && "border-[color-mix(in_srgb,var(--gc-accent)_55%,var(--gc-border))] bg-row-hover",
       )}
       onDragEnter={() => setDropActive(true)}
       onDragLeave={(event: ReactDragEvent) => {

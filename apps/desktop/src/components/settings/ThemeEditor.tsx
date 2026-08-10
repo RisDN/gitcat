@@ -115,7 +115,7 @@ export function ThemeEditor({
               <button
                 aria-pressed={active}
                 className={cx(
-                  "grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-1 rounded-[6px] border px-2.5 py-2 text-left transition-colors",
+                  "grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-1 rounded-md border px-2.5 py-2 text-left transition-colors",
                   active
                     ? "border-accent bg-[color-mix(in_srgb,var(--gc-accent)_10%,var(--gc-background))]"
                     : "border-border bg-background/45 hover:border-border-strong hover:bg-row-hover",

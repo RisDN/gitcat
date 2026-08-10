@@ -99,7 +99,7 @@ export function RepositoryTab({
     <div
       aria-disabled={tab.unavailable || undefined}
       className={cx(
-        "group/tab relative flex h-11 w-49 min-w-41 max-w-54 items-stretch overflow-hidden rounded-[6px] border transition-[background-color,border-color,box-shadow,opacity] duration-120",
+        "group/tab relative flex h-11 w-49 min-w-41 max-w-54 items-stretch overflow-hidden rounded-md border transition-[background-color,border-color,box-shadow,opacity] duration-120",
         active
           ? "border-[color-mix(in_srgb,var(--gc-accent)_40%,var(--gc-border))] bg-background text-foreground shadow-[0_1px_0_color-mix(in_srgb,var(--gc-text)_4%,transparent),0_5px_14px_rgb(0_0_0/16%)] after:absolute after:inset-x-2.5 after:bottom-0 after:h-0.5 after:rounded-t-full after:bg-accent after:shadow-[0_0_9px_color-mix(in_srgb,var(--gc-accent)_52%,transparent)] after:content-['']"
           : "border-transparent bg-transparent text-muted hover:border-border/65 hover:bg-foreground/4 hover:text-foreground",
