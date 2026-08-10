@@ -8,20 +8,12 @@ use gitcat_contracts::{CommitSummary, GraphCell, GraphEdge, LaneState};
 /// between calls makes layout identical whether history is processed in one
 /// batch or several pages. Lanes follow row order alone, so checking out a
 /// different branch never moves a line sideways.
-pub fn layout_commits(
-    commits: &mut [CommitSummary],
-    lanes: &mut LaneState,
-    wip_head: Option<&str>,
-) {
-    let mut reserved_lane = reserve_wip_lane(commits, wip_head, lanes);
+pub fn layout_commits(commits: &mut [CommitSummary], lanes: &mut LaneState) {
     let mut commit_lanes = Vec::with_capacity(commits.len());
     let mut parent_lanes: HashMap<String, usize> = HashMap::new();
 
     for commit in commits.iter() {
-        let lane = lane_for_commit(&mut lanes.heads, commit, reserved_lane);
-        if reserved_lane == Some(lane) {
-            reserved_lane = None;
-        }
+        let lane = lane_for_commit(&mut lanes.heads, commit);
 
         // A malformed or externally supplied cursor may contain the same head
         // more than once. Consume every copy so no phantom lane survives.
@@ -90,25 +82,7 @@ pub fn layout_commits(
     }
 }
 
-fn reserve_wip_lane(
-    commits: &[CommitSummary],
-    wip_head: Option<&str>,
-    lanes: &mut LaneState,
-) -> Option<usize> {
-    let head_oid = wip_head?;
-    if !lanes.heads.is_empty() || !commits.iter().any(|commit| commit.oid == head_oid) {
-        return None;
-    }
-
-    lanes.heads.push(Some(head_oid.to_owned()));
-    Some(0)
-}
-
-fn lane_for_commit(
-    heads: &mut Vec<Option<String>>,
-    commit: &CommitSummary,
-    reserved_lane: Option<usize>,
-) -> usize {
+fn lane_for_commit(heads: &mut Vec<Option<String>>, commit: &CommitSummary) -> usize {
     if let Some(lane) = heads
         .iter()
         .position(|head| head.as_deref() == Some(commit.oid.as_str()))
@@ -116,14 +90,7 @@ fn lane_for_commit(
         return lane;
     }
 
-    let inherited = reserved_lane.filter(|lane| {
-        commit
-            .parent_oids
-            .first()
-            .is_some_and(|parent_oid| heads[*lane].as_deref() == Some(parent_oid.as_str()))
-    });
-
-    inherited.unwrap_or_else(|| allocate_lane(heads, &commit.oid, None))
+    allocate_lane(heads, &commit.oid, None)
 }
 
 fn allocate_lane(
@@ -194,7 +161,7 @@ mod tests {
         ];
         let mut lanes = LaneState { heads: Vec::new() };
 
-        layout_commits(&mut commits, &mut lanes, None);
+        layout_commits(&mut commits, &mut lanes);
 
         assert_eq!(commits[0].graph.lane, 0);
         assert_eq!(commits[0].graph.edges[0].to_lane, 0);
@@ -209,7 +176,7 @@ mod tests {
         let mut commits = vec![commit("a", &["b"]), commit("b", &["c"]), commit("c", &[])];
         let mut lanes = LaneState { heads: Vec::new() };
 
-        layout_commits(&mut commits, &mut lanes, None);
+        layout_commits(&mut commits, &mut lanes);
 
         assert!(commits.iter().all(|commit| commit.graph.lane == 0));
         assert_eq!(commits[0].graph.edges[0].to_lane, 0);
@@ -227,7 +194,7 @@ mod tests {
         ];
         let mut lanes = LaneState { heads: Vec::new() };
 
-        layout_commits(&mut commits, &mut lanes, None);
+        layout_commits(&mut commits, &mut lanes);
 
         assert_eq!(commits[0].graph.lane, 0);
         assert_eq!(commits[0].graph.edges.len(), 2);
@@ -251,17 +218,17 @@ mod tests {
 
         let mut one_batch = commits.clone();
         let mut one_batch_lanes = LaneState { heads: Vec::new() };
-        layout_commits(&mut one_batch, &mut one_batch_lanes, None);
+        layout_commits(&mut one_batch, &mut one_batch_lanes);
 
         let mut first_page = commits[..2].to_vec();
         let mut second_page = commits[2..].to_vec();
         let mut paged_lanes = LaneState { heads: Vec::new() };
-        layout_commits(&mut first_page, &mut paged_lanes, None);
+        layout_commits(&mut first_page, &mut paged_lanes);
         assert_eq!(
             paged_lanes.heads,
             vec![Some("base".into()), Some("right".into())]
         );
-        layout_commits(&mut second_page, &mut paged_lanes, None);
+        layout_commits(&mut second_page, &mut paged_lanes);
 
         let paged_graphs: Vec<_> = first_page
             .iter()
@@ -284,7 +251,7 @@ mod tests {
         };
         let mut commits = vec![commit("new-tip", &[])];
 
-        layout_commits(&mut commits, &mut lanes, None);
+        layout_commits(&mut commits, &mut lanes);
 
         assert_eq!(commits[0].graph.lane, 1);
         assert_eq!(
@@ -302,7 +269,7 @@ mod tests {
         ];
         let mut lanes = LaneState { heads: Vec::new() };
 
-        layout_commits(&mut commits, &mut lanes, None);
+        layout_commits(&mut commits, &mut lanes);
 
         assert!(commits.iter().all(|commit| commit.graph.lane == 0));
         assert_eq!(commits[0].graph.edges[0].to_lane, 0);
@@ -320,7 +287,7 @@ mod tests {
 
         let mut commits = history.clone();
         let mut lanes = LaneState { heads: Vec::new() };
-        layout_commits(&mut commits, &mut lanes, None);
+        layout_commits(&mut commits, &mut lanes);
 
         assert_eq!(commits[0].graph.lane, 0);
         assert_eq!(commits[2].graph.lane, 1);
@@ -333,7 +300,7 @@ mod tests {
             history[4].clone(),
         ];
         let mut swapped_lanes = LaneState { heads: Vec::new() };
-        layout_commits(&mut swapped, &mut swapped_lanes, None);
+        layout_commits(&mut swapped, &mut swapped_lanes);
 
         assert_eq!(swapped[0].graph.lane, 0);
         assert_eq!(swapped[2].graph.lane, 1);
@@ -353,7 +320,7 @@ mod tests {
         ];
         let mut lanes = LaneState { heads: Vec::new() };
 
-        layout_commits(&mut commits, &mut lanes, None);
+        layout_commits(&mut commits, &mut lanes);
 
         assert_eq!(commits[0].graph.lane, 0);
         assert_eq!(commits[1].graph.lane, 1);
@@ -365,74 +332,36 @@ mod tests {
         assert_eq!(commits[1].graph.edges[0].to_lane, 0);
     }
 
+    // A branch merged by its own upstream keeps a first parent far below the
+    // merge row. Nothing about that shape may depend on which tip is checked
+    // out, or the two branches collapse onto one lane when one of them is.
     #[test]
-    fn the_wip_lane_pushes_tips_above_head_to_the_right() {
+    fn a_merged_branch_keeps_its_own_lane() {
         let mut commits = vec![
+            commit("origin-tip", &["origin-1"]),
+            commit("origin-1", &["merge"]),
+            commit("merge", &["update-tip", "main-tip"]),
             commit("main-tip", &["main-1"]),
             commit("main-1", &["base"]),
-            commit("head-tip", &["base"]),
+            commit("update-tip", &["update-1"]),
+            commit("update-1", &["base"]),
             commit("base", &[]),
         ];
         let mut lanes = LaneState { heads: Vec::new() };
 
-        layout_commits(&mut commits, &mut lanes, Some("head-tip"));
+        layout_commits(&mut commits, &mut lanes);
 
-        assert_eq!(commits[0].graph.lane, 1);
-        assert_eq!(commits[1].graph.lane, 1);
-        assert_eq!(commits[2].graph.lane, 0);
-        assert_eq!(commits[3].graph.lane, 0);
-    }
-
-    #[test]
-    fn the_wip_lane_leaves_layout_alone_when_head_is_the_first_row() {
-        let history = vec![
-            commit("head-tip", &["base"]),
-            commit("other-tip", &["base"]),
-            commit("base", &[]),
-        ];
-
-        let mut reserved = history.clone();
-        let mut reserved_lanes = LaneState { heads: Vec::new() };
-        layout_commits(&mut reserved, &mut reserved_lanes, Some("head-tip"));
-
-        let mut plain = history;
-        let mut plain_lanes = LaneState { heads: Vec::new() };
-        layout_commits(&mut plain, &mut plain_lanes, None);
-
-        assert_eq!(
-            reserved
+        let lane_of = |oid: &str| {
+            commits
                 .iter()
-                .map(|commit| commit.graph.clone())
-                .collect::<Vec<_>>(),
-            plain
-                .iter()
-                .map(|commit| commit.graph.clone())
-                .collect::<Vec<_>>()
-        );
-        assert_eq!(reserved_lanes, plain_lanes);
-    }
-
-    #[test]
-    fn the_wip_lane_is_not_reserved_off_page_or_mid_page() {
-        let history = vec![
-            commit("other-tip", &["base"]),
-            commit("tip", &["base"]),
-            commit("base", &[]),
-        ];
-
-        let mut off_page = history.clone();
-        let mut off_page_lanes = LaneState { heads: Vec::new() };
-        layout_commits(&mut off_page, &mut off_page_lanes, Some("not-listed"));
-        assert_eq!(off_page[0].graph.lane, 0);
-        assert_eq!(off_page[1].graph.lane, 1);
-
-        let mut carried = history;
-        let mut carried_lanes = LaneState {
-            heads: vec![Some("other-tip".into())],
+                .find(|commit| commit.oid == oid)
+                .expect("commit is laid out")
+                .graph
+                .lane
         };
-        layout_commits(&mut carried, &mut carried_lanes, Some("tip"));
-        assert_eq!(carried[0].graph.lane, 0);
-        assert_eq!(carried[1].graph.lane, 1);
+        assert_eq!(lane_of("origin-tip"), 0);
+        assert_eq!(lane_of("update-tip"), 0);
+        assert_ne!(lane_of("main-tip"), lane_of("origin-tip"));
     }
 
     #[test]
@@ -445,7 +374,7 @@ mod tests {
         ];
         let mut lanes = LaneState { heads: Vec::new() };
 
-        layout_commits(&mut commits, &mut lanes, Some("head-tip"));
+        layout_commits(&mut commits, &mut lanes);
 
         assert_eq!(commits[0].graph.lane, 0);
         assert_eq!(commits[0].graph.edges[0].to_lane, 0);
@@ -463,7 +392,7 @@ mod tests {
         ];
         let mut lanes = LaneState { heads: Vec::new() };
 
-        layout_commits(&mut commits, &mut lanes, Some("main-tip"));
+        layout_commits(&mut commits, &mut lanes);
 
         assert!(commits.iter().all(|commit| commit.graph.lane == 0));
         assert_eq!(commits[0].graph.edges[0].from_lane, 0);
@@ -483,7 +412,7 @@ mod tests {
         ];
         let mut lanes = LaneState { heads: Vec::new() };
 
-        layout_commits(&mut commits, &mut lanes, None);
+        layout_commits(&mut commits, &mut lanes);
 
         assert_eq!(commits[0].graph.lane, 0);
         assert_eq!(commits[1].graph.lane, 1);

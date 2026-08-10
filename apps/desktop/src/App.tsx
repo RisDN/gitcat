@@ -614,12 +614,16 @@ function App() {
         () => getCommitGraphWidth(history?.commits ?? []),
         [history],
     );
+    const wipLaneColor = useMemo(
+        () => getWipLaneColorVariable(history?.commits ?? [], currentHeadOid),
+        [currentHeadOid, history],
+    );
     const wipLaneX = getCommitLaneX(wipLane);
     const wipRowStyle = {
         "--gc-branch-origin": `${wipLaneX}px`,
         "--gc-branch-interactive-origin": `${wipLaneX + 11}px`,
         "--gc-branch-row-origin": `${getCommitRowBranchOrigin(wipLane, graphColumns)}px`,
-        "--gc-row-branch-color": getWipLaneColorVariable(),
+        "--gc-row-branch-color": wipLaneColor,
         "--gc-wip-lane-x": `${wipLaneX}px`,
     } as React.CSSProperties;
     const activeCommitDraft = activeTabId

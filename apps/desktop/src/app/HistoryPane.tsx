@@ -201,7 +201,6 @@ export function HistoryPane({
                             beforeFirstSelected={wipSelected}
                             columns={columns}
                             commits={history.commits}
-                            headOid={currentHeadOid}
                             detachedHeadOid={snapshot?.head.kind === "detached" ? snapshot.head.oid : null}
                             hideHeadDecoration={false}
                             onNavigateBeforeFirst={worktreeReachable ? selectWipFromGraph : undefined}
