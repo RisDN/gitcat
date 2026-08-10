@@ -138,7 +138,7 @@ export function RepositoryTab({
       >
         <span
           className={cx(
-            "grid size-6.5 shrink-0 place-items-center rounded-[4px] border",
+            "grid size-6.5 shrink-0 place-items-center rounded-sm border",
             active
               ? "border-[color-mix(in_srgb,var(--gc-accent)_36%,var(--gc-border))] bg-[color-mix(in_srgb,var(--gc-accent)_11%,var(--gc-panel))] text-accent"
               : "border-border/55 bg-background/35 text-muted group-hover/tab:text-foreground",
@@ -151,13 +151,6 @@ export function RepositoryTab({
             <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-[12px] font-[670] leading-4 text-inherit">
               {tab.label}
             </strong>
-            {tab.dirty ? (
-              <CircleDotDashed
-                aria-label="Uncommitted changes"
-                className="shrink-0 text-warning"
-                size={11}
-              />
-            ) : null}
             {tab.conflictCount ? (
               <span
                 aria-label={`${tab.conflictCount} unresolved conflict${tab.conflictCount === 1 ? "" : "s"}`}
@@ -181,7 +174,7 @@ export function RepositoryTab({
       <IconButton
         aria-label={`Close ${tab.label}`}
         className={cx(
-          "mr-1 h-full! w-5.5! rounded-[4px]! transition-opacity duration-100",
+          "mr-1 h-full! w-5.5! rounded-sm! transition-opacity duration-100", 
           active
             ? "opacity-75 hover:opacity-100"
             : "pointer-events-none opacity-0 group-hover/tab:pointer-events-auto group-hover/tab:opacity-70 group-focus-within/tab:pointer-events-auto group-focus-within/tab:opacity-70",

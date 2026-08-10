@@ -1,21 +1,20 @@
 import {
-  AlertTriangle,
-  Check,
-  CircleDotDashed,
-  Folder,
-  FolderGit2,
-  FolderX,
-  House,
-  LayoutList,
-  Search,
+    AlertTriangle,
+    Check,
+    Folder,
+    FolderGit2,
+    FolderX,
+    House,
+    LayoutList,
+    Search
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { cx } from "../../lib";
 import { MenuSurface } from "../menu";
 import { IconButton } from "../ui";
-import type { TabGroupView } from "./TabGroup";
 import type { TabView } from "./RepositoryTab";
+import type { TabGroupView } from "./TabGroup";
 import { repositoryLocation, repositoryTabDescription } from "./tabPresentation";
 
 interface TabOverviewProps {
@@ -74,9 +73,6 @@ function OverviewRow({
           <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-[12px] font-[660] text-foreground">
             {tab.label}
           </strong>
-          {tab.dirty ? (
-            <CircleDotDashed aria-label="Uncommitted changes" className="shrink-0 text-warning" size={12} />
-          ) : null}
           {tab.conflictCount ? (
             <span className="inline-flex shrink-0 items-center gap-0.75 text-danger">
               <AlertTriangle size={11} />

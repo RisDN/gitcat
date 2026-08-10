@@ -79,7 +79,7 @@ export function TabGroupLabel({ collapsed, containsActiveTab, group, onRename, o
         : `${group.name} - double-click to rename`}
       type="button"
     >
-      <span className="grid size-6.5 shrink-0 place-items-center rounded-[4px] border border-border/60 bg-background/48 text-muted group-hover/folder:text-foreground">
+      <span className="grid size-6.5 shrink-0 place-items-center rounded-sm border border-border/60 bg-background/48 text-muted group-hover/folder:text-foreground">
         <GroupIcon size={14} strokeWidth={1.7} />
       </span>
       <span className="min-w-0 flex-1">
@@ -88,7 +88,6 @@ export function TabGroupLabel({ collapsed, containsActiveTab, group, onRename, o
         </strong>
         <span className="flex items-center gap-1 font-mono text-[8px] leading-3 text-muted">
           {group.tabs.length} {group.tabs.length === 1 ? "repo" : "repos"}
-          {containsActiveTab ? <i className="size-1 rounded-full bg-accent shadow-[0_0_5px_var(--gc-accent)]" /> : null}
         </span>
       </span>
       {collapsed ? <ChevronRight className="shrink-0" size={12} /> : <ChevronDown className="shrink-0" size={12} />}
