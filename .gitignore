@@ -8,3 +8,8 @@
 *.tsbuildinfo
 *.log
 /graphify-out/
+
+# Local AI agent instructions and handoff memory
+/.claude/
+/AGENTS.md
+/docs/graph-layout-agent-handoff.md
