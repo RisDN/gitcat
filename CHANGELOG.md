@@ -1,4 +1,4 @@
-# GitCat 1.1.0
+# GitCat 1.2.0
 
 ## Features
 

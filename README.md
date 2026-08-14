@@ -12,7 +12,7 @@ Lightweight, Windows-first desktop Git client. Tauri v2 + React UI, Rust core, a
 - LOCAL, REMOTE, and TAGS sidebar with filtering, a current-branch marker, `/`-segment folders for local branches, remote-grouped remote branches with owner avatars, and a right-click branch menu for pull, push, branch creation, rename, safe deletion, and name copy.
 - Double-clicking a remote branch checks it out directly as a local tracking branch, with no intermediate name prompt.
 - Compact, column-aligned commit DAG with colored lanes, relative time markers behind the lanes, WIP pseudo-node connected to HEAD, initials avatars, arrow-key stepping between the WIP row and history, and loading of older commits.
-- Lanes and lane colors follow the order the lines appear in the list, so checking out another branch never moves a branch sideways or repaints it. A branch keeps its color where its first-parent history continues, and lines visible at the same time never share a color.
+- The checked-out branch and WIP own the primary lane, while `main`/`master` owns the secondary lane when another branch is active. Stashes use short-lived side lanes without displacing either branch; independent tips and new merge-parent lines open to the right, matching GitKraken's graph placement.
 - Ref labels, row highlight, and the WIP node take the color of the branch they belong to; the default palette is the ten-color GitLens lane set.
 - Stash entries collapse into a single graph row each instead of the raw index/untracked helper commits, and are drawn as a dashed line in their own color.
 - Double-click a local branch label in the graph to check that branch out.
@@ -163,7 +163,7 @@ The web build is written to `apps/desktop/dist`; native artifacts are written un
 
 ## Releases
 
-The current version is 1.1.0. `.github/workflows/release-windows.yml` (`workflow_dispatch`) builds the Windows release on `windows-latest`: it enforces the `x86_64-pc-windows-msvc` host, runs fmt, clippy, tests, and typecheck, then bundles the NSIS installer and uploads the installer plus the binary as an artifact.
+The current version is 1.2.0. `.github/workflows/release-windows.yml` (`workflow_dispatch`) builds the Windows release on `windows-latest`: it enforces the `x86_64-pc-windows-msvc` host, runs fmt, clippy, tests, and typecheck, then bundles the NSIS installer and uploads the installer plus the binary as an artifact.
 
 The build is verified to be self-contained: the job fails if `gitcat-desktop.exe` still imports `WebView2Loader.dll` or if a dynamic loader DLL is left in the release output, and it prints the installer's SHA-256.
 
