@@ -2,6 +2,7 @@ use crate::conflict::{
     classify_conflict_content, encode_edited_conflict_text, missing_worktree_identity,
     supports_merge_tree_preflight,
 };
+use crate::parse::StashCommit;
 use crate::validate::validate_mainline_parent;
 
 use std::{fs, process::Command};
@@ -694,6 +695,62 @@ async fn history_shows_one_row_per_stash() {
         .await
         .expect("stash commit details");
     assert_eq!(details.subject, "WIP on main");
+}
+
+#[test]
+fn consecutive_stash_rows_follow_reflog_order() {
+    let summary = |oid: &str| CommitSummary {
+        oid: oid.into(),
+        short_oid: oid.into(),
+        parent_oids: Vec::new(),
+        subject: oid.into(),
+        body_preview: String::new(),
+        author: Identity {
+            name: "Test".into(),
+            email: "test@example.invalid".into(),
+        },
+        authored_at: CommitTime {
+            seconds: 0,
+            offset_minutes: 0,
+        },
+        committed_at: CommitTime {
+            seconds: 0,
+            offset_minutes: 0,
+        },
+        decorations: Vec::new(),
+        stash: None,
+        graph: GraphCell::default(),
+    };
+    let mut commits = vec![
+        summary("before"),
+        summary("stash-1"),
+        summary("stash-3"),
+        summary("stash-2"),
+        summary("after"),
+    ];
+    let mut stashes = StashGraph::default();
+    for index in [1, 3, 2] {
+        stashes.commits.insert(
+            format!("stash-{index}"),
+            StashCommit {
+                reference: StashRef {
+                    index,
+                    selector: format!("stash@{{{index}}}"),
+                },
+                label: format!("stash {index}"),
+            },
+        );
+    }
+
+    apply_stash_view(&mut commits, &stashes);
+
+    assert_eq!(
+        commits
+            .iter()
+            .map(|commit| commit.oid.as_str())
+            .collect::<Vec<_>>(),
+        vec!["before", "stash-1", "stash-2", "stash-3", "after"]
+    );
 }
 
 #[tokio::test]

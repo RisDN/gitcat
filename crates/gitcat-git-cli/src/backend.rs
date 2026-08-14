@@ -2477,6 +2477,30 @@ fn apply_stash_view(commits: &mut Vec<CommitSummary>, stashes: &StashGraph) {
         commit.subject = stash.label.clone();
         commit.stash = Some(stash.reference.clone());
     }
+
+    order_contiguous_stash_rows(commits);
+}
+
+fn order_contiguous_stash_rows(commits: &mut [CommitSummary]) {
+    let mut start = 0;
+    while start < commits.len() {
+        if commits[start].stash.is_none() {
+            start += 1;
+            continue;
+        }
+
+        let mut end = start + 1;
+        while end < commits.len() && commits[end].stash.is_some() {
+            end += 1;
+        }
+        commits[start..end].sort_by_key(|commit| {
+            commit
+                .stash
+                .as_ref()
+                .map_or(usize::MAX, |stash| stash.index)
+        });
+        start = end;
+    }
 }
 
 fn verify_stash_index(stashes: Vec<StashEntry>, index: usize) -> ApiResult<()> {
