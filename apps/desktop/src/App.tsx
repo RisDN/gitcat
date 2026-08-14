@@ -614,10 +614,7 @@ function App() {
         () => getCommitGraphWidth(history?.commits ?? []),
         [history],
     );
-    const wipLaneColor = useMemo(
-        () => getWipLaneColorVariable(history?.commits ?? [], currentHeadOid),
-        [currentHeadOid, history],
-    );
+    const wipLaneColor = getWipLaneColorVariable();
     const wipLaneX = getCommitLaneX(wipLane);
     const wipRowStyle = {
         "--gc-branch-origin": `${wipLaneX}px`,

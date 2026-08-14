@@ -302,7 +302,7 @@
   margin-bottom: var(--gc-row-gap);
 }
 
-.gc-commit-row:hover {
+.gc-commit-row:hover .gc-commit-row__decorations {
   @apply z-[6];
 }
 
@@ -460,7 +460,7 @@
 .gc-commit-row__avatar--selected { @apply shadow-none; }
 
 .gc-commit-row__avatar--stash {
-  @apply border-dashed;
+  @apply rounded-[3px] border-dashed;
   background: color-mix(in srgb, var(--gc-graph-slot-color, var(--gc-accent)) 16%, var(--gc-panel));
   color: color-mix(in srgb, var(--gc-graph-slot-color, var(--gc-accent)) 62%, var(--gc-text));
 }
@@ -487,15 +487,21 @@
 
 /* Ref chips hang off the commit row and connect to the branch stripe. */
 .gc-ref-stack {
+  --gc-ref-inactive-opacity: 0.88;
   @apply relative inline-flex min-w-0 max-w-full items-center gap-[3px] isolate;
 }
 
 .gc-ref-stack::after {
   @apply pointer-events-none absolute top-1/2 z-[-1] h-[2px] -translate-y-1/2 opacity-[0.92];
   left: calc(100% - 1px);
-  width: max(0px, calc(var(--gc-branch-row-origin, 131px) - 6px - 100%));
+  /* Run under the node border so antialiasing cannot leave a visible seam. */
+  width: max(0px, calc(var(--gc-branch-row-origin, 131px) - 4px - 100%));
   background: var(--gc-row-branch-color, var(--gc-accent));
   content: "";
+}
+
+.gc-ref-stack--inactive::after {
+  opacity: var(--gc-ref-inactive-opacity);
 }
 
 .gc-ref-stack__overflow {
@@ -538,7 +544,7 @@
 }
 
 .gc-ref-label__name { @apply min-w-0 overflow-hidden text-ellipsis; }
-.gc-ref-label--inactive { @apply opacity-[0.88]; }
+.gc-ref-label--inactive { opacity: var(--gc-ref-inactive-opacity); }
 .gc-ref-label--inactive:hover { @apply opacity-100; }
 
 .gc-ref-stack__count {
