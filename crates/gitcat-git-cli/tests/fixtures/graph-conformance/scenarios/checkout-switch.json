@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "id": "checkout-switch",
+  "description": "Two sibling branches used to observe whether checkout changes rows, physical lanes, colors, or edges.",
+  "initial_branch": "main",
+  "commits": [
+    {
+      "id": "base",
+      "parents": [],
+      "subject": "fixture: base",
+      "date": "2000-01-01T00:00:00 +0000"
+    },
+    {
+      "id": "main-tip",
+      "parents": ["base"],
+      "subject": "fixture: main tip",
+      "date": "2000-01-01T00:01:00 +0000"
+    },
+    {
+      "id": "feature-tip",
+      "parents": ["base"],
+      "subject": "fixture: feature tip",
+      "date": "2000-01-01T00:02:00 +0000"
+    }
+  ],
+  "refs": [
+    {
+      "name": "refs/heads/main",
+      "target": "main-tip"
+    },
+    {
+      "name": "refs/heads/feature",
+      "target": "feature-tip"
+    }
+  ],
+  "steps": [
+    {
+      "kind": "checkpoint",
+      "id": "head-main"
+    },
+    {
+      "kind": "checkout",
+      "branch": "feature"
+    },
+    {
+      "kind": "checkpoint",
+      "id": "head-feature-immediate"
+    },
+    {
+      "kind": "reopen_repository"
+    },
+    {
+      "kind": "checkpoint",
+      "id": "head-feature-reopened"
+    },
+    {
+      "kind": "restart_application"
+    },
+    {
+      "kind": "checkpoint",
+      "id": "head-feature-restarted"
+    }
+  ]
+}

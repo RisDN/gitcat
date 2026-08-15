@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "scenario": "stash-index-collision",
+  "observed_on": "2026-08-15",
+  "reference": {
+    "product": "GitKraken Desktop",
+    "version": "12.4.0",
+    "platform": "windows",
+    "theme": "dark",
+    "application_zoom_percent": 100,
+    "show_all_commits": true,
+    "smart_branch_visibility": false,
+    "hidden_refs": [],
+    "solo_refs": [],
+    "pinned_refs": []
+  },
+  "colors": [
+    {
+      "slot": 0,
+      "observed_name": "teal"
+    },
+    {
+      "slot": 1,
+      "observed_name": "blue"
+    }
+  ],
+  "checkpoints": [
+    {
+      "id": "two-stashes-same-index",
+      "head": "main",
+      "rows": [
+        {
+          "commit": "main-tip",
+          "row": 0,
+          "lane": 0,
+          "color_slot": 0,
+          "refs": [
+            {
+              "name": "main",
+              "checked_out": true,
+              "color_slot": 0
+            }
+          ],
+          "edges": [
+            {
+              "parent": "base",
+              "parent_index": 0,
+              "from_lane": 0,
+              "to_lane": 0,
+              "color_slot": 0
+            }
+          ]
+        },
+        {
+          "commit": "base",
+          "row": 1,
+          "lane": 0,
+          "color_slot": 0,
+          "refs": [],
+          "edges": []
+        }
+      ],
+      "wip": null,
+      "stashes": [
+        {
+          "id": "shared-index-parent",
+          "message": "oracle: collision A",
+          "selector": "stash@{0}",
+          "display_row": 0,
+          "lane": 0,
+          "color_slot": 0,
+          "parent": "main-tip",
+          "visible_commit_role": "index_parent"
+        }
+      ],
+      "raw_stashes": [
+        {
+          "selector": "stash@{0}",
+          "message": "oracle: collision B"
+        },
+        {
+          "selector": "stash@{1}",
+          "message": "oracle: collision A"
+        }
+      ],
+      "crossings": []
+    },
+    {
+      "id": "after-pop-a",
+      "head": "main",
+      "same_commits_as": "two-stashes-same-index",
+      "wip": {
+        "head": "main-tip",
+        "lane": 0,
+        "color_slot": 0
+      },
+      "stashes": [
+        {
+          "id": "shared-index-parent",
+          "message": "oracle: collision A",
+          "selector": "stash@{0}",
+          "display_row": 1,
+          "lane": 1,
+          "color_slot": 1,
+          "parent": "main-tip",
+          "visible_commit_role": "index_parent"
+        }
+      ],
+      "worktree_files": [
+        {
+          "path": "tracked.txt",
+          "contents": "baseline\ncollision B\n"
+        }
+      ],
+      "raw_stashes": [
+        {
+          "selector": "stash@{0}",
+          "message": "oracle: collision A"
+        }
+      ],
+      "crossings": []
+    }
+  ],
+  "conclusions": {
+    "shared_index_parent_rows_are_collapsed": true,
+    "display_label_source": "oldest_collision_member",
+    "action_identity_source": "newest_collision_member",
+    "pop_visible_a_applies_b": true
+  },
+  "holdouts": {
+    "wip_title": "GitKraken retains the displayed label oracle: collision A after Pop; GitCat still renders its generic // WIP title.",
+    "details_inspector": "No GitKraken inspector capture was made for a collided stash row. The backend keeps the established virtual-row behavior: displayed subject A with newest outer-stash B diff content."
+  }
+}

@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "scenario": "convergence-lane-reuse",
+  "observed_on": "2026-08-15",
+  "reference": {
+    "product": "GitKraken Desktop",
+    "version": "12.4.0",
+    "platform": "windows",
+    "theme": "dark",
+    "application_zoom_percent": 100,
+    "show_all_commits": true,
+    "smart_branch_visibility": false,
+    "hidden_refs": [],
+    "solo_refs": [],
+    "pinned_refs": []
+  },
+  "colors": [
+    { "slot": 0, "observed_name": "teal" },
+    { "slot": 1, "observed_name": "blue" },
+    { "slot": 2, "observed_name": "purple" },
+    { "slot": 3, "observed_name": "magenta" },
+    { "slot": 4, "observed_name": "pink" },
+    { "slot": 5, "observed_name": "red" }
+  ],
+  "checkpoints": [
+    {
+      "id": "head-main",
+      "head": "main",
+      "rows": [
+        {
+          "commit": "final-merge",
+          "row": 0,
+          "lane": 0,
+          "color_slot": 0,
+          "refs": [
+            { "name": "main", "checked_out": true, "color_slot": 0 }
+          ],
+          "edges": [
+            { "parent": "trunk-continues", "parent_index": 0, "from_lane": 0, "to_lane": 0, "color_slot": 0 },
+            { "parent": "long-runner-tip", "parent_index": 1, "from_lane": 0, "to_lane": 1, "color_slot": 1 }
+          ]
+        },
+        {
+          "commit": "trunk-continues",
+          "row": 1,
+          "lane": 0,
+          "color_slot": 0,
+          "refs": [],
+          "edges": [
+            { "parent": "s-merge", "parent_index": 0, "from_lane": 0, "to_lane": 0, "color_slot": 0 }
+          ]
+        },
+        {
+          "commit": "cluster-b4",
+          "row": 2,
+          "lane": 2,
+          "color_slot": 2,
+          "refs": [
+            { "name": "cluster-b4", "checked_out": false, "color_slot": 2 }
+          ],
+          "edges": [
+            { "parent": "s-merge", "parent_index": 0, "from_lane": 2, "to_lane": 0, "color_slot": 2 }
+          ]
+        },
+        {
+          "commit": "cluster-b3",
+          "row": 3,
+          "lane": 3,
+          "color_slot": 3,
+          "refs": [
+            { "name": "cluster-b3", "checked_out": false, "color_slot": 3 }
+          ],
+          "edges": [
+            { "parent": "s-merge", "parent_index": 0, "from_lane": 3, "to_lane": 0, "color_slot": 3 }
+          ]
+        },
+        {
+          "commit": "cluster-b2",
+          "row": 4,
+          "lane": 4,
+          "color_slot": 4,
+          "refs": [
+            { "name": "cluster-b2", "checked_out": false, "color_slot": 4 }
+          ],
+          "edges": [
+            { "parent": "s-merge", "parent_index": 0, "from_lane": 4, "to_lane": 0, "color_slot": 4 }
+          ]
+        },
+        {
+          "commit": "cluster-b1",
+          "row": 5,
+          "lane": 5,
+          "color_slot": 5,
+          "refs": [
+            { "name": "cluster-b1", "checked_out": false, "color_slot": 5 }
+          ],
+          "edges": [
+            { "parent": "s-merge", "parent_index": 0, "from_lane": 5, "to_lane": 0, "color_slot": 5 }
+          ]
+        },
+        {
+          "commit": "s-merge",
+          "row": 6,
+          "lane": 0,
+          "color_slot": 0,
+          "refs": [],
+          "edges": [
+            { "parent": "t-older", "parent_index": 0, "from_lane": 0, "to_lane": 0, "color_slot": 0 },
+            { "parent": "feature-tip", "parent_index": 1, "from_lane": 0, "to_lane": 2, "color_slot": 2 }
+          ]
+        },
+        {
+          "commit": "feature-tip",
+          "row": 7,
+          "lane": 2,
+          "color_slot": 2,
+          "refs": [
+            { "name": "mini-feature", "checked_out": false, "color_slot": 2 }
+          ],
+          "edges": [
+            { "parent": "t-older", "parent_index": 0, "from_lane": 2, "to_lane": 0, "color_slot": 2 }
+          ]
+        },
+        {
+          "commit": "t-older",
+          "row": 8,
+          "lane": 0,
+          "color_slot": 0,
+          "refs": [],
+          "edges": [
+            { "parent": "long-base", "parent_index": 0, "from_lane": 0, "to_lane": 0, "color_slot": 0 }
+          ]
+        },
+        {
+          "commit": "long-runner-tip",
+          "row": 9,
+          "lane": 1,
+          "color_slot": 1,
+          "refs": [
+            { "name": "long-runner", "checked_out": false, "color_slot": 1 }
+          ],
+          "edges": [
+            { "parent": "long-base", "parent_index": 0, "from_lane": 1, "to_lane": 0, "color_slot": 1 }
+          ]
+        },
+        {
+          "commit": "long-base",
+          "row": 10,
+          "lane": 0,
+          "color_slot": 0,
+          "refs": [],
+          "edges": [
+            { "parent": "root", "parent_index": 0, "from_lane": 0, "to_lane": 0, "color_slot": 0 }
+          ]
+        },
+        {
+          "commit": "root",
+          "row": 11,
+          "lane": 0,
+          "color_slot": 0,
+          "refs": [],
+          "edges": []
+        }
+      ],
+      "wip": null,
+      "stashes": [],
+      "crossings": []
+    }
+  ],
+  "conclusions": {
+    "simultaneous_multi_sibling_convergence_frees_lanes_together": true,
+    "extra_merge_parent_reuses_a_lane_freed_at_the_same_convergence_row": true,
+    "reused_slot_shared_by_non_overlapping_spans_is_expected": true
+  }
+}

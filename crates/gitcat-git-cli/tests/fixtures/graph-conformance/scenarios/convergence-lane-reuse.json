@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "id": "convergence-lane-reuse",
+  "description": "Four sibling branches converge back onto the same merge commit simultaneously, alongside one long-lived branch that spans the convergence and one branch merged in as an extra parent right after it. Regression for allocate_after_rightmost freeing several lanes at once in the same row.",
+  "initial_branch": "main",
+  "commits": [
+    {
+      "id": "root",
+      "parents": [],
+      "subject": "fixture: root",
+      "date": "2000-01-01T00:00:00 +0000"
+    },
+    {
+      "id": "long-base",
+      "parents": ["root"],
+      "subject": "fixture: long-base",
+      "date": "2000-01-01T00:01:00 +0000"
+    },
+    {
+      "id": "long-runner-tip",
+      "parents": ["long-base"],
+      "subject": "fixture: long-runner-tip",
+      "date": "2000-01-01T00:02:00 +0000"
+    },
+    {
+      "id": "t-older",
+      "parents": ["long-base"],
+      "subject": "fixture: t-older",
+      "date": "2000-01-01T00:03:00 +0000"
+    },
+    {
+      "id": "feature-tip",
+      "parents": ["t-older"],
+      "subject": "fixture: feature-tip",
+      "date": "2000-01-01T00:04:00 +0000"
+    },
+    {
+      "id": "s-merge",
+      "parents": ["t-older", "feature-tip"],
+      "subject": "fixture: S merges mini-feature into main",
+      "date": "2000-01-01T00:05:00 +0000"
+    },
+    {
+      "id": "cluster-b1",
+      "parents": ["s-merge"],
+      "subject": "fixture: cluster-b1",
+      "date": "2000-01-01T00:06:00 +0000"
+    },
+    {
+      "id": "cluster-b2",
+      "parents": ["s-merge"],
+      "subject": "fixture: cluster-b2",
+      "date": "2000-01-01T00:07:00 +0000"
+    },
+    {
+      "id": "cluster-b3",
+      "parents": ["s-merge"],
+      "subject": "fixture: cluster-b3",
+      "date": "2000-01-01T00:08:00 +0000"
+    },
+    {
+      "id": "cluster-b4",
+      "parents": ["s-merge"],
+      "subject": "fixture: cluster-b4",
+      "date": "2000-01-01T00:09:00 +0000"
+    },
+    {
+      "id": "trunk-continues",
+      "parents": ["s-merge"],
+      "subject": "fixture: trunk-continues",
+      "date": "2000-01-01T00:10:00 +0000"
+    },
+    {
+      "id": "final-merge",
+      "parents": ["trunk-continues", "long-runner-tip"],
+      "subject": "fixture: merge long-runner into main",
+      "date": "2000-01-01T00:11:00 +0000"
+    }
+  ],
+  "refs": [
+    { "name": "refs/heads/main", "target": "final-merge" },
+    { "name": "refs/heads/mini-feature", "target": "feature-tip" },
+    { "name": "refs/heads/long-runner", "target": "long-runner-tip" },
+    { "name": "refs/heads/cluster-b1", "target": "cluster-b1" },
+    { "name": "refs/heads/cluster-b2", "target": "cluster-b2" },
+    { "name": "refs/heads/cluster-b3", "target": "cluster-b3" },
+    { "name": "refs/heads/cluster-b4", "target": "cluster-b4" }
+  ],
+  "steps": [
+    {
+      "kind": "checkpoint",
+      "id": "head-main"
+    }
+  ]
+}

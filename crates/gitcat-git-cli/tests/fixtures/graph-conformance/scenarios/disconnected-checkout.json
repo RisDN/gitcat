@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "id": "disconnected-checkout",
+  "description": "Three disconnected histories arranged so the target tip can either reuse a finished low lane or open to the right, isolating whether clean checkout changes disconnected-component allocation.",
+  "initial_branch": "main",
+  "commits": [
+    {
+      "id": "main-root",
+      "parents": [],
+      "subject": "fixture: main root",
+      "date": "2000-01-01T00:03:00 +0000"
+    },
+    {
+      "id": "side-root",
+      "parents": [],
+      "subject": "fixture: side root",
+      "date": "2000-01-01T00:00:00 +0000"
+    },
+    {
+      "id": "target-root",
+      "parents": [],
+      "subject": "fixture: target root",
+      "date": "2000-01-01T00:01:00 +0000"
+    },
+    {
+      "id": "main-tip",
+      "parents": ["main-root"],
+      "subject": "fixture: main tip",
+      "date": "2000-01-01T00:05:00 +0000"
+    },
+    {
+      "id": "side-tip",
+      "parents": ["side-root"],
+      "subject": "fixture: side tip",
+      "date": "2000-01-01T00:04:00 +0000"
+    },
+    {
+      "id": "target-tip",
+      "parents": ["target-root"],
+      "subject": "fixture: target tip",
+      "date": "2000-01-01T00:02:00 +0000"
+    }
+  ],
+  "refs": [
+    {
+      "name": "refs/heads/main",
+      "target": "main-tip"
+    },
+    {
+      "name": "refs/heads/side",
+      "target": "side-tip"
+    },
+    {
+      "name": "refs/heads/target",
+      "target": "target-tip"
+    }
+  ],
+  "steps": [
+    {
+      "kind": "checkpoint",
+      "id": "head-main"
+    },
+    {
+      "kind": "checkout",
+      "branch": "target"
+    },
+    {
+      "kind": "checkpoint",
+      "id": "head-target"
+    },
+    {
+      "kind": "checkout",
+      "branch": "main"
+    },
+    {
+      "kind": "checkpoint",
+      "id": "head-main-return"
+    }
+  ]
+}

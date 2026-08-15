@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "id": "stash-single",
+  "description": "A tracked worktree modification on feature with main visible, isolating GitKraken's first stash row, lane, color, and persistence.",
+  "initial_branch": "feature",
+  "commits": [
+    {
+      "id": "base",
+      "parents": [],
+      "subject": "fixture: base",
+      "date": "2000-01-01T00:00:00 +0000",
+      "files": [
+        {
+          "path": "tracked.txt",
+          "contents": "baseline\n"
+        }
+      ]
+    },
+    {
+      "id": "main-tip",
+      "parents": ["base"],
+      "subject": "fixture: main tip",
+      "date": "2000-01-01T00:01:00 +0000"
+    },
+    {
+      "id": "feature-tip",
+      "parents": ["base"],
+      "subject": "fixture: feature tip",
+      "date": "2000-01-01T00:02:00 +0000"
+    }
+  ],
+  "refs": [
+    {
+      "name": "refs/heads/main",
+      "target": "main-tip"
+    },
+    {
+      "name": "refs/heads/feature",
+      "target": "feature-tip"
+    }
+  ],
+  "worktree": [
+    {
+      "path": "tracked.txt",
+      "contents": "baseline\ntracked worktree change\n"
+    }
+  ],
+  "steps": [
+    {
+      "kind": "checkpoint",
+      "id": "feature-wip-before-stash"
+    },
+    {
+      "kind": "create_stash",
+      "message": "oracle: tracked change"
+    },
+    {
+      "kind": "checkpoint",
+      "id": "feature-stash-immediate"
+    },
+    {
+      "kind": "reopen_repository"
+    },
+    {
+      "kind": "checkpoint",
+      "id": "feature-stash-reopened"
+    },
+    {
+      "kind": "restart_application"
+    },
+    {
+      "kind": "checkpoint",
+      "id": "feature-stash-restarted"
+    },
+    {
+      "kind": "pop_stash",
+      "message": "oracle: tracked change"
+    },
+    {
+      "kind": "checkpoint",
+      "id": "feature-stash-popped"
+    },
+    {
+      "kind": "create_stash",
+      "message": "oracle: tracked change reused"
+    },
+    {
+      "kind": "checkpoint",
+      "id": "feature-stash-recreated"
+    },
+    {
+      "kind": "delete_stash",
+      "message": "oracle: tracked change reused"
+    },
+    {
+      "kind": "checkpoint",
+      "id": "feature-stash-deleted"
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "id": "stash-index-collision",
+  "description": "Two unstaged-only stashes created from the same HEAD and index in the same Git timestamp second, producing distinct outer stashes with the same visible index-parent OID.",
+  "initial_branch": "main",
+  "commits": [
+    {
+      "id": "base",
+      "parents": [],
+      "subject": "fixture: collision base",
+      "date": "2000-01-01T00:00:00 +0000",
+      "files": [
+        {
+          "path": "tracked.txt",
+          "contents": "baseline\n"
+        }
+      ]
+    },
+    {
+      "id": "main-tip",
+      "parents": ["base"],
+      "subject": "fixture: collision main tip",
+      "date": "2000-01-01T00:01:00 +0000"
+    }
+  ],
+  "refs": [
+    {
+      "name": "refs/heads/main",
+      "target": "main-tip"
+    }
+  ],
+  "initial_stashes": [
+    {
+      "message": "oracle: collision A",
+      "date": "2000-01-01T01:00:00 +0000",
+      "changes": [
+        {
+          "path": "tracked.txt",
+          "contents": "baseline\ncollision A\n"
+        }
+      ]
+    },
+    {
+      "message": "oracle: collision B",
+      "date": "2000-01-01T01:00:00 +0000",
+      "changes": [
+        {
+          "path": "tracked.txt",
+          "contents": "baseline\ncollision B\n"
+        }
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "kind": "checkpoint",
+      "id": "two-stashes-same-index"
+    },
+    {
+      "kind": "pop_stash",
+      "message": "oracle: collision A"
+    },
+    {
+      "kind": "checkpoint",
+      "id": "after-pop-a"
+    }
+  ]
+}

@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "scenario": "checkout-switch",
+  "observed_on": "2026-08-15",
+  "reference": {
+    "product": "GitKraken Desktop",
+    "version": "12.4.0",
+    "platform": "windows",
+    "theme": "dark",
+    "application_zoom_percent": 100,
+    "show_all_commits": true,
+    "smart_branch_visibility": false,
+    "hidden_refs": [],
+    "solo_refs": [],
+    "pinned_refs": []
+  },
+  "colors": [
+    {
+      "slot": 0,
+      "observed_name": "teal"
+    },
+    {
+      "slot": 1,
+      "observed_name": "blue"
+    }
+  ],
+  "checkpoints": [
+    {
+      "id": "head-main",
+      "head": "main",
+      "rows": [
+        {
+          "commit": "feature-tip",
+          "row": 0,
+          "lane": 0,
+          "color_slot": 0,
+          "refs": [
+            {
+              "name": "feature",
+              "checked_out": false,
+              "color_slot": 0
+            }
+          ],
+          "edges": [
+            {
+              "parent": "base",
+              "parent_index": 0,
+              "from_lane": 0,
+              "to_lane": 0,
+              "color_slot": 0
+            }
+          ]
+        },
+        {
+          "commit": "main-tip",
+          "row": 1,
+          "lane": 1,
+          "color_slot": 1,
+          "refs": [
+            {
+              "name": "main",
+              "checked_out": true,
+              "color_slot": 1
+            }
+          ],
+          "edges": [
+            {
+              "parent": "base",
+              "parent_index": 0,
+              "from_lane": 1,
+              "to_lane": 0,
+              "color_slot": 1
+            }
+          ]
+        },
+        {
+          "commit": "base",
+          "row": 2,
+          "lane": 0,
+          "color_slot": 0,
+          "refs": [],
+          "edges": []
+        }
+      ],
+      "wip": null,
+      "crossings": []
+    },
+    {
+      "id": "head-feature-immediate",
+      "head": "feature",
+      "rows": [
+        {
+          "commit": "feature-tip",
+          "row": 0,
+          "lane": 0,
+          "color_slot": 0,
+          "refs": [
+            {
+              "name": "feature",
+              "checked_out": true,
+              "color_slot": 0
+            }
+          ],
+          "edges": [
+            {
+              "parent": "base",
+              "parent_index": 0,
+              "from_lane": 0,
+              "to_lane": 0,
+              "color_slot": 0
+            }
+          ]
+        },
+        {
+          "commit": "main-tip",
+          "row": 1,
+          "lane": 1,
+          "color_slot": 1,
+          "refs": [
+            {
+              "name": "main",
+              "checked_out": false,
+              "color_slot": 1
+            }
+          ],
+          "edges": [
+            {
+              "parent": "base",
+              "parent_index": 0,
+              "from_lane": 1,
+              "to_lane": 0,
+              "color_slot": 1
+            }
+          ]
+        },
+        {
+          "commit": "base",
+          "row": 2,
+          "lane": 0,
+          "color_slot": 0,
+          "refs": [],
+          "edges": []
+        }
+      ],
+      "wip": null,
+      "crossings": []
+    },
+    {
+      "id": "head-feature-reopened",
+      "head": "feature",
+      "same_graph_as": "head-feature-immediate"
+    },
+    {
+      "id": "head-feature-restarted",
+      "head": "feature",
+      "same_graph_as": "head-feature-immediate"
+    }
+  ],
+  "conclusions": {
+    "checkout_changes_graph_layout": false,
+    "repository_reopen_changes_graph_layout": false,
+    "application_restart_changes_graph_layout": false
+  }
+}

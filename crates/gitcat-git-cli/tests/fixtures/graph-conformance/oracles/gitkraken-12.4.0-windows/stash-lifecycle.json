@@ -1,0 +1,241 @@
+{
+  "schema_version": 1,
+  "scenario": "stash-lifecycle",
+  "observed_on": "2026-08-15",
+  "reference": {
+    "product": "GitKraken Desktop",
+    "version": "12.4.0",
+    "platform": "windows",
+    "theme": "dark",
+    "application_zoom_percent": 100,
+    "show_all_commits": true,
+    "smart_branch_visibility": false,
+    "hidden_refs": [],
+    "solo_refs": [],
+    "pinned_refs": []
+  },
+  "checkpoints": [
+    {
+      "id": "three-stashes",
+      "head": "feature",
+      "rows": [
+        {
+          "commit": "feature-tip",
+          "row": 0,
+          "lane": 0,
+          "color_slot": 0,
+          "edges": [
+            {
+              "parent": "base",
+              "parent_index": 0,
+              "from_lane": 0,
+              "to_lane": 0,
+              "color_slot": 0
+            }
+          ]
+        },
+        {
+          "commit": "main-tip",
+          "row": 1,
+          "lane": 1,
+          "color_slot": 1,
+          "edges": [
+            {
+              "parent": "base",
+              "parent_index": 0,
+              "from_lane": 1,
+              "to_lane": 0,
+              "color_slot": 1
+            }
+          ]
+        },
+        {
+          "commit": "base",
+          "row": 2,
+          "lane": 0,
+          "color_slot": 0,
+          "edges": []
+        }
+      ],
+      "wip": null,
+      "stashes": [
+        {
+          "id": "stash-a",
+          "message": "oracle: stash A",
+          "selector": "stash@{2}",
+          "display_row": 0,
+          "lane": 0,
+          "color_slot": 0,
+          "parent": "feature-tip",
+          "visible_commit_role": "index_parent",
+          "connector": "dashed"
+        },
+        {
+          "id": "stash-c",
+          "message": "oracle: stash C",
+          "selector": "stash@{0}",
+          "display_row": 1,
+          "lane": 1,
+          "color_slot": 1,
+          "parent": "feature-tip",
+          "visible_commit_role": "index_parent",
+          "connector": "dashed"
+        },
+        {
+          "id": "stash-b",
+          "message": "oracle: stash B",
+          "selector": "stash@{1}",
+          "display_row": 2,
+          "lane": 2,
+          "color_slot": 2,
+          "parent": "feature-tip",
+          "visible_commit_role": "index_parent",
+          "connector": "dashed"
+        }
+      ]
+    },
+    {
+      "id": "after-delete-c",
+      "head": "feature",
+      "same_commits_as": "three-stashes",
+      "wip": null,
+      "stashes": [
+        {
+          "id": "stash-a",
+          "message": "oracle: stash A",
+          "selector": "stash@{1}",
+          "display_row": 0,
+          "lane": 0,
+          "color_slot": 0,
+          "parent": "feature-tip",
+          "visible_commit_role": "index_parent",
+          "connector": "dashed"
+        },
+        {
+          "id": "stash-b",
+          "message": "oracle: stash B",
+          "selector": "stash@{0}",
+          "display_row": 1,
+          "lane": 1,
+          "color_slot": 1,
+          "parent": "feature-tip",
+          "visible_commit_role": "index_parent",
+          "connector": "dashed"
+        }
+      ]
+    },
+    {
+      "id": "after-apply-b",
+      "head": "feature",
+      "same_commits_as": "three-stashes",
+      "wip": {
+        "head": "feature-tip",
+        "lane": 0,
+        "color_slot": 0,
+        "changed_file_count": 1,
+        "message": "oracle: stash B",
+        "connector": "dashed"
+      },
+      "stashes": [
+        {
+          "id": "stash-a",
+          "message": "oracle: stash A",
+          "selector": "stash@{1}",
+          "display_row": 1,
+          "lane": 1,
+          "color_slot": 1,
+          "parent": "feature-tip",
+          "visible_commit_role": "index_parent",
+          "connector": "dashed"
+        },
+        {
+          "id": "stash-b",
+          "message": "oracle: stash B",
+          "selector": "stash@{0}",
+          "display_row": 2,
+          "lane": 2,
+          "color_slot": 2,
+          "parent": "feature-tip",
+          "visible_commit_role": "index_parent",
+          "connector": "dashed"
+        }
+      ]
+    },
+    {
+      "id": "after-delete-applied-b",
+      "head": "feature",
+      "same_commits_as": "three-stashes",
+      "wip": {
+        "head": "feature-tip",
+        "lane": 0,
+        "color_slot": 0,
+        "changed_file_count": 1,
+        "message": "oracle: stash B",
+        "connector": "dashed"
+      },
+      "stashes": [
+        {
+          "id": "stash-a",
+          "message": "oracle: stash A",
+          "selector": "stash@{0}",
+          "display_row": 1,
+          "lane": 1,
+          "color_slot": 1,
+          "parent": "feature-tip",
+          "visible_commit_role": "index_parent",
+          "connector": "dashed"
+        }
+      ]
+    },
+    {
+      "id": "after-pop-a",
+      "head": "feature",
+      "same_commits_as": "three-stashes",
+      "wip": {
+        "head": "feature-tip",
+        "lane": 0,
+        "color_slot": 0,
+        "changed_file_count": 2,
+        "message": "oracle: stash B",
+        "connector": "dashed"
+      },
+      "stashes": []
+    },
+    {
+      "id": "after-create-d",
+      "head": "feature",
+      "same_commits_as": "three-stashes",
+      "wip": null,
+      "stashes": [
+        {
+          "id": "stash-d",
+          "message": "oracle: stash D reused",
+          "selector": "stash@{0}",
+          "display_row": 0,
+          "lane": 0,
+          "color_slot": 0,
+          "parent": "feature-tip",
+          "visible_commit_role": "index_parent",
+          "connector": "dashed"
+        }
+      ]
+    },
+    {
+      "id": "final-clean",
+      "head": "feature",
+      "same_commits_as": "three-stashes",
+      "wip": null,
+      "stashes": []
+    }
+  ],
+  "conclusions": {
+    "stash_rows_follow_commit_time_not_selector_order": true,
+    "visible_stash_commit_is_index_parent": true,
+    "wip_reserves_lane_and_color_zero": true,
+    "stashes_compact_into_lowest_display_lanes": true,
+    "apply_keeps_stash_and_adds_wip": true,
+    "pop_removes_stash_and_adds_to_existing_wip": true,
+    "existing_wip_message_survives_pop": true,
+    "delete_never_restores_wip": true
+  }
+}

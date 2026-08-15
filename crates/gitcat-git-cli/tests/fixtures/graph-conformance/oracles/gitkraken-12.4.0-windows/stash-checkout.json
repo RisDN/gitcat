@@ -1,0 +1,180 @@
+{
+  "schema_version": 1,
+  "scenario": "stash-checkout",
+  "observed_on": "2026-08-15",
+  "reference": {
+    "product": "GitKraken Desktop",
+    "version": "12.4.0",
+    "platform": "windows",
+    "theme": "dark",
+    "application_zoom_percent": 100,
+    "show_all_commits": true,
+    "smart_branch_visibility": false,
+    "hidden_refs": [],
+    "solo_refs": [],
+    "pinned_refs": []
+  },
+  "checkpoints": [
+    {
+      "id": "main-with-main-stash",
+      "head": "main",
+      "rows": [
+        {
+          "commit": "feature-tip",
+          "row": 0,
+          "lane": 1,
+          "color_slot": 1,
+          "edges": [
+            {
+              "parent": "base",
+              "parent_index": 0,
+              "from_lane": 1,
+              "to_lane": 0,
+              "color_slot": 1
+            }
+          ]
+        },
+        {
+          "commit": "main-tip",
+          "row": 1,
+          "lane": 0,
+          "color_slot": 0,
+          "edges": [
+            {
+              "parent": "base",
+              "parent_index": 0,
+              "from_lane": 0,
+              "to_lane": 0,
+              "color_slot": 0
+            }
+          ]
+        },
+        {
+          "commit": "base",
+          "row": 2,
+          "lane": 0,
+          "color_slot": 0,
+          "edges": []
+        }
+      ],
+      "wip": null,
+      "stashes": [
+        {
+          "id": "stash-on-main",
+          "message": "oracle: stash on main",
+          "selector": "stash@{0}",
+          "display_row": 0,
+          "lane": 0,
+          "color_slot": 0,
+          "parent": "main-tip",
+          "visible_commit_role": "index_parent",
+          "connector": "dashed"
+        }
+      ]
+    },
+    {
+      "id": "feature-with-main-stash",
+      "head": "feature",
+      "same_graph_as": "main-with-main-stash"
+    },
+    {
+      "id": "feature-wip-with-main-stash",
+      "head": "feature",
+      "rows": [
+        {
+          "commit": "feature-tip",
+          "row": 0,
+          "lane": 0,
+          "color_slot": 0,
+          "edges": [
+            {
+              "parent": "base",
+              "parent_index": 0,
+              "from_lane": 0,
+              "to_lane": 0,
+              "color_slot": 0
+            }
+          ]
+        },
+        {
+          "commit": "main-tip",
+          "row": 1,
+          "lane": 1,
+          "color_slot": 1,
+          "edges": [
+            {
+              "parent": "base",
+              "parent_index": 0,
+              "from_lane": 1,
+              "to_lane": 0,
+              "color_slot": 1
+            }
+          ]
+        },
+        {
+          "commit": "base",
+          "row": 2,
+          "lane": 0,
+          "color_slot": 0,
+          "edges": []
+        }
+      ],
+      "wip": {
+        "head": "feature-tip",
+        "lane": 0,
+        "color_slot": 0,
+        "changed_file_count": 1,
+        "message": "oracle: stash on main",
+        "connector": "dashed"
+      },
+      "stashes": [
+        {
+          "id": "stash-on-main",
+          "message": "oracle: stash on main",
+          "selector": "stash@{0}",
+          "display_row": 1,
+          "lane": 1,
+          "color_slot": 1,
+          "parent": "main-tip",
+          "visible_commit_role": "index_parent",
+          "connector": "dashed"
+        }
+      ]
+    },
+    {
+      "id": "feature-wip-after-stash-delete",
+      "head": "feature",
+      "same_commits_as": "feature-wip-with-main-stash",
+      "wip": {
+        "head": "feature-tip",
+        "lane": 0,
+        "color_slot": 0,
+        "changed_file_count": 1,
+        "message": "oracle: stash on main",
+        "connector": "dashed"
+      },
+      "stashes": []
+    },
+    {
+      "id": "main-wip-after-return",
+      "head": "main",
+      "same_commits_as": "main-with-main-stash",
+      "wip": {
+        "head": "main-tip",
+        "lane": 0,
+        "color_slot": 0,
+        "changed_file_count": 1,
+        "message": "oracle: stash on main",
+        "connector": "dashed"
+      },
+      "stashes": []
+    }
+  ],
+  "conclusions": {
+    "stash_ancestry_not_checkout_controls_clean_layout": true,
+    "checkout_without_wip_does_not_relayout_stash_graph": true,
+    "wip_reanchors_lane_zero_to_current_head": true,
+    "stash_moves_with_its_parent_branch_when_wip_appears": true,
+    "delete_applied_stash_preserves_wip": true
+  }
+}

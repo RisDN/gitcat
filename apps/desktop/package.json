@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420",
+    "prebuild": "npm run test:graph",
     "build": "tsc -b && vite build",
+    "test:graph": "node scripts/test-graph.mjs",
     "typecheck": "tsc -b --pretty false",
     "preview": "vite preview --host 127.0.0.1 --port 1420",
     "tauri": "tauri",

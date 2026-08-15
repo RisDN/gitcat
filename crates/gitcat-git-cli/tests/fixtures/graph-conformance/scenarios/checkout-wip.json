@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "id": "checkout-wip",
+  "description": "The checkout-switch DAG with an untracked WIP file, isolating WIP lane, color, connector, and checkout stability.",
+  "initial_branch": "main",
+  "commits": [
+    {
+      "id": "base",
+      "parents": [],
+      "subject": "fixture: base",
+      "date": "2000-01-01T00:00:00 +0000"
+    },
+    {
+      "id": "main-tip",
+      "parents": ["base"],
+      "subject": "fixture: main tip",
+      "date": "2000-01-01T00:01:00 +0000"
+    },
+    {
+      "id": "feature-tip",
+      "parents": ["base"],
+      "subject": "fixture: feature tip",
+      "date": "2000-01-01T00:02:00 +0000"
+    }
+  ],
+  "refs": [
+    {
+      "name": "refs/heads/main",
+      "target": "main-tip"
+    },
+    {
+      "name": "refs/heads/feature",
+      "target": "feature-tip"
+    }
+  ],
+  "worktree": [
+    {
+      "path": "wip-untracked.txt",
+      "contents": "GitKraken checkout/WIP conformance fixture.\n"
+    }
+  ],
+  "steps": [
+    {
+      "kind": "checkpoint",
+      "id": "head-main-wip"
+    },
+    {
+      "kind": "checkout",
+      "branch": "feature"
+    },
+    {
+      "kind": "checkpoint",
+      "id": "head-feature-wip-immediate"
+    },
+    {
+      "kind": "reopen_repository"
+    },
+    {
+      "kind": "checkpoint",
+      "id": "head-feature-wip-reopened"
+    },
+    {
+      "kind": "restart_application"
+    },
+    {
+      "kind": "checkpoint",
+      "id": "head-feature-wip-restarted"
+    },
+    {
+      "kind": "checkout",
+      "branch": "main"
+    },
+    {
+      "kind": "checkpoint",
+      "id": "head-main-wip-return-immediate"
+    }
+  ]
+}

@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "id": "stash-checkout",
+  "description": "A stash created on main while checkout moves to feature, followed by Apply and Delete to isolate stash ancestry from WIP priority.",
+  "initial_branch": "main",
+  "commits": [
+    {
+      "id": "base",
+      "parents": [],
+      "subject": "fixture: base",
+      "date": "2000-01-01T00:00:00 +0000",
+      "files": [
+        {
+          "path": "tracked.txt",
+          "contents": "baseline\n"
+        }
+      ]
+    },
+    {
+      "id": "main-tip",
+      "parents": ["base"],
+      "subject": "fixture: main tip",
+      "date": "2000-01-01T00:01:00 +0000"
+    },
+    {
+      "id": "feature-tip",
+      "parents": ["base"],
+      "subject": "fixture: feature tip",
+      "date": "2000-01-01T00:02:00 +0000"
+    }
+  ],
+  "refs": [
+    {
+      "name": "refs/heads/main",
+      "target": "main-tip"
+    },
+    {
+      "name": "refs/heads/feature",
+      "target": "feature-tip"
+    }
+  ],
+  "initial_stashes": [
+    {
+      "message": "oracle: stash on main",
+      "date": "2000-01-01T03:00:00 +0000",
+      "changes": [
+        {
+          "path": "tracked.txt",
+          "contents": "baseline\nstash created on main\n"
+        }
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "kind": "checkpoint",
+      "id": "main-with-main-stash"
+    },
+    {
+      "kind": "checkout",
+      "branch": "feature"
+    },
+    {
+      "kind": "checkpoint",
+      "id": "feature-with-main-stash"
+    },
+    {
+      "kind": "apply_stash",
+      "message": "oracle: stash on main"
+    },
+    {
+      "kind": "checkpoint",
+      "id": "feature-wip-with-main-stash"
+    },
+    {
+      "kind": "delete_stash",
+      "message": "oracle: stash on main"
+    },
+    {
+      "kind": "checkpoint",
+      "id": "feature-wip-after-stash-delete"
+    },
+    {
+      "kind": "checkout",
+      "branch": "main"
+    },
+    {
+      "kind": "checkpoint",
+      "id": "main-wip-after-return"
+    }
+  ]
+}
