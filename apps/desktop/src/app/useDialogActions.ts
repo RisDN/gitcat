@@ -122,7 +122,7 @@ export function useDialogActions({
             case "delete_stash":
                 void runMutation("Stash deleted", (repository) => gitcatApi.stashDrop(
                     repository.repository_id,
-                    request.index,
+                    request.oid,
                     true,
                     expectedState(snapshot),
                 ));

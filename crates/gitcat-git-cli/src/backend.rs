@@ -2610,8 +2610,8 @@ impl GitBackend for GitCliBackend {
         result
     }
 
-    async fn stash_apply(&self, path: &Path, index: usize, pop: bool) -> ApiResult<MutationResult> {
-        verify_stash_index(self.stash_list(path).await?, index)?;
+    async fn stash_apply(&self, path: &Path, oid: &str, pop: bool) -> ApiResult<MutationResult> {
+        let index = resolve_stash_index(self.stash_list(path).await?, oid)?;
         let action = if pop { "pop" } else { "apply" };
         self.mutate(
             path,
@@ -2630,7 +2630,7 @@ impl GitBackend for GitCliBackend {
     async fn stash_drop(
         &self,
         path: &Path,
-        index: usize,
+        oid: &str,
         confirmed: bool,
     ) -> ApiResult<MutationResult> {
         if !confirmed {
@@ -2638,7 +2638,7 @@ impl GitBackend for GitCliBackend {
                 "Dropping a stash requires confirmation",
             ));
         }
-        verify_stash_index(self.stash_list(path).await?, index)?;
+        let index = resolve_stash_index(self.stash_list(path).await?, oid)?;
         self.mutate(
             path,
             vec![
@@ -2716,15 +2716,21 @@ fn apply_stash_view(commits: &mut Vec<CommitSummary>, stashes: &StashGraph) {
     }
 }
 
-fn verify_stash_index(stashes: Vec<StashEntry>, index: usize) -> ApiResult<()> {
-    if stashes.iter().any(|stash| stash.index == index) {
-        Ok(())
-    } else {
-        Err(ApiError::new(
-            ErrorCode::InvalidRevision,
-            "Selected stash no longer exists",
-        ))
-    }
+/// Resolves a stash's *current* `stash@{n}` index by its stable outer commit
+/// oid, re-reading the live stash list rather than trusting a caller-supplied
+/// index that may have gone stale (shifted or removed) between when the UI
+/// displayed the stash and when the action runs.
+fn resolve_stash_index(stashes: Vec<StashEntry>, oid: &str) -> ApiResult<usize> {
+    stashes
+        .into_iter()
+        .find(|stash| stash.oid == oid)
+        .map(|stash| stash.index)
+        .ok_or_else(|| {
+            ApiError::new(
+                ErrorCode::InvalidRevision,
+                "Selected stash no longer exists",
+            )
+        })
 }
 
 #[cfg(test)]

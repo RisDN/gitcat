@@ -801,6 +801,7 @@ async fn shared_stash_index_parent_uses_oldest_label_and_newest_action() {
         Some(&StashRef {
             index: 0,
             selector: "stash@{0}".into(),
+            oid: newest_outer_oid.clone(),
         })
     );
 
@@ -862,9 +863,9 @@ async fn shared_stash_index_parent_uses_oldest_label_and_newest_action() {
         assert_eq!(by_outer.commits[0].subject, "oracle: collision A");
     }
 
-    let action_index = stash_row.stash.as_ref().expect("stash action").index;
+    let action_oid = stash_row.stash.as_ref().expect("stash action").oid.clone();
     backend
-        .stash_apply(directory.path(), action_index, true)
+        .stash_apply(directory.path(), &action_oid, true)
         .await
         .expect("pop displayed collision row");
     assert_eq!(
@@ -1067,6 +1068,7 @@ fn applying_the_stash_view_preserves_git_log_order() {
                 reference: StashRef {
                     index,
                     selector: format!("stash@{{{index}}}"),
+                    oid: format!("outer-{index}"),
                 },
                 label: format!("stash {index}"),
             },
@@ -1577,7 +1579,7 @@ async fn worktree_diff_branch_and_stash_workflow() {
         .expect("list stashes");
     assert_eq!(stashes.len(), 1);
     backend
-        .stash_apply(directory.path(), stashes[0].index, true)
+        .stash_apply(directory.path(), &stashes[0].oid, true)
         .await
         .expect("pop stash");
 

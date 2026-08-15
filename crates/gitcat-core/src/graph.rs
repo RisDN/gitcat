@@ -389,6 +389,7 @@ mod tests {
             stash: Some(StashRef {
                 index: 0,
                 selector: "stash@{0}".into(),
+                oid: format!("{oid}-outer"),
             }),
             ..commit(oid, parents)
         }

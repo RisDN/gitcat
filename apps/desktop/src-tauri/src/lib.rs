@@ -569,21 +569,21 @@ async fn stash_push(
 async fn stash_apply(
     core: State<'_, Arc<CoreApi>>,
     repository_id: RepositoryId,
-    index: usize,
+    oid: String,
     pop: bool,
 ) -> ApiResult<MutationResult> {
-    core.stash_apply(&repository_id, index, pop).await
+    core.stash_apply(&repository_id, &oid, pop).await
 }
 
 #[tauri::command]
 async fn stash_drop(
     core: State<'_, Arc<CoreApi>>,
     repository_id: RepositoryId,
-    index: usize,
+    oid: String,
     confirmed: bool,
     expected: ExpectedState,
 ) -> ApiResult<MutationResult> {
-    core.stash_drop(&repository_id, index, confirmed, &expected)
+    core.stash_drop(&repository_id, &oid, confirmed, &expected)
         .await
 }
 

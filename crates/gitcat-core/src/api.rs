@@ -611,11 +611,11 @@ impl CoreApi {
     pub async fn stash_apply(
         &self,
         repository_id: &RepositoryId,
-        index: usize,
+        oid: &str,
         pop: bool,
     ) -> ApiResult<MutationResult> {
         self.mutate(repository_id, |backend, path| async move {
-            backend.stash_apply(&path, index, pop).await
+            backend.stash_apply(&path, oid, pop).await
         })
         .await
     }
@@ -623,7 +623,7 @@ impl CoreApi {
     pub async fn stash_drop(
         &self,
         repository_id: &RepositoryId,
-        index: usize,
+        oid: &str,
         confirmed: bool,
         expected: &ExpectedState,
     ) -> ApiResult<MutationResult> {
@@ -634,7 +634,7 @@ impl CoreApi {
             ));
         }
         self.mutate_expected(repository_id, expected, |backend, path| async move {
-            backend.stash_drop(&path, index, confirmed).await
+            backend.stash_drop(&path, oid, confirmed).await
         })
         .await
     }
@@ -1341,7 +1341,7 @@ mod tests {
         async fn stash_apply(
             &self,
             path: &Path,
-            _index: usize,
+            _oid: &str,
             _pop: bool,
         ) -> ApiResult<MutationResult> {
             self.mutation("stash_apply", path).await
@@ -1350,7 +1350,7 @@ mod tests {
         async fn stash_drop(
             &self,
             path: &Path,
-            _index: usize,
+            _oid: &str,
             _confirmed: bool,
         ) -> ApiResult<MutationResult> {
             self.mutation("stash_drop", path).await

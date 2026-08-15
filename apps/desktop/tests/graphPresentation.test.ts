@@ -129,7 +129,11 @@ function commit(
       : [],
     stash: options.stashIndex === undefined
       ? undefined
-      : { index: options.stashIndex, selector: `stash@{${options.stashIndex}}` },
+      : {
+          index: options.stashIndex,
+          selector: `stash@{${options.stashIndex}}`,
+          oid: `stash-outer-${options.stashIndex}`,
+        },
     graph: { lane, edges },
   };
 }

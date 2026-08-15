@@ -848,7 +848,11 @@ pub(crate) fn parse_stash_graph(output: &[u8]) -> ApiResult<StashGraph> {
             graph.commits.insert(
                 visible_oid,
                 StashCommit {
-                    reference: StashRef { index, selector },
+                    reference: StashRef {
+                        index,
+                        selector,
+                        oid: stash_oid.clone(),
+                    },
                     label,
                     stash_oid,
                     base_oid,

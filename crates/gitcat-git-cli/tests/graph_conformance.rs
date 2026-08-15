@@ -712,7 +712,7 @@ async fn replay_and_compare(
     for step in &scenario.steps {
         match step {
             ScenarioStep::ApplyStash { message } => {
-                let index = visible_stash_index_by_message(
+                let oid = visible_stash_oid_by_message(
                     &backend,
                     &materialized.repository,
                     message,
@@ -720,7 +720,7 @@ async fn replay_and_compare(
                 )
                 .await;
                 backend
-                    .stash_apply(&materialized.repository, index, false)
+                    .stash_apply(&materialized.repository, &oid, false)
                     .await
                     .unwrap_or_else(|error| {
                         panic!("{}: apply stash {message:?} failed: {error}", scenario.id)
@@ -750,7 +750,7 @@ async fn replay_and_compare(
                     });
             }
             ScenarioStep::DeleteStash { message } => {
-                let index = visible_stash_index_by_message(
+                let oid = visible_stash_oid_by_message(
                     &backend,
                     &materialized.repository,
                     message,
@@ -758,14 +758,14 @@ async fn replay_and_compare(
                 )
                 .await;
                 backend
-                    .stash_drop(&materialized.repository, index, true)
+                    .stash_drop(&materialized.repository, &oid, true)
                     .await
                     .unwrap_or_else(|error| {
                         panic!("{}: delete stash {message:?} failed: {error}", scenario.id)
                     });
             }
             ScenarioStep::PopStash { message } => {
-                let index = visible_stash_index_by_message(
+                let oid = visible_stash_oid_by_message(
                     &backend,
                     &materialized.repository,
                     message,
@@ -773,7 +773,7 @@ async fn replay_and_compare(
                 )
                 .await;
                 backend
-                    .stash_apply(&materialized.repository, index, true)
+                    .stash_apply(&materialized.repository, &oid, true)
                     .await
                     .unwrap_or_else(|error| {
                         panic!("{}: pop stash {message:?} failed: {error}", scenario.id)
@@ -784,12 +784,12 @@ async fn replay_and_compare(
     }
 }
 
-async fn visible_stash_index_by_message(
+async fn visible_stash_oid_by_message(
     backend: &GitCliBackend,
     repository: &Path,
     message: &str,
     scenario_id: &str,
-) -> usize {
+) -> String {
     let history = backend
         .history(
             repository,
@@ -821,7 +821,8 @@ async fn visible_stash_index_by_message(
         .stash
         .as_ref()
         .expect("matched visible stash has action metadata")
-        .index
+        .oid
+        .clone()
 }
 
 fn stash_message_matches(actual: &str, expected: &str) -> bool {

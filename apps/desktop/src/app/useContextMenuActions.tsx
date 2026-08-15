@@ -180,18 +180,18 @@ export function useContextMenuActions({
                 break;
             case "stash_apply":
                 if (commit.stash) {
-                    const { index } = commit.stash;
-                    void runMutation("Stash applied", (repository) => gitcatApi.stashApply(repository.repository_id, index, false));
+                    const { oid } = commit.stash;
+                    void runMutation("Stash applied", (repository) => gitcatApi.stashApply(repository.repository_id, oid, false));
                 }
                 break;
             case "stash_pop":
                 if (commit.stash) {
-                    const { index } = commit.stash;
-                    void runMutation("Stash popped", (repository) => gitcatApi.stashApply(repository.repository_id, index, true));
+                    const { oid } = commit.stash;
+                    void runMutation("Stash popped", (repository) => gitcatApi.stashApply(repository.repository_id, oid, true));
                 }
                 break;
             case "stash_drop":
-                if (commit.stash) setConfirmRequest({ kind: "delete_stash", index: commit.stash.index, selector: commit.stash.selector });
+                if (commit.stash) setConfirmRequest({ kind: "delete_stash", oid: commit.stash.oid, selector: commit.stash.selector });
                 break;
             case "branch":
                 setPrompt({ kind: "create_branch", startOid: commit.oid });

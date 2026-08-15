@@ -239,6 +239,7 @@ pub struct GraphCell {
 pub struct StashRef {
     pub index: usize,
     pub selector: String,
+    pub oid: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

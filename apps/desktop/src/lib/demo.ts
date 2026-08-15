@@ -1170,12 +1170,13 @@ class DemoGitCatApi implements GitCatApi {
 
   async stashApply(
     repositoryId: RepositoryId,
-    index: number,
+    oid: string,
     pop: boolean,
   ): Promise<MutationResult> {
     await delay();
     this.ensureRepository(repositoryId);
-    if (!this.stashes[index]) fail("invalid_request", `Unknown stash index: ${index}`);
+    const index = this.stashes.findIndex((stash) => stash.oid === oid);
+    if (index === -1) fail("invalid_revision", `Selected stash no longer exists: ${oid}`);
     const restored: StatusEntry = {
       path: "apps/desktop/src/App.tsx",
       worktree: "modified",
@@ -1193,7 +1194,7 @@ class DemoGitCatApi implements GitCatApi {
 
   async stashDrop(
     repositoryId: RepositoryId,
-    index: number,
+    oid: string,
     confirmed: boolean,
     expected: ExpectedState,
   ): Promise<MutationResult> {
@@ -1201,7 +1202,8 @@ class DemoGitCatApi implements GitCatApi {
     this.ensureRepository(repositoryId);
     this.verifyExpected(expected);
     if (!confirmed) fail("protected_operation", "Dropping a stash requires confirmation");
-    if (!this.stashes[index]) fail("invalid_request", `Unknown stash index: ${index}`);
+    const index = this.stashes.findIndex((stash) => stash.oid === oid);
+    if (index === -1) fail("invalid_revision", `Selected stash no longer exists: ${oid}`);
     this.stashes.splice(index, 1);
     this.reindexStashes();
     this.snapshotValue.status.stash_count = this.stashes.length;

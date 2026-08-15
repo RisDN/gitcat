@@ -191,11 +191,11 @@ pub trait GitBackend: Send + Sync {
         message: Option<&str>,
         include_untracked: bool,
     ) -> ApiResult<MutationResult>;
-    async fn stash_apply(&self, path: &Path, index: usize, pop: bool) -> ApiResult<MutationResult>;
+    async fn stash_apply(&self, path: &Path, oid: &str, pop: bool) -> ApiResult<MutationResult>;
     async fn stash_drop(
         &self,
         path: &Path,
-        index: usize,
+        oid: &str,
         confirmed: bool,
     ) -> ApiResult<MutationResult>;
 }

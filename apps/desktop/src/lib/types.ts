@@ -158,6 +158,7 @@ export interface GraphCell {
 export interface StashRef {
   index: number;
   selector: string;
+  oid: string;
 }
 
 export interface CommitSummary {

@@ -177,10 +177,10 @@ export interface GitCatCommands {
     message: string | null,
     includeUntracked: boolean,
   ): Promise<MutationResult>;
-  stashApply(repositoryId: RepositoryId, index: number, pop: boolean): Promise<MutationResult>;
+  stashApply(repositoryId: RepositoryId, oid: string, pop: boolean): Promise<MutationResult>;
   stashDrop(
     repositoryId: RepositoryId,
-    index: number,
+    oid: string,
     confirmed: boolean,
     expected: ExpectedState,
   ): Promise<MutationResult>;
@@ -338,12 +338,12 @@ export function createTauriGitCatApi(): GitCatApi {
       invokeTauri("stash_list", { repositoryId }),
     stashPush: (repositoryId, message, includeUntracked) =>
       invokeTauri("stash_push", { repositoryId, message, includeUntracked }),
-    stashApply: (repositoryId, index, pop) =>
-      invokeTauri("stash_apply", { repositoryId, index, pop }),
-    stashDrop: (repositoryId, index, confirmed, expected) =>
+    stashApply: (repositoryId, oid, pop) =>
+      invokeTauri("stash_apply", { repositoryId, oid, pop }),
+    stashDrop: (repositoryId, oid, confirmed, expected) =>
       invokeTauri("stash_drop", {
         repositoryId,
-        index,
+        oid,
         confirmed,
         expected,
       }),
