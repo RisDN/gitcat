@@ -42,7 +42,7 @@ export const DEFAULT_THEMES: AppTheme[] = [
             danger: "#ff6680",
             diff_addition: "#183f35",
             diff_deletion: "#4b2935",
-            graph_palette: ["#18d6b3", "#7b61ff", "#f252d2", "#ff9f43", "#3fc5f0", "#7ed957"],
+            graph_palette: ["#18d6b3", "#7b61ff", "#f252d2", "#ff9f43", "#3fc5f0", "#7ed957", "#f1435e", "#e1f143", "#43f170", "#b943f1"],
         },
     },
     {
@@ -62,7 +62,7 @@ export const DEFAULT_THEMES: AppTheme[] = [
             danger: "#f85149",
             diff_addition: "#183d25",
             diff_deletion: "#4b2226",
-            graph_palette: ["#8a63d2", "#58a6ff", "#3fb950", "#d29922", "#f85149", "#db61a2"],
+            graph_palette: ["#8a63d2", "#58a6ff", "#3fb950", "#d29922", "#f85149", "#db61a2", "#a2e148", "#48e1c8", "#d348e1", "#4851e1"],
         },
     },
     {
@@ -82,7 +82,7 @@ export const DEFAULT_THEMES: AppTheme[] = [
             danger: "#cf222e",
             diff_addition: "#dafbe1",
             diff_deletion: "#ffebe9",
-            graph_palette: ["#8250df", "#0969da", "#1a7f37", "#bf8700", "#cf222e", "#bf3989"],
+            graph_palette: ["#8250df", "#0969da", "#1a7f37", "#bf8700", "#cf222e", "#bf3989", "#72c71c", "#1cc7b9", "#b21cc7", "#1c26c7"],
         },
     },
     {
@@ -102,7 +102,7 @@ export const DEFAULT_THEMES: AppTheme[] = [
             danger: "#c43d4b",
             diff_addition: "#dcefe3",
             diff_deletion: "#f7dddd",
-            graph_palette: ["#087f8c", "#4c6fff", "#8b5cf6", "#cc5de8", "#e8590c", "#2f9e44"],
+            graph_palette: ["#087f8c", "#4c6fff", "#8b5cf6", "#cc5de8", "#e8590c", "#2f9e44", "#b4ea1f", "#ea1f75", "#eac31f", "#57ea1f"],
         },
     },
     {
@@ -122,7 +122,7 @@ export const DEFAULT_THEMES: AppTheme[] = [
             danger: "#fb7185",
             diff_addition: "#123821",
             diff_deletion: "#421821",
-            graph_palette: ["#35cfff", "#818cf8", "#c084fc", "#f472b6", "#fb923c", "#4ade80"],
+            graph_palette: ["#35cfff", "#818cf8", "#c084fc", "#f472b6", "#fb923c", "#4ade80", "#b7f65d", "#f55df6", "#f65d62", "#f6ec5d"],
         },
     },
 ];
