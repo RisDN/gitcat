@@ -2,14 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import checkoutSwitchOracleJson from "../../../crates/gitcat-git-cli/tests/fixtures/graph-conformance/oracles/gitkraken-12.4.0-windows/checkout-switch.json";
-import convergenceLaneReuseOracleJson from "../../../crates/gitcat-git-cli/tests/fixtures/graph-conformance/oracles/gitkraken-12.4.0-windows/convergence-lane-reuse.json";
 import checkoutWipOracleJson from "../../../crates/gitcat-git-cli/tests/fixtures/graph-conformance/oracles/gitkraken-12.4.0-windows/checkout-wip.json";
+import convergenceLaneReuseOracleJson from "../../../crates/gitcat-git-cli/tests/fixtures/graph-conformance/oracles/gitkraken-12.4.0-windows/convergence-lane-reuse.json";
 import disconnectedCheckoutOracleJson from "../../../crates/gitcat-git-cli/tests/fixtures/graph-conformance/oracles/gitkraken-12.4.0-windows/disconnected-checkout.json";
 import disconnectedInteriorReuseOracleJson from "../../../crates/gitcat-git-cli/tests/fixtures/graph-conformance/oracles/gitkraken-12.4.0-windows/disconnected-interior-reuse.json";
 import stashCheckoutOracleJson from "../../../crates/gitcat-git-cli/tests/fixtures/graph-conformance/oracles/gitkraken-12.4.0-windows/stash-checkout.json";
 import stashIndexCollisionOracleJson from "../../../crates/gitcat-git-cli/tests/fixtures/graph-conformance/oracles/gitkraken-12.4.0-windows/stash-index-collision.json";
 import stashLifecycleOracleJson from "../../../crates/gitcat-git-cli/tests/fixtures/graph-conformance/oracles/gitkraken-12.4.0-windows/stash-lifecycle.json";
 import stashSingleOracleJson from "../../../crates/gitcat-git-cli/tests/fixtures/graph-conformance/oracles/gitkraken-12.4.0-windows/stash-single.json";
+import { buildGraphGeometry } from "../src/components/CommitGraph";
 import { buildBranchColors, getGraphEdgeColor } from "../src/components/graphPresentation";
 import type { CommitSummary, GraphEdge } from "../src/lib/types";
 
@@ -52,6 +53,12 @@ interface OracleStash {
   parent: string;
 }
 
+interface OracleCrossing {
+  at: string;
+  topmost: string;
+  note?: string;
+}
+
 interface OracleCheckpoint {
   id: string;
   head: string;
@@ -60,6 +67,7 @@ interface OracleCheckpoint {
   same_commits_as?: string;
   wip?: OracleWip | null;
   stashes?: OracleStash[];
+  crossings?: OracleCrossing[];
 }
 
 interface SemanticOracle {
@@ -71,6 +79,7 @@ interface ResolvedOracleCheckpoint {
   rows: readonly OracleRow[];
   wip: OracleWip | null;
   stashes: readonly OracleStash[];
+  crossings: readonly OracleCrossing[];
 }
 
 const WIP_COLOR_SLOT = 0;
@@ -191,6 +200,23 @@ function resolveStashes(
   );
 }
 
+function resolveCrossings(
+  oracle: SemanticOracle,
+  checkpoint: OracleCheckpoint,
+  trail: readonly string[] = [],
+): readonly OracleCrossing[] {
+  assertNoAliasCycle(oracle, checkpoint, trail);
+  if (Object.prototype.hasOwnProperty.call(checkpoint, "crossings")) {
+    return checkpoint.crossings ?? [];
+  }
+  if (!checkpoint.same_graph_as) return [];
+  return resolveCrossings(
+    oracle,
+    oracleCheckpoint(oracle, checkpoint.same_graph_as),
+    [...trail, checkpoint.id],
+  );
+}
+
 function resolveCheckpoint(
   oracle: SemanticOracle,
   checkpoint: OracleCheckpoint,
@@ -199,6 +225,7 @@ function resolveCheckpoint(
     rows: resolveRows(oracle, checkpoint),
     wip: resolveWip(oracle, checkpoint),
     stashes: resolveStashes(oracle, checkpoint),
+    crossings: resolveCrossings(oracle, checkpoint),
   };
 }
 
@@ -350,6 +377,46 @@ function assertOracleCheckpointColors(
   }
 }
 
+// GraphPath.key is `${childOid}:${parentOid}:${edgeIndex}`; splitting on ":"
+// is safe here because every fixture and oracle commit id in this suite is a
+// plain slug with no colons in it.
+function assertOracleCheckpointCrossings(
+  oracle: SemanticOracle,
+  checkpoint: OracleCheckpoint,
+): void {
+  const context = `${oracle.scenario}/${checkpoint.id}`;
+  const resolved = resolveCheckpoint(oracle, checkpoint);
+  if (resolved.crossings.length === 0) return;
+
+  const orderedRows = [...resolved.rows].sort((left, right) => left.row - right.row);
+  const rowsByOid = new Map(orderedRows.map((row) => [row.commit, row]));
+  const checkedOutOid = headCommitId(checkpoint, orderedRows);
+  const rowCommits = orderedRows.map((row) => (
+    commitFromOracleRow(row, checkpoint, checkedOutOid)
+  ));
+  const stashCommits = [...resolved.stashes]
+    .sort((left, right) => left.display_row - right.display_row)
+    .map((stash) => stashCommitFromOracle(stash, rowsByOid, context));
+  const commits = [...stashCommits, ...rowCommits];
+
+  const geometry = buildGraphGeometry(commits, resolved.wip !== null);
+
+  for (const crossing of resolved.crossings) {
+    const incoming = geometry.paths.filter((path) => path.key.split(":")[1] === crossing.at);
+    assert.ok(
+      incoming.length > 1,
+      `${context}: crossing at ${crossing.at} needs at least two converging edges, found ${incoming.length}`,
+    );
+
+    const topmostChildOid = incoming[incoming.length - 1].key.split(":")[0];
+    assert.equal(
+      topmostChildOid,
+      crossing.topmost,
+      `${context}: crossing at ${crossing.at} expected ${crossing.topmost} painted on top, got ${topmostChildOid}`,
+    );
+  }
+}
+
 test("clean checkout preserves the row-order branch colors", () => {
   const commits = [
     commit("feature", 0, [edge("base", 0, 0)]),
@@ -441,6 +508,9 @@ for (const oracle of ORACLES) {
   for (const checkpoint of oracle.checkpoints) {
     test(`GitKraken oracle colors: ${oracle.scenario}/${checkpoint.id}`, () => {
       assertOracleCheckpointColors(oracle, checkpoint);
+    });
+    test(`GitKraken oracle crossings: ${oracle.scenario}/${checkpoint.id}`, () => {
+      assertOracleCheckpointCrossings(oracle, checkpoint);
     });
   }
 }

@@ -164,7 +164,13 @@
       ],
       "wip": null,
       "stashes": [],
-      "crossings": []
+      "crossings": [
+        {
+          "at": "s-merge",
+          "topmost": "cluster-b1",
+          "note": "cluster-b1 (lane 5, the highest bending lane converging on s-merge) paints over cluster-b2/b3/b4 and feature-tip where their edges cross on the way into s-merge; confirmed against a GitKraken screenshot of this exact repo, 2026-08-15."
+        }
+      ]
     }
   ],
   "conclusions": {

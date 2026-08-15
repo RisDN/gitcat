@@ -65,7 +65,7 @@ export interface CommitGraphProps {
   formatTimestamp?: (seconds: number, offsetMinutes: number) => string;
 }
 
-interface GraphPath {
+export interface GraphPath {
   key: string;
   data: string;
   color: number;
@@ -74,7 +74,7 @@ interface GraphPath {
   stash: boolean;
 }
 
-interface GraphGeometry {
+export interface GraphGeometry {
   paths: GraphPath[];
   colors: Map<string, number>;
   width: number;
@@ -259,7 +259,7 @@ function edgeCorner(startX: number, startY: number, endX: number, endY: number):
   ));
 }
 
-function buildGraphGeometry(
+export function buildGraphGeometry(
   commits: readonly CommitSummary[],
   hasWip: boolean,
 ): GraphGeometry {
