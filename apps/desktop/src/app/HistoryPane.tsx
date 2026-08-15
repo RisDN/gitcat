@@ -65,6 +65,7 @@ export interface HistoryPaneProps {
     wipRowStyle: React.CSSProperties;
     wipSelected: boolean;
     wipStats: FileChangeCounts;
+    wipTitleHint: string | null;
     worktreeReachable: boolean;
 }
 
@@ -112,6 +113,7 @@ export function HistoryPane({
     wipRowStyle,
     wipSelected,
     wipStats,
+    wipTitleHint,
     worktreeReachable,
 }: HistoryPaneProps) {
     const graphHeaderRef = useRef<HTMLDivElement | null>(null);
@@ -186,7 +188,7 @@ export function HistoryPane({
                             {columns.graph ? <span className="gc-wip-row__rail"><i /></span> : null}
                             {columns.message ? (
                                 <span className="gc-wip-row__message">
-                                    <strong>// WIP</strong>
+                                    <strong>{wipTitleHint ?? "// WIP"}</strong>
                                     <ChangeCountSummary counts={wipStats} size="md" />
                                     {columns.author ? null : conflictBadge}
                                 </span>

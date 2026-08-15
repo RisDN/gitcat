@@ -187,7 +187,11 @@ export function useContextMenuActions({
             case "stash_pop":
                 if (commit.stash) {
                     const { oid } = commit.stash;
-                    void runMutation("Stash popped", (repository) => gitcatApi.stashApply(repository.repository_id, oid, true));
+                    void runMutation(
+                        "Stash popped",
+                        (repository) => gitcatApi.stashApply(repository.repository_id, oid, true),
+                        { wipTitleHint: commit.subject },
+                    );
                 }
                 break;
             case "stash_drop":

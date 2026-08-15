@@ -26,6 +26,7 @@ export interface WorktreeMutationsParams {
     setSelectedWorktreeFile: Dispatch<SetStateAction<{ path: string; staged: boolean } | null>>;
     setSnapshot: Dispatch<SetStateAction<RepositorySnapshot | null>>;
     setStageCollapse: Dispatch<SetStateAction<{ target: FolderCollapseTarget; staged: boolean; token: number } | null>>;
+    setWipTitleHint: Dispatch<SetStateAction<string | null>>;
     showError: (title: string, error: unknown) => void;
     snapshot: RepositorySnapshot | null;
     swapWorktreeDiffSideRef: RefObject<(path: string, staged: boolean) => void>;
@@ -49,6 +50,7 @@ export function useWorktreeMutations({
     setSelectedWorktreeFile,
     setSnapshot,
     setStageCollapse,
+    setWipTitleHint,
     showError,
     snapshot,
     swapWorktreeDiffSideRef,
@@ -86,6 +88,7 @@ export function useWorktreeMutations({
             silent?: boolean;
             optimistic?: () => (() => void) | undefined;
             onError?: (error: unknown) => boolean;
+            wipTitleHint?: string;
         },
     ): Promise<boolean> => {
         if (!activeRepository || busy || overviewLoading) return false;
@@ -98,6 +101,7 @@ export function useWorktreeMutations({
             const result = await operation(activeRepository);
             operationCompleted = true;
             if (activeRepositoryIdRef.current === activeRepository.repository_id) {
+                setWipTitleHint(options?.wipTitleHint ?? null);
                 await loadOverview(activeRepository, true)
                     .catch((error) => showError("Refresh failed", error));
             }
@@ -118,7 +122,7 @@ export function useWorktreeMutations({
         } finally {
             setBusy(false);
         }
-    }, [activeRepository, addToast, busy, loadOverview, overviewLoading, showError]);
+    }, [activeRepository, addToast, busy, loadOverview, overviewLoading, setWipTitleHint, showError]);
 
     const rewordCommit = useCallback((oid: string, message: string) => {
         if (!snapshot) return Promise.resolve(false);

@@ -75,6 +75,7 @@ function App() {
     const selectedOidRef = useRef<string | null>(null);
     const pendingSelectionRef = useRef<{ index: number; subject: string } | null>(null);
     const [wipSelected, setWipSelected] = useState(false);
+    const [wipTitleHint, setWipTitleHint] = useState<string | null>(null);
     const wipRowRef = useRef<HTMLButtonElement>(null);
     const [details, setDetails] = useState<Awaited<ReturnType<typeof gitcatApi.commitDetails>> | null>(null);
     const [commitActions, setCommitActions] = useState<CommitActionAvailability[]>([]);
@@ -223,6 +224,7 @@ function App() {
         setSnapshot,
         setStashes,
         setWipSelected,
+        setWipTitleHint,
         showError,
         wipSelected,
     });
@@ -304,6 +306,7 @@ function App() {
         setSelectedWorktreeFile,
         setSnapshot,
         setStageCollapse,
+        setWipTitleHint,
         showError,
         snapshot,
         swapWorktreeDiffSideRef,
@@ -826,6 +829,7 @@ function App() {
                             wipRowStyle={wipRowStyle}
                             wipSelected={wipSelected}
                             wipStats={wipStats}
+                            wipTitleHint={wipTitleHint}
                             worktreeReachable={worktreeReachable}
                         />
 

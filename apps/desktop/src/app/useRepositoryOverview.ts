@@ -44,6 +44,7 @@ export interface RepositoryOverviewParams {
     setSnapshot: Dispatch<SetStateAction<RepositorySnapshot | null>>;
     setStashes: Dispatch<SetStateAction<StashEntry[]>>;
     setWipSelected: Dispatch<SetStateAction<boolean>>;
+    setWipTitleHint: Dispatch<SetStateAction<string | null>>;
     showError: (title: string, error: unknown) => void;
     wipSelected: boolean;
 }
@@ -80,6 +81,7 @@ export function useRepositoryOverview({
     setSnapshot,
     setStashes,
     setWipSelected,
+    setWipTitleHint,
     showError,
     wipSelected,
 }: RepositoryOverviewParams) {
@@ -162,6 +164,7 @@ export function useRepositoryOverview({
         setSelectedWorktreeFile(null);
         setDiffLoading(false);
         setCenterView("graph");
+        setWipTitleHint(null);
         if (!activeRepository) return;
         void loadOverview(activeRepository, false)
             .catch((error) => showError("Repository could not be loaded", error));

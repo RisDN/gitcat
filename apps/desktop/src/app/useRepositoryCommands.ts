@@ -68,7 +68,11 @@ export function useRepositoryCommands({
 
     const popLatestStash = useCallback(() => {
         if (!stashes.length) return;
-        void runMutation("Stash popped", (repository) => gitcatApi.stashApply(repository.repository_id, stashes[0].oid, true));
+        void runMutation(
+            "Stash popped",
+            (repository) => gitcatApi.stashApply(repository.repository_id, stashes[0].oid, true),
+            { wipTitleHint: stashes[0].message },
+        );
     }, [runMutation, stashes]);
 
     const continueActiveOperation = useCallback(() => {

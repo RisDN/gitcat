@@ -49,6 +49,13 @@ export type RunMutation = (
         silent?: boolean;
         optimistic?: () => (() => void) | undefined;
         onError?: (error: unknown) => boolean;
+        /**
+         * On success, shows this as the WIP row's title until the next
+         * mutation (any mutation not itself passing this option clears it).
+         * Mirrors GitKraken, which labels the working-tree row with the
+         * message of the stash that was just popped into it.
+         */
+        wipTitleHint?: string;
     },
 ) => Promise<boolean>;
 
