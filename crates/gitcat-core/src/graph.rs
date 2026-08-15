@@ -795,6 +795,73 @@ mod tests {
         assert_eq!(paged_lanes, one_batch_lanes);
     }
 
+    // Mirrors the `convergence-lane-reuse` GitKraken conformance fixture: four
+    // sibling branches (cluster-b1..b4) converge back onto the same merge
+    // commit simultaneously, and an extra merge parent (feature-tip) opens
+    // its lane right after. `layout_commits` clears every `LaneState.heads`
+    // entry that points at a newly-reached commit in one pass, so several
+    // lanes can free at once on the convergence row. This was the row order
+    // pagination would most plausibly disturb, since it is the one page
+    // boundary where the "rightmost active lane" that `allocate_after_rightmost`
+    // reads depends on several unrelated lanes having just closed together.
+    #[test]
+    fn paged_layout_matches_one_batch_across_a_simultaneous_multi_lane_convergence() {
+        let commits = vec![
+            commit("final-merge", &["trunk-continues", "long-runner-tip"]),
+            commit("trunk-continues", &["s-merge"]),
+            commit("cluster-b4", &["s-merge"]),
+            commit("cluster-b3", &["s-merge"]),
+            commit("cluster-b2", &["s-merge"]),
+            commit("cluster-b1", &["s-merge"]),
+            commit("s-merge", &["t-older", "feature-tip"]),
+            commit("feature-tip", &["t-older"]),
+            commit("t-older", &["long-base"]),
+            commit("long-runner-tip", &["long-base"]),
+            commit("long-base", &["root"]),
+            commit("root", &[]),
+        ];
+
+        let mut one_batch = commits.clone();
+        let mut one_batch_lanes = LaneState { heads: Vec::new() };
+        layout_clean(&mut one_batch, &mut one_batch_lanes);
+
+        assert_eq!(
+            one_batch
+                .iter()
+                .map(|commit| commit.graph.lane)
+                .collect::<Vec<_>>(),
+            vec![0, 0, 2, 3, 4, 5, 0, 2, 0, 1, 0, 0],
+            "sanity check: one-batch lanes should match the GitKraken oracle"
+        );
+
+        for split in 1..commits.len() {
+            let mut first_page = commits[..split].to_vec();
+            let mut second_page = commits[split..].to_vec();
+            let mut paged_lanes = LaneState { heads: Vec::new() };
+            layout_clean(&mut first_page, &mut paged_lanes);
+            layout_clean(&mut second_page, &mut paged_lanes);
+
+            let paged_graphs: Vec<_> = first_page
+                .iter()
+                .chain(&second_page)
+                .map(|commit| commit.graph.clone())
+                .collect();
+            let one_batch_graphs: Vec<_> = one_batch
+                .iter()
+                .map(|commit| commit.graph.clone())
+                .collect();
+
+            assert_eq!(
+                paged_graphs, one_batch_graphs,
+                "page split at row {split} diverged from the one-batch layout"
+            );
+            assert_eq!(
+                paged_lanes, one_batch_lanes,
+                "page split at row {split} left a different final LaneState"
+            );
+        }
+    }
+
     #[test]
     fn independent_tip_opens_after_the_rightmost_active_lane() {
         let mut lanes = LaneState {
