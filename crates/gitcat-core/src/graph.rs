@@ -2,24 +2,40 @@ use std::collections::{HashMap, HashSet};
 
 use gitcat_contracts::{CommitSummary, GraphCell, GraphEdge, LaneState, RefKind};
 
-const STASH_LANE_FLOOR: usize = 1;
+const STASH_LANE_FLOOR: usize = 0;
 
-/// Adds deterministic graph lane information to topologically ordered commits.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GraphLayoutContext {
+    pub wip_head_oid: Option<String>,
+}
+
+/// Adds deterministic clean-worktree graph lane information to topologically ordered commits.
 ///
 /// Each lane head is the next commit expected in that lane. Keeping `lanes`
-/// between calls makes layout identical whether history is processed in one
-/// batch or several pages. On the first page the checked-out branch owns the
-/// primary lane and the conventional default branch owns the secondary lane.
+/// between calls carries still-active routes across history pages.
 pub fn layout_commits(commits: &mut [CommitSummary], lanes: &mut LaneState) {
+    layout_commits_with_context(commits, lanes, &GraphLayoutContext::default());
+}
+
+/// Adds deterministic graph lane information with repository presentation context.
+///
+/// Clean graphs follow row order. When worktree changes add a WIP row, its HEAD
+/// commit and first-parent span own the primary lane.
+pub fn layout_commits_with_context(
+    commits: &mut [CommitSummary],
+    lanes: &mut LaneState,
+    context: &GraphLayoutContext,
+) {
     let priority_components = build_priority_components(commits);
-    let classify_disconnected_tips = lanes.heads.is_empty() && !priority_components.is_empty();
+    let first_page = lanes.heads.is_empty();
+    let classify_disconnected_tips = first_page && !priority_components.is_empty();
+    seed_wip_lane(context, &mut lanes.heads);
     let mut materialized_lanes = lanes
         .heads
         .iter()
         .enumerate()
         .filter_map(|(lane, head)| head.is_some().then_some(lane))
         .collect::<HashSet<_>>();
-    seed_priority_lanes(commits, &mut lanes.heads);
 
     let merge_convergences = build_merge_convergences(commits);
     let mut commit_lanes = Vec::with_capacity(commits.len());
@@ -47,21 +63,36 @@ pub fn layout_commits(commits: &mut [CommitSummary], lanes: &mut LaneState) {
         materialized_lanes.insert(lane);
 
         for (parent_index, parent_oid) in commit.parent_oids.iter().enumerate() {
+            let anchors_wip_span =
+                parent_index == 0 && context.wip_head_oid.as_deref() == Some(commit.oid.as_str());
             let claimed_lane = lanes
                 .heads
                 .iter()
                 .position(|head| head.as_deref() == Some(parent_oid.as_str()));
+            let pulls_first_parent_left = parent_index == 0
+                && commit.stash.is_none()
+                && lanes.heads[lane].is_none()
+                && claimed_lane.is_some_and(|claimed_lane| lane < claimed_lane);
 
-            let parent_lane = match claimed_lane {
-                Some(claimed_lane) => claimed_lane,
-                None => {
-                    let inherits_lane = parent_index == 0 && commit.stash.is_none();
-                    if parent_index > 0 {
-                        allocate_after_rightmost(&mut lanes.heads, parent_oid, 0)
-                    } else {
-                        let preferred_lane =
-                            (inherits_lane && lanes.heads[lane].is_none()).then_some(lane);
-                        allocate_lane(&mut lanes.heads, parent_oid, preferred_lane, 0)
+            let parent_lane = if anchors_wip_span || pulls_first_parent_left {
+                // A branch rendered above this row may already have claimed
+                // the shared ancestor on a lane to the right. Keep that
+                // duplicate head alive so its bend cannot be reused early,
+                // while moving the shared endpoint onto the lower branch lane.
+                lanes.heads[lane] = Some(parent_oid.clone());
+                lane
+            } else {
+                match claimed_lane {
+                    Some(claimed_lane) => claimed_lane,
+                    None => {
+                        let inherits_lane = parent_index == 0 && commit.stash.is_none();
+                        if parent_index > 0 {
+                            allocate_after_rightmost(&mut lanes.heads, parent_oid, 0)
+                        } else {
+                            let preferred_lane =
+                                (inherits_lane && lanes.heads[lane].is_none()).then_some(lane);
+                            allocate_lane(&mut lanes.heads, parent_oid, preferred_lane, 0)
+                        }
                     }
                 }
             };
@@ -205,31 +236,13 @@ fn build_priority_components(commits: &[CommitSummary]) -> HashSet<String> {
     connected
 }
 
-fn seed_priority_lanes(commits: &[CommitSummary], heads: &mut Vec<Option<String>>) {
+fn seed_wip_lane(context: &GraphLayoutContext, heads: &mut Vec<Option<String>>) {
     if !heads.is_empty() {
         return;
     }
 
-    let checked_out = commits.iter().find(|commit| {
-        commit
-            .decorations
-            .iter()
-            .any(|decoration| decoration.is_head)
-    });
-    let default_branch = commits.iter().find(|commit| {
-        commit.decorations.iter().any(|decoration| {
-            decoration.kind == RefKind::LocalBranch
-                && matches!(decoration.name.as_str(), "main" | "master")
-        })
-    });
-
-    for commit in [checked_out, default_branch].into_iter().flatten() {
-        if !heads
-            .iter()
-            .any(|head| head.as_deref() == Some(commit.oid.as_str()))
-        {
-            heads.push(Some(commit.oid.clone()));
-        }
+    if let Some(wip_head_oid) = &context.wip_head_oid {
+        heads.push(Some(wip_head_oid.clone()));
     }
 }
 
@@ -262,10 +275,41 @@ fn lane_for_commit(
     }
 
     if disconnected_tip {
-        return allocate_lane(heads, &commit.oid, None, 0);
+        // GitKraken may fill a never-drawn gap between active routes (the
+        // simulation's orphan lane), but it does not recycle a branch column
+        // after that branch has materialized and finished.
+        return allocate_unmaterialized_interior_hole_or_after_rightmost(
+            heads,
+            &commit.oid,
+            0,
+            materialized_lanes,
+        );
     }
 
     allocate_after_rightmost(heads, &commit.oid, 0)
+}
+
+fn allocate_unmaterialized_interior_hole_or_after_rightmost(
+    heads: &mut Vec<Option<String>>,
+    oid: &str,
+    floor: usize,
+    materialized_lanes: &HashSet<usize>,
+) -> usize {
+    let leftmost_active = heads.iter().position(Option::is_some);
+    let rightmost_active = heads.iter().rposition(Option::is_some);
+    let interior_hole = leftmost_active
+        .zip(rightmost_active)
+        .and_then(|(left, right)| {
+            ((left + 1).max(floor)..right)
+                .find(|lane| heads[*lane].is_none() && !materialized_lanes.contains(lane))
+        });
+
+    if let Some(lane) = interior_hole {
+        heads[lane] = Some(oid.to_owned());
+        lane
+    } else {
+        allocate_after_rightmost(heads, oid, floor)
+    }
 }
 
 fn allocate_after_rightmost(heads: &mut Vec<Option<String>>, oid: &str, floor: usize) -> usize {
@@ -360,88 +404,252 @@ mod tests {
         commit
     }
 
-    #[test]
-    fn checkout_moves_the_active_branch_and_wip_to_the_primary_lane() {
-        let history = vec![
-            stash_commit("stash", &["sim-wip"]),
-            branch_tip(commit("sim-wip", &["wip-base", "main"]), "sim-wip", true),
-            branch_tip(commit("main", &["base"]), "main", false),
-            commit("wip-base", &["base"]),
-            commit("base", &[]),
-        ];
-        let mut sim_wip_checked_out = history.clone();
-        let mut main_checked_out = history;
-        main_checked_out[1].decorations[0].is_head = false;
-        main_checked_out[2].decorations[0].is_head = true;
+    fn layout_clean(commits: &mut [CommitSummary], lanes: &mut LaneState) {
+        layout_commits(commits, lanes);
+    }
 
-        layout_commits(
-            &mut sim_wip_checked_out,
-            &mut LaneState { heads: Vec::new() },
+    fn layout_with_wip(commits: &mut [CommitSummary], lanes: &mut LaneState, wip_head_oid: &str) {
+        layout_commits_with_context(
+            commits,
+            lanes,
+            &GraphLayoutContext {
+                wip_head_oid: Some(wip_head_oid.into()),
+            },
         );
-        layout_commits(&mut main_checked_out, &mut LaneState { heads: Vec::new() });
-
-        assert_eq!(sim_wip_checked_out[0].graph.lane, 1);
-        assert_eq!(sim_wip_checked_out[1].graph.lane, 0);
-        assert_eq!(sim_wip_checked_out[2].graph.lane, 1);
-
-        assert_eq!(main_checked_out[0].graph.lane, 1);
-        assert_eq!(main_checked_out[1].graph.lane, 1);
-        assert_eq!(main_checked_out[2].graph.lane, 0);
     }
 
     #[test]
-    fn a_stash_uses_the_secondary_lane() {
+    fn clean_checkout_does_not_override_row_order() {
+        let history = vec![
+            branch_tip(commit("feature", &["base"]), "feature", false),
+            branch_tip(commit("main", &["base"]), "main", true),
+            commit("base", &[]),
+        ];
+        let mut main_checked_out = history.clone();
+        let mut feature_checked_out = history;
+        feature_checked_out[0].decorations[0].is_head = true;
+        feature_checked_out[1].decorations[0].is_head = false;
+
+        layout_clean(&mut main_checked_out, &mut LaneState { heads: Vec::new() });
+        layout_clean(
+            &mut feature_checked_out,
+            &mut LaneState { heads: Vec::new() },
+        );
+
+        for commits in [&main_checked_out, &feature_checked_out] {
+            assert_eq!(commits[0].graph.lane, 0);
+            assert_eq!(commits[1].graph.lane, 1);
+            assert_eq!(commits[2].graph.lane, 0);
+            assert_eq!(commits[0].graph.edges[0].to_lane, 0);
+            assert_eq!(commits[1].graph.edges[0].to_lane, 0);
+        }
+    }
+
+    #[test]
+    fn wip_checkout_anchors_the_active_branch_span_to_lane_zero() {
+        let history = vec![
+            branch_tip(commit("feature", &["base"]), "feature", false),
+            branch_tip(commit("main", &["base"]), "main", true),
+            commit("base", &[]),
+        ];
+        let mut main_checked_out = history.clone();
+        let mut feature_checked_out = history;
+        feature_checked_out[0].decorations[0].is_head = true;
+        feature_checked_out[1].decorations[0].is_head = false;
+
+        layout_with_wip(
+            &mut main_checked_out,
+            &mut LaneState { heads: Vec::new() },
+            "main",
+        );
+        layout_with_wip(
+            &mut feature_checked_out,
+            &mut LaneState { heads: Vec::new() },
+            "feature",
+        );
+
+        assert_eq!(main_checked_out[0].graph.lane, 1);
+        assert_eq!(main_checked_out[1].graph.lane, 0);
+        assert_eq!(main_checked_out[2].graph.lane, 0);
+        assert_eq!(main_checked_out[0].graph.edges[0].to_lane, 0);
+        assert_eq!(main_checked_out[1].graph.edges[0].to_lane, 0);
+
+        assert_eq!(feature_checked_out[0].graph.lane, 0);
+        assert_eq!(feature_checked_out[1].graph.lane, 1);
+        assert_eq!(feature_checked_out[2].graph.lane, 0);
+        assert_eq!(feature_checked_out[0].graph.edges[0].to_lane, 0);
+        assert_eq!(feature_checked_out[1].graph.edges[0].to_lane, 0);
+    }
+
+    #[test]
+    fn a_hidden_detached_wip_head_reserves_lane_zero_on_the_first_page() {
+        // LaneState carries future lane heads, but not the parent-lane map used
+        // to paint rows already returned on an earlier page. This regression
+        // therefore covers the hidden WIP anchor only; cross-page convergence
+        // needs a richer cursor contract before it can be asserted faithfully.
+        let mut first_page = vec![commit("visible-tip", &["visible-parent"])];
+        let mut lanes = LaneState { heads: Vec::new() };
+
+        layout_with_wip(&mut first_page, &mut lanes, "detached-head");
+
+        assert_eq!(first_page[0].graph.lane, 1);
+        assert_eq!(lanes.heads[0].as_deref(), Some("detached-head"));
+        assert_eq!(lanes.heads[1].as_deref(), Some("visible-parent"));
+    }
+
+    #[test]
+    fn a_clean_single_stash_uses_lane_zero() {
         let mut commits = vec![
-            stash_commit("wip", &["base"]),
+            stash_commit("stash", &["base"]),
             commit("tip", &["mid"]),
             commit("mid", &["base"]),
             commit("base", &[]),
         ];
         let mut lanes = LaneState { heads: Vec::new() };
 
-        layout_commits(&mut commits, &mut lanes);
+        layout_clean(&mut commits, &mut lanes);
 
-        assert_eq!(commits[0].graph.lane, STASH_LANE_FLOOR);
+        assert_eq!(commits[0].graph.lane, 0);
         assert_eq!(commits[0].graph.edges[0].to_lane, 0);
         assert_eq!(commits[2].graph.edges[0].to_lane, 0);
         assert_eq!(commits[3].graph.lane, 0);
     }
 
     #[test]
-    fn additional_stashes_stack_to_the_right_of_the_base_lane() {
+    fn a_clean_stash_anchors_its_parent_branch_and_shared_base_to_lane_zero() {
         let mut commits = vec![
-            stash_commit("wip-newer", &["base"]),
-            stash_commit("wip-older", &["base"]),
+            stash_commit("main-stash", &["main"]),
+            branch_tip(commit("feature", &["base"]), "feature", false),
+            branch_tip(commit("main", &["base"]), "main", true),
             commit("base", &[]),
         ];
         let mut lanes = LaneState { heads: Vec::new() };
 
-        layout_commits(&mut commits, &mut lanes);
+        layout_clean(&mut commits, &mut lanes);
 
-        assert_eq!(commits[0].graph.lane, 1);
-        assert_eq!(commits[1].graph.lane, 2);
+        assert_eq!(commits[0].graph.lane, 0);
+        assert_eq!(commits[1].graph.lane, 1);
+        assert_eq!(commits[2].graph.lane, 0);
+        assert_eq!(commits[3].graph.lane, 0);
+        assert_eq!(commits[0].graph.edges[0].to_lane, 0);
+        assert_eq!(commits[1].graph.edges[0].to_lane, 0);
+        assert_eq!(commits[2].graph.edges[0].to_lane, 0);
+    }
+
+    #[test]
+    fn additional_stashes_stack_to_the_right_of_the_base_lane() {
+        let mut commits = vec![
+            stash_commit("stash-newer", &["base"]),
+            stash_commit("stash-older", &["base"]),
+            commit("base", &[]),
+        ];
+        let mut lanes = LaneState { heads: Vec::new() };
+
+        layout_clean(&mut commits, &mut lanes);
+
+        assert_eq!(commits[0].graph.lane, 0);
+        assert_eq!(commits[1].graph.lane, 1);
         assert_eq!(commits[0].graph.edges[0].to_lane, 0);
         assert_eq!(commits[1].graph.edges[0].to_lane, 0);
         assert_eq!(commits[2].graph.lane, 0);
     }
 
     #[test]
-    fn a_stash_skips_a_visible_secondary_branch_lane() {
+    fn wip_reserves_lane_zero_and_moves_a_foreign_stash_to_lane_one() {
         let mut commits = vec![
-            branch_tip(
-                commit("sim-wip-tip", &["sim-wip-base", "main-tip"]),
-                "sim-wip",
-                true,
-            ),
-            branch_tip(commit("main-tip", &["main-base"]), "main", false),
-            stash_commit("wip", &["sim-wip-base"]),
-            commit("main-base", &["base"]),
-            commit("sim-wip-base", &["base"]),
+            stash_commit("main-stash", &["main"]),
+            branch_tip(commit("feature", &["base"]), "feature", true),
+            branch_tip(commit("main", &["base"]), "main", false),
             commit("base", &[]),
         ];
         let mut lanes = LaneState { heads: Vec::new() };
 
-        layout_commits(&mut commits, &mut lanes);
+        layout_with_wip(&mut commits, &mut lanes, "feature");
+
+        assert_eq!(commits[0].graph.lane, 1);
+        assert_eq!(commits[0].graph.edges[0].to_lane, 1);
+        assert_eq!(commits[1].graph.lane, 0);
+        assert_eq!(commits[2].graph.lane, 1);
+        assert_eq!(commits[3].graph.lane, 0);
+    }
+
+    #[test]
+    fn wip_moves_consecutive_stashes_one_lane_to_the_right() {
+        let mut commits = vec![
+            stash_commit("stash-a", &["feature"]),
+            stash_commit("stash-b", &["feature"]),
+            branch_tip(commit("feature", &["base"]), "feature", true),
+            branch_tip(commit("main", &["base"]), "main", false),
+            commit("base", &[]),
+        ];
+        let mut lanes = LaneState { heads: Vec::new() };
+
+        layout_with_wip(&mut commits, &mut lanes, "feature");
+
+        assert_eq!(commits[0].graph.lane, 1);
+        assert_eq!(commits[1].graph.lane, 2);
+        assert_eq!(commits[0].graph.edges[0].to_lane, 0);
+        assert_eq!(commits[1].graph.edges[0].to_lane, 0);
+        assert_eq!(commits[2].graph.lane, 0);
+        assert_eq!(commits[3].graph.lane, 1);
+        assert_eq!(commits[4].graph.lane, 0);
+    }
+
+    #[test]
+    fn clean_stash_lanes_match_across_page_boundaries() {
+        let history = vec![
+            stash_commit("stash-a", &["base"]),
+            stash_commit("stash-c", &["base"]),
+            stash_commit("stash-b", &["base"]),
+            commit("base", &[]),
+        ];
+        let mut one_batch = history.clone();
+        let mut one_batch_lanes = LaneState { heads: Vec::new() };
+        layout_clean(&mut one_batch, &mut one_batch_lanes);
+
+        let mut paged_lanes = LaneState { heads: Vec::new() };
+        let mut pages = history
+            .into_iter()
+            .map(|commit| vec![commit])
+            .collect::<Vec<_>>();
+        for page in &mut pages {
+            layout_clean(page, &mut paged_lanes);
+        }
+
+        let paged_graphs = pages
+            .iter()
+            .flatten()
+            .map(|commit| commit.graph.clone())
+            .collect::<Vec<_>>();
+        let one_batch_graphs = one_batch
+            .iter()
+            .map(|commit| commit.graph.clone())
+            .collect::<Vec<_>>();
+
+        assert_eq!(paged_graphs, one_batch_graphs);
+        assert_eq!(paged_lanes, one_batch_lanes);
+        assert_eq!(one_batch[0].graph.lane, 0);
+        assert_eq!(one_batch[1].graph.lane, 1);
+        assert_eq!(one_batch[2].graph.lane, 2);
+    }
+
+    #[test]
+    fn a_stash_skips_two_materialized_branch_lanes() {
+        let mut commits = vec![
+            branch_tip(
+                commit("feature-tip", &["feature-base", "main-tip"]),
+                "feature",
+                true,
+            ),
+            branch_tip(commit("main-tip", &["main-base"]), "main", false),
+            stash_commit("stash", &["feature-base"]),
+            commit("main-base", &["base"]),
+            commit("feature-base", &["base"]),
+            commit("base", &[]),
+        ];
+        let mut lanes = LaneState { heads: Vec::new() };
+
+        layout_clean(&mut commits, &mut lanes);
 
         assert_eq!(commits[0].graph.lane, 0);
         assert_eq!(commits[1].graph.lane, 1);
@@ -453,13 +661,13 @@ mod tests {
     fn a_finished_stash_lane_is_reused_before_later_stashes() {
         let mut commits = vec![
             branch_tip(
-                commit("sim-wip-tip", &["wip-base", "main-tip"]),
-                "sim-wip",
+                commit("feature-tip", &["feature-base", "main-tip"]),
+                "feature",
                 true,
             ),
             branch_tip(commit("main-tip", &["main-base"]), "main", false),
-            stash_commit("current-wip", &["wip-base"]),
-            commit("wip-base", &["shared-base"]),
+            stash_commit("current-stash", &["feature-base"]),
+            commit("feature-base", &["shared-base"]),
             stash_commit("older-stash-1", &["shared-base"]),
             stash_commit("older-stash-2", &["shared-base"]),
             stash_commit("older-stash-3", &["shared-base"]),
@@ -469,7 +677,7 @@ mod tests {
         ];
         let mut lanes = LaneState { heads: Vec::new() };
 
-        layout_commits(&mut commits, &mut lanes);
+        layout_clean(&mut commits, &mut lanes);
 
         assert_eq!(commits[2].graph.lane, 2);
         assert_eq!(commits[4].graph.lane, 2);
@@ -483,7 +691,7 @@ mod tests {
         let mut commits = vec![commit("a", &["b"]), commit("b", &["c"]), commit("c", &[])];
         let mut lanes = LaneState { heads: Vec::new() };
 
-        layout_commits(&mut commits, &mut lanes);
+        layout_clean(&mut commits, &mut lanes);
 
         assert!(commits.iter().all(|commit| commit.graph.lane == 0));
         assert_eq!(commits[0].graph.edges[0].to_lane, 0);
@@ -501,7 +709,7 @@ mod tests {
         ];
         let mut lanes = LaneState { heads: Vec::new() };
 
-        layout_commits(&mut commits, &mut lanes);
+        layout_clean(&mut commits, &mut lanes);
 
         assert_eq!(commits[0].graph.lane, 0);
         assert_eq!(commits[0].graph.edges.len(), 2);
@@ -521,7 +729,7 @@ mod tests {
             heads: vec![Some("merge".into()), None, Some("carried".into())],
         };
 
-        layout_commits(&mut commits, &mut lanes);
+        layout_clean(&mut commits, &mut lanes);
 
         assert_eq!(commits[0].graph.lane, 0);
         assert_eq!(commits[0].graph.edges[0].to_lane, 0);
@@ -540,7 +748,7 @@ mod tests {
             heads: vec![None, Some("merge".into())],
         };
 
-        layout_commits(&mut commits, &mut lanes);
+        layout_clean(&mut commits, &mut lanes);
 
         assert_eq!(commits[0].graph.lane, 1);
         assert_eq!(commits[1].graph.lane, 1);
@@ -561,17 +769,17 @@ mod tests {
 
         let mut one_batch = commits.clone();
         let mut one_batch_lanes = LaneState { heads: Vec::new() };
-        layout_commits(&mut one_batch, &mut one_batch_lanes);
+        layout_clean(&mut one_batch, &mut one_batch_lanes);
 
         let mut first_page = commits[..2].to_vec();
         let mut second_page = commits[2..].to_vec();
         let mut paged_lanes = LaneState { heads: Vec::new() };
-        layout_commits(&mut first_page, &mut paged_lanes);
+        layout_clean(&mut first_page, &mut paged_lanes);
         assert_eq!(
             paged_lanes.heads,
             vec![Some("base".into()), Some("right".into())]
         );
-        layout_commits(&mut second_page, &mut paged_lanes);
+        layout_clean(&mut second_page, &mut paged_lanes);
 
         let paged_graphs: Vec<_> = first_page
             .iter()
@@ -594,7 +802,7 @@ mod tests {
         };
         let mut commits = vec![commit("new-tip", &[])];
 
-        layout_commits(&mut commits, &mut lanes);
+        layout_clean(&mut commits, &mut lanes);
 
         assert_eq!(commits[0].graph.lane, 3);
         assert_eq!(
@@ -604,19 +812,112 @@ mod tests {
     }
 
     #[test]
-    fn disconnected_root_component_reuses_the_lowest_open_lane() {
+    fn disconnected_root_component_reuses_a_never_materialized_interior_lane() {
         let mut heads = (0..12)
             .map(|lane| (lane != 7).then(|| format!("active-{lane}")))
             .collect::<Vec<_>>();
+        let materialized_lanes = (0..12).filter(|lane| *lane != 7).collect::<HashSet<_>>();
         let lane = lane_for_commit(
             &mut heads,
             &commit("orphan-tip", &["orphan-root"]),
             true,
-            &HashSet::new(),
+            &materialized_lanes,
         );
 
         assert_eq!(lane, 7);
         assert_eq!(heads[7].as_deref(), Some("orphan-tip"));
+    }
+
+    #[test]
+    fn disconnected_component_does_not_reuse_a_finished_materialized_lane() {
+        fn history(head: &str) -> Vec<CommitSummary> {
+            vec![
+                branch_tip(commit("main-tip", &["main-root"]), "main", head == "main"),
+                branch_tip(commit("side-tip", &["side-root"]), "side", head == "side"),
+                branch_tip(
+                    commit("right-tip", &["right-root"]),
+                    "right",
+                    head == "right",
+                ),
+                commit("side-root", &[]),
+                branch_tip(
+                    commit("target-tip", &["target-root"]),
+                    "target",
+                    head == "target",
+                ),
+                commit("main-root", &[]),
+                commit("right-root", &[]),
+                commit("target-root", &[]),
+            ]
+        }
+
+        for head in ["main", "target"] {
+            let mut commits = history(head);
+            let mut lanes = LaneState { heads: Vec::new() };
+
+            layout_clean(&mut commits, &mut lanes);
+
+            assert_eq!(
+                commits
+                    .iter()
+                    .map(|commit| commit.graph.lane)
+                    .collect::<Vec<_>>(),
+                vec![0, 1, 2, 1, 3, 0, 2, 3],
+                "checkout of {head} changed disconnected component lanes"
+            );
+            assert_eq!(
+                commits
+                    .iter()
+                    .flat_map(|commit| &commit.graph.edges)
+                    .map(|edge| (edge.from_lane, edge.to_lane))
+                    .collect::<Vec<_>>(),
+                vec![(0, 0), (1, 1), (2, 2), (3, 3)],
+                "checkout of {head} changed disconnected component edges"
+            );
+        }
+    }
+
+    #[test]
+    fn disconnected_checkout_only_changes_the_head_decoration() {
+        fn history(head: &str) -> Vec<CommitSummary> {
+            vec![
+                branch_tip(commit("main-tip", &["main-root"]), "main", head == "main"),
+                branch_tip(commit("side-tip", &["side-root"]), "side", head == "side"),
+                commit("main-root", &[]),
+                branch_tip(
+                    commit("target-tip", &["target-root"]),
+                    "target",
+                    head == "target",
+                ),
+                commit("target-root", &[]),
+                commit("side-root", &[]),
+            ]
+        }
+
+        for head in ["main", "target"] {
+            let mut commits = history(head);
+            let mut lanes = LaneState { heads: Vec::new() };
+
+            layout_clean(&mut commits, &mut lanes);
+
+            assert_eq!(
+                commits
+                    .iter()
+                    .map(|commit| commit.graph.lane)
+                    .collect::<Vec<_>>(),
+                vec![0, 1, 0, 2, 2, 1],
+                "checkout of {head} changed disconnected component lanes"
+            );
+            assert_eq!(
+                commits
+                    .iter()
+                    .flat_map(|commit| &commit.graph.edges)
+                    .map(|edge| (edge.from_lane, edge.to_lane))
+                    .collect::<Vec<_>>(),
+                vec![(0, 0), (1, 1), (2, 2)],
+                "checkout of {head} changed disconnected component edges"
+            );
+        }
     }
 
     #[test]
@@ -630,7 +931,7 @@ mod tests {
             commit("base", &[]),
         ];
 
-        layout_commits(&mut commits, &mut lanes);
+        layout_clean(&mut commits, &mut lanes);
 
         assert_eq!(commits[0].graph.lane, 3);
         assert_eq!(commits[1].graph.lane, 3);
@@ -646,7 +947,7 @@ mod tests {
         ];
         let mut lanes = LaneState { heads: Vec::new() };
 
-        layout_commits(&mut commits, &mut lanes);
+        layout_clean(&mut commits, &mut lanes);
 
         assert!(commits.iter().all(|commit| commit.graph.lane == 0));
         assert_eq!(commits[0].graph.edges[0].to_lane, 0);
@@ -664,7 +965,7 @@ mod tests {
 
         let mut commits = history.clone();
         let mut lanes = LaneState { heads: Vec::new() };
-        layout_commits(&mut commits, &mut lanes);
+        layout_clean(&mut commits, &mut lanes);
 
         assert_eq!(commits[0].graph.lane, 0);
         assert_eq!(commits[2].graph.lane, 1);
@@ -677,14 +978,14 @@ mod tests {
             history[4].clone(),
         ];
         let mut swapped_lanes = LaneState { heads: Vec::new() };
-        layout_commits(&mut swapped, &mut swapped_lanes);
+        layout_clean(&mut swapped, &mut swapped_lanes);
 
         assert_eq!(swapped[0].graph.lane, 0);
         assert_eq!(swapped[2].graph.lane, 1);
     }
 
     #[test]
-    fn a_stash_and_its_index_keep_the_leftmost_lanes() {
+    fn a_two_parent_tip_and_its_second_parent_keep_the_leftmost_lanes() {
         let mut commits = vec![
             commit("stash", &["base", "index"]),
             commit("index", &["base"]),
@@ -697,7 +998,7 @@ mod tests {
         ];
         let mut lanes = LaneState { heads: Vec::new() };
 
-        layout_commits(&mut commits, &mut lanes);
+        layout_clean(&mut commits, &mut lanes);
 
         assert_eq!(commits[0].graph.lane, 0);
         assert_eq!(commits[1].graph.lane, 1);
@@ -726,7 +1027,7 @@ mod tests {
         ];
         let mut lanes = LaneState { heads: Vec::new() };
 
-        layout_commits(&mut commits, &mut lanes);
+        layout_clean(&mut commits, &mut lanes);
 
         let lane_of = |oid: &str| {
             commits
@@ -742,34 +1043,36 @@ mod tests {
     }
 
     #[test]
-    fn a_stash_taken_from_head_leaves_the_head_lane_alone() {
+    fn a_stash_ancestry_keeps_the_shared_base_on_lane_zero() {
         let mut commits = vec![
-            stash_commit("wip", &["head-tip"]),
+            stash_commit("stash", &["head-tip"]),
             commit("main-tip", &["base"]),
             commit("head-tip", &["base"]),
             commit("base", &[]),
         ];
         let mut lanes = LaneState { heads: Vec::new() };
 
-        layout_commits(&mut commits, &mut lanes);
+        layout_clean(&mut commits, &mut lanes);
 
         assert_eq!(commits[0].graph.lane, STASH_LANE_FLOOR);
         assert_eq!(commits[0].graph.edges[0].to_lane, 0);
+        assert_eq!(commits[1].graph.lane, 1);
         assert_eq!(commits[2].graph.lane, 0);
-        assert_eq!(commits[3].graph.lane, commits[1].graph.lane);
-        assert_eq!(commits[2].graph.edges[0].to_lane, commits[3].graph.lane);
+        assert_eq!(commits[3].graph.lane, 0);
+        assert_eq!(commits[1].graph.edges[0].to_lane, 0);
+        assert_eq!(commits[2].graph.edges[0].to_lane, 0);
     }
 
     #[test]
     fn a_stash_above_the_head_tip_bends_into_the_head_lane() {
         let mut commits = vec![
-            stash_commit("wip", &["main-tip"]),
+            stash_commit("stash", &["main-tip"]),
             commit("main-tip", &["main-1"]),
             commit("main-1", &[]),
         ];
         let mut lanes = LaneState { heads: Vec::new() };
 
-        layout_commits(&mut commits, &mut lanes);
+        layout_clean(&mut commits, &mut lanes);
 
         assert_eq!(commits[0].graph.lane, STASH_LANE_FLOOR);
         assert_eq!(commits[0].graph.edges[0].from_lane, STASH_LANE_FLOOR);
@@ -791,7 +1094,7 @@ mod tests {
         ];
         let mut lanes = LaneState { heads: Vec::new() };
 
-        layout_commits(&mut commits, &mut lanes);
+        layout_clean(&mut commits, &mut lanes);
 
         assert_eq!(commits[0].graph.lane, 0);
         assert_eq!(commits[1].graph.lane, 1);

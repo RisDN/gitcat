@@ -9,7 +9,7 @@ use std::{
 
 use async_trait::async_trait;
 use gitcat_contracts::*;
-use gitcat_core::{GitBackend, layout_commits};
+use gitcat_core::{GitBackend, GraphLayoutContext, layout_commits_with_context};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -20,10 +20,10 @@ use crate::{
     limits::*,
     operation::ensure_operation,
     parse::{
-        DETAIL_FORMAT, LOG_FORMAT, ParsedStatus, REF_FORMAT, STASH_FORMAT, STASH_GRAPH_FORMAT,
+        DETAIL_FORMAT, LOG_FORMAT, ParsedStatus, REF_FORMAT, STASH_GRAPH_FORMAT, StashCommit,
         StashGraph, parse_changed_files, parse_commit_details, parse_file_diff, parse_git_version,
         parse_line_stats, parse_log, parse_refs, parse_search_hits, parse_stash_graph,
-        parse_stashes, parse_status,
+        parse_status,
     },
     runner::{GitCommandOutput, GitRunOptions, GitRunner, os_args, redact_sensitive},
     validate::{
@@ -37,6 +37,20 @@ struct CommitAuthor {
     name: String,
     email: String,
     date: String,
+}
+
+#[derive(Debug)]
+struct HistoryInputs {
+    generation: String,
+    refs_output: Vec<u8>,
+    layout: GraphLayoutContext,
+    stashes: StashGraph,
+}
+
+#[derive(Debug)]
+struct SearchInputs {
+    normal_revisions: Vec<OsString>,
+    virtual_stashes: Vec<(String, StashCommit)>,
 }
 
 impl CommitAuthor {
@@ -344,20 +358,39 @@ impl GitCliBackend {
         Ok((format!("{:016x}", hasher.finish()), refs.stdout, parsed))
     }
 
-    async fn history_generation_and_refs(&self, path: &Path) -> ApiResult<(String, Vec<u8>)> {
-        let (refs, head) = tokio::try_join!(
+    async fn history_inputs(&self, path: &Path) -> ApiResult<HistoryInputs> {
+        let (status, refs, head, stash_output) = tokio::try_join!(
+            self.status_output(path),
             self.refs_output(path),
             self.read_allow_failure(
                 Some(path),
                 os_args(&["rev-parse", "--verify", "--end-of-options", "HEAD"]),
-            )
+            ),
+            self.stash_graph_output(path),
         )?;
+        let parsed_status = parse_status(&status.stdout)?;
+        let has_wip = !parsed_status.status.clean;
+        let wip_head_oid = if has_wip {
+            match parsed_status.head {
+                HeadState::Branch { oid, .. } | HeadState::Detached { oid } => Some(oid),
+                HeadState::Unborn { .. } => None,
+            }
+        } else {
+            None
+        };
         let refs = refs.stdout;
         let mut hasher = DefaultHasher::new();
         refs.hash(&mut hasher);
         head.status.code().hash(&mut hasher);
         head.stdout.hash(&mut hasher);
-        Ok((format!("{:016x}", hasher.finish()), refs))
+        has_wip.hash(&mut hasher);
+        stash_output.hash(&mut hasher);
+        Ok(HistoryInputs {
+            generation: format!("{:016x}", hasher.finish()),
+            refs_output: refs,
+            layout: GraphLayoutContext { wip_head_oid },
+            stashes: parse_stash_graph(&stash_output)?,
+        })
     }
 
     async fn head_oid(&self, path: &Path) -> ApiResult<Option<String>> {
@@ -372,6 +405,22 @@ impl GitCliBackend {
         } else {
             Ok(None)
         }
+    }
+
+    async fn short_oid(&self, path: &Path, oid: &str) -> ApiResult<String> {
+        let output = self
+            .read(
+                Some(path),
+                vec![
+                    "rev-parse".into(),
+                    "--short".into(),
+                    "--verify".into(),
+                    "--end-of-options".into(),
+                    oid.into(),
+                ],
+            )
+            .await?;
+        Ok(output.stdout_lossy().trim().to_owned())
     }
 
     async fn default_stash_message(&self, path: &Path) -> ApiResult<Option<String>> {
@@ -767,14 +816,14 @@ impl GitCliBackend {
         parse_changed_files(&names.stdout, &stats.stdout)
     }
 
-    async fn stash_graph(&self, path: &Path) -> ApiResult<StashGraph> {
+    async fn stash_graph_output(&self, path: &Path) -> ApiResult<Vec<u8>> {
         let mut args = os_args(&["stash", "list"]);
         args.push(format!("--format={STASH_GRAPH_FORMAT}").into());
-        let output = self.read_allow_failure(Some(path), args).await?;
-        if !output.success() {
-            return Ok(StashGraph::default());
-        }
-        parse_stash_graph(&output.stdout)
+        Ok(self.read(Some(path), args).await?.stdout)
+    }
+
+    async fn stash_graph(&self, path: &Path) -> ApiResult<StashGraph> {
+        parse_stash_graph(&self.stash_graph_output(path).await?)
     }
 
     async fn history_revision(&self, path: &Path, scope: &HistoryScope) -> ApiResult<OsString> {
@@ -783,6 +832,104 @@ impl GitCliBackend {
             HistoryScope::AllRefs => Ok("--all".into()),
             HistoryScope::Ref(reference) => Ok(self.resolve_commit(path, reference).await?.into()),
         }
+    }
+
+    async fn visible_history_revision(
+        &self,
+        path: &Path,
+        scope: &HistoryScope,
+        stashes: &StashGraph,
+    ) -> ApiResult<OsString> {
+        let revision = self.history_revision(path, scope).await?;
+        let HistoryScope::Ref(_) = scope else {
+            return Ok(revision);
+        };
+        let oid = revision.to_string_lossy();
+        Ok(stash_for_oid(stashes, &oid)
+            .map_or_else(|| revision.clone(), |(visible_oid, _)| visible_oid.into()))
+    }
+
+    async fn search_inputs(
+        &self,
+        path: &Path,
+        scope: &HistoryScope,
+        stashes: &StashGraph,
+    ) -> ApiResult<SearchInputs> {
+        match scope {
+            HistoryScope::AllRefs => Ok(SearchInputs {
+                normal_revisions: os_args(&["--exclude=refs/stash", "--all"]),
+                virtual_stashes: stashes
+                    .commits
+                    .iter()
+                    .map(|(oid, stash)| (oid.clone(), stash.clone()))
+                    .collect(),
+            }),
+            HistoryScope::CurrentBranch => Ok(SearchInputs {
+                normal_revisions: vec!["HEAD".into()],
+                virtual_stashes: Vec::new(),
+            }),
+            HistoryScope::Ref(reference) => {
+                let oid = self.resolve_commit(path, reference).await?;
+                if let Some((visible_oid, stash)) = stash_for_oid(stashes, &oid) {
+                    Ok(SearchInputs {
+                        normal_revisions: stash
+                            .base_oid
+                            .iter()
+                            .cloned()
+                            .map(OsString::from)
+                            .collect(),
+                        virtual_stashes: vec![(visible_oid.clone(), stash.clone())],
+                    })
+                } else {
+                    Ok(SearchInputs {
+                        normal_revisions: vec![oid.into()],
+                        virtual_stashes: Vec::new(),
+                    })
+                }
+            }
+        }
+    }
+
+    async fn virtual_stash_search_hits(
+        &self,
+        path: &Path,
+        needle: &str,
+        candidates: Vec<(String, StashCommit)>,
+    ) -> ApiResult<Vec<CommitSearchHit>> {
+        let needle_lower = needle.to_lowercase();
+        let mut matching = candidates
+            .into_iter()
+            .filter(|(_, stash)| stash.label.to_lowercase().contains(&needle_lower))
+            .collect::<HashMap<_, _>>();
+        if matching.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut tips = matching.keys().cloned().collect::<Vec<_>>();
+        tips.sort_unstable();
+        let mut args = os_args(&[
+            "log",
+            "--no-walk=sorted",
+            "--no-show-signature",
+            "--encoding=UTF-8",
+        ]);
+        args.push(format!("--format={LOG_FORMAT}").into());
+        args.extend(tips.into_iter().map(OsString::from));
+        args.push("--".into());
+        let output = self.read(Some(path), args).await?;
+
+        Ok(parse_log(&output.stdout)?
+            .into_iter()
+            .filter_map(|commit| {
+                matching.remove(&commit.oid).map(|stash| CommitSearchHit {
+                    oid: commit.oid,
+                    subject: stash.label,
+                    body_excerpt: None,
+                    matched_subject: true,
+                    matched_body: false,
+                })
+            })
+            .collect())
     }
 }
 
@@ -882,6 +1029,13 @@ impl GitBackend for GitCliBackend {
 
     async fn snapshot(&self, path: &Path) -> ApiResult<RepositorySnapshot> {
         let (generation, refs_output, mut parsed_status) = self.generation_and_refs(path).await?;
+        parsed_status.status.stash_count = self
+            .stash_graph(path)
+            .await?
+            .commits
+            .len()
+            .try_into()
+            .unwrap_or(u32::MAX);
         self.apply_line_stats(path, &mut parsed_status.status)
             .await?;
         let refs = parse_refs(&refs_output)?;
@@ -986,7 +1140,12 @@ impl GitBackend for GitCliBackend {
     }
 
     async fn history(&self, path: &Path, query: &HistoryQuery) -> ApiResult<HistoryPage> {
-        let (generation, refs_output) = self.history_generation_and_refs(path).await?;
+        let HistoryInputs {
+            generation,
+            refs_output,
+            layout,
+            stashes,
+        } = self.history_inputs(path).await?;
         if let Some(cursor) = &query.cursor {
             if cursor.generation != generation {
                 return Err(ApiError::new(
@@ -1013,7 +1172,6 @@ impl GitBackend for GitCliBackend {
                 "History cursor offset is outside the supported range",
             ));
         }
-        let stashes = self.stash_graph(path).await?;
         let mut args = os_args(&[
             "log",
             "--topo-order",
@@ -1024,16 +1182,21 @@ impl GitBackend for GitCliBackend {
         args.push(format!("--format={LOG_FORMAT}").into());
         args.push(format!("--skip={offset}").into());
         args.push(format!("--max-count={}", limit + 1).into());
-        args.push(self.history_revision(path, &query.scope).await?);
         if matches!(query.scope, HistoryScope::AllRefs) {
+            args.extend(os_args(&["--exclude=refs/stash", "--all"]));
             let mut stash_tips: Vec<&String> = stashes.commits.keys().collect();
             stash_tips.sort_unstable();
             args.extend(stash_tips.into_iter().map(OsString::from));
+        } else {
+            args.push(
+                self.visible_history_revision(path, &query.scope, &stashes)
+                    .await?,
+            );
         }
         args.push("--".into());
         let output = self.read(Some(path), args).await?;
-        let (generation_after, _) = self.history_generation_and_refs(path).await?;
-        if generation_after != generation {
+        let inputs_after = self.history_inputs(path).await?;
+        if inputs_after.generation != generation {
             return Err(ApiError::new(
                 ErrorCode::StaleSnapshot,
                 "Repository changed while commit history was read",
@@ -1065,7 +1228,7 @@ impl GitBackend for GitCliBackend {
             .as_ref()
             .map(|cursor| cursor.lanes.clone())
             .unwrap_or(LaneState { heads: Vec::new() });
-        layout_commits(&mut commits, &mut lanes);
+        layout_commits_with_context(&mut commits, &mut lanes, &layout);
         let next_cursor = has_more.then(|| HistoryCursor {
             generation: generation.clone(),
             offset: offset + walked,
@@ -1108,48 +1271,85 @@ impl GitBackend for GitCliBackend {
             });
         }
         let limit = query.limit.clamp(1, MAX_SEARCH_RESULTS);
-        let revision = self.history_revision(path, &query.scope).await?;
+        let stashes = self.stash_graph(path).await?;
+        let SearchInputs {
+            normal_revisions,
+            virtual_stashes,
+        } = self.search_inputs(path, &query.scope, &stashes).await?;
+        let mut virtual_hits = self
+            .virtual_stash_search_hits(path, needle, virtual_stashes)
+            .await?;
+        let virtual_total = virtual_hits.len();
+        let normal_limit = limit.saturating_sub(virtual_total.min(limit));
         let grep = format!("--grep={needle}");
-        let mut count_args = os_args(&[
-            "rev-list",
-            "--count",
-            "--fixed-strings",
-            "--regexp-ignore-case",
-        ]);
-        count_args.push(grep.clone().into());
-        count_args.push(revision.clone());
-        count_args.push("--".into());
-        let count_output = self.read(Some(path), count_args).await?;
-        let total = count_output
-            .stdout_lossy()
-            .trim()
-            .parse::<usize>()
-            .map_err(|_| {
-                ApiError::new(
-                    ErrorCode::GitCommandFailed,
-                    "Git returned an invalid search count",
-                )
-            })?;
+        let (normal_total, mut normal_hits) = if normal_revisions.is_empty() {
+            (0, Vec::new())
+        } else {
+            let mut count_args = os_args(&[
+                "rev-list",
+                "--count",
+                "--fixed-strings",
+                "--regexp-ignore-case",
+            ]);
+            count_args.push(grep.clone().into());
+            count_args.extend(normal_revisions.iter().cloned());
+            count_args.push("--".into());
+            let count_output = self.read(Some(path), count_args).await?;
+            let total = count_output
+                .stdout_lossy()
+                .trim()
+                .parse::<usize>()
+                .map_err(|_| {
+                    ApiError::new(
+                        ErrorCode::GitCommandFailed,
+                        "Git returned an invalid search count",
+                    )
+                })?;
 
-        let mut log_args = os_args(&[
-            "log",
-            "--topo-order",
-            "--date-order",
-            "--fixed-strings",
-            "--regexp-ignore-case",
-            "--encoding=UTF-8",
-        ]);
-        log_args.push(grep.into());
-        log_args.push(format!("--format={LOG_FORMAT}").into());
-        log_args.push(format!("--max-count={limit}").into());
-        log_args.push(revision);
-        log_args.push("--".into());
-        let output = self.read(Some(path), log_args).await?;
-        let hits = parse_search_hits(&output.stdout, needle)?;
+            if normal_limit == 0 {
+                (total, Vec::new())
+            } else {
+                // Fetch enough additional raw matches to replace any stash
+                // plumbing reachable through an unusual extra ref.
+                let raw_limit = normal_limit
+                    .saturating_add(stashes.hidden.len())
+                    .saturating_add(stashes.commits.len());
+                let mut log_args = os_args(&[
+                    "log",
+                    "--topo-order",
+                    "--date-order",
+                    "--fixed-strings",
+                    "--regexp-ignore-case",
+                    "--encoding=UTF-8",
+                ]);
+                log_args.push(grep.into());
+                log_args.push(format!("--format={LOG_FORMAT}").into());
+                log_args.push(format!("--max-count={raw_limit}").into());
+                log_args.extend(normal_revisions.iter().cloned());
+                log_args.push("--".into());
+                let output = self.read(Some(path), log_args).await?;
+                let mut hits = parse_search_hits(&output.stdout, needle)?;
+                let raw_hit_count = hits.len();
+                hits.retain(|hit| {
+                    !stashes.hidden.contains(&hit.oid) && !stashes.commits.contains_key(&hit.oid)
+                });
+                let visible_total = total.saturating_sub(raw_hit_count - hits.len());
+                hits.truncate(normal_limit);
+                (visible_total, hits)
+            }
+        };
+
+        // Virtual stash labels are not stored in their index-parent commit
+        // objects, so Git cannot place them inside a single `--grep` traversal.
+        // Keep virtual rows first in commit-date order, then preserve Git's
+        // original topo/date order for every ordinary commit hit.
+        let total = virtual_total.saturating_add(normal_total);
+        virtual_hits.truncate(limit);
+        virtual_hits.append(&mut normal_hits);
         Ok(CommitSearchResult {
             total,
-            truncated: total > hits.len(),
-            hits,
+            truncated: total > virtual_hits.len(),
+            hits: virtual_hits,
         })
     }
 
@@ -1160,19 +1360,29 @@ impl GitBackend for GitCliBackend {
         parent_index: usize,
     ) -> ApiResult<CommitDetails> {
         let oid = self.resolve_commit(path, oid).await?;
+        let stashes = self.stash_graph(path).await?;
+        let stash = stash_for_oid(&stashes, &oid)
+            .map(|(visible_oid, stash)| (visible_oid.clone(), stash.clone()));
+        let show_oid = stash
+            .as_ref()
+            .map_or_else(|| oid.as_str(), |(_, stash)| stash.stash_oid.as_str());
         let mut args = os_args(&["show", "-s", "--no-show-signature", "--encoding=UTF-8"]);
         args.push(format!("--format={DETAIL_FORMAT}").into());
-        args.push(oid.as_str().into());
+        args.push(show_oid.into());
         args.push("--".into());
         let output = self.read(Some(path), args).await?;
         let mut details = parse_commit_details(&output.stdout)?.details;
-        if details.parent_oids.len() > 1 {
-            if let Some(stash) = self.stash_graph(path).await?.commits.get(&oid) {
-                details.subject = stash.label.clone();
-            }
-        }
+        let (diff_oid, diff_parents) = if let Some((visible_oid, stash)) = stash {
+            details.oid = visible_oid.clone();
+            details.short_oid = self.short_oid(path, &visible_oid).await?;
+            details.subject = stash.label;
+            details.parent_oids = stash.base_oid.iter().cloned().collect();
+            (stash.stash_oid, details.parent_oids.clone())
+        } else {
+            (oid.clone(), details.parent_oids.clone())
+        };
         let files = self
-            .changed_files_for_commit(path, &oid, &details.parent_oids, parent_index)
+            .changed_files_for_commit(path, &diff_oid, &diff_parents, parent_index)
             .await?;
         details.stats = DiffStats {
             files: files.len().try_into().unwrap_or(u32::MAX),
@@ -1204,20 +1414,41 @@ impl GitBackend for GitCliBackend {
             }
             DiffTarget::Commit { oid, parent_index } => {
                 let oid = self.resolve_commit(path, oid).await?;
-                let details = self.commit_details(path, &oid, *parent_index).await?;
-                if details.parent_oids.is_empty() {
-                    vec![
-                        "show".into(),
-                        "--format=".into(),
-                        "--root".into(),
-                        oid.into(),
-                    ]
+                let stashes = self.stash_graph(path).await?;
+                let stash = stash_for_oid(&stashes, &oid).map(|(_, stash)| stash.clone());
+                if let Some(stash) = stash {
+                    if *parent_index != 0 {
+                        return Err(ApiError::new(
+                            ErrorCode::InvalidRevision,
+                            "Commit parent index is out of range",
+                        ));
+                    }
+                    if let Some(base_oid) = stash.base_oid {
+                        vec!["diff".into(), base_oid.into(), stash.stash_oid.into()]
+                    } else {
+                        vec![
+                            "show".into(),
+                            "--format=".into(),
+                            "--root".into(),
+                            stash.stash_oid.into(),
+                        ]
+                    }
                 } else {
-                    vec![
-                        "diff".into(),
-                        details.parent_oids[*parent_index].clone().into(),
-                        oid.into(),
-                    ]
+                    let details = self.commit_details(path, &oid, *parent_index).await?;
+                    if details.parent_oids.is_empty() {
+                        vec![
+                            "show".into(),
+                            "--format=".into(),
+                            "--root".into(),
+                            oid.into(),
+                        ]
+                    } else {
+                        vec![
+                            "diff".into(),
+                            details.parent_oids[*parent_index].clone().into(),
+                            oid.into(),
+                        ]
+                    }
                 }
             }
             DiffTarget::Between { base_oid, head_oid } => vec![
@@ -2334,10 +2565,7 @@ impl GitBackend for GitCliBackend {
     }
 
     async fn stash_list(&self, path: &Path) -> ApiResult<Vec<StashEntry>> {
-        let mut args = os_args(&["stash", "list"]);
-        args.push(format!("--format={STASH_FORMAT}").into());
-        let output = self.read(Some(path), args).await?;
-        parse_stashes(&output.stdout)
+        Ok(self.stash_graph(path).await?.entries())
     }
 
     async fn stash_push(
@@ -2462,6 +2690,15 @@ fn confirmation_required(message: &'static str) -> ApiError {
     ApiError::new(ErrorCode::ProtectedOperation, message)
 }
 
+fn stash_for_oid<'a>(stashes: &'a StashGraph, oid: &str) -> Option<(&'a String, &'a StashCommit)> {
+    stashes.commits.get_key_value(oid).or_else(|| {
+        stashes
+            .outer_to_visible
+            .get(oid)
+            .and_then(|visible_oid| stashes.commits.get_key_value(visible_oid))
+    })
+}
+
 fn apply_stash_view(commits: &mut Vec<CommitSummary>, stashes: &StashGraph) {
     if stashes.is_empty() {
         return;
@@ -2472,34 +2709,10 @@ fn apply_stash_view(commits: &mut Vec<CommitSummary>, stashes: &StashGraph) {
         let Some(stash) = stashes.commits.get(&commit.oid) else {
             continue;
         };
-        commit.parent_oids.truncate(1);
+        commit.parent_oids = stash.base_oid.iter().cloned().collect();
         commit.body_preview = String::new();
         commit.subject = stash.label.clone();
         commit.stash = Some(stash.reference.clone());
-    }
-
-    order_contiguous_stash_rows(commits);
-}
-
-fn order_contiguous_stash_rows(commits: &mut [CommitSummary]) {
-    let mut start = 0;
-    while start < commits.len() {
-        if commits[start].stash.is_none() {
-            start += 1;
-            continue;
-        }
-
-        let mut end = start + 1;
-        while end < commits.len() && commits[end].stash.is_some() {
-            end += 1;
-        }
-        commits[start..end].sort_by_key(|commit| {
-            commit
-                .stash
-                .as_ref()
-                .map_or(usize::MAX, |stash| stash.index)
-        });
-        start = end;
     }
 }
 

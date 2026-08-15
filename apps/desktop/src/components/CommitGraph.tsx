@@ -10,6 +10,10 @@ import type {
 import { ALL_GRAPH_COLUMNS, graphColumnOffset } from "../lib/columns";
 import { GRAPH_LANE_SLOTS } from "../lib/styles";
 import type { CommitSummary, GraphColumnSettings, RefLabel } from "../lib/types";
+import {
+  buildBranchColors as buildPresentationBranchColors,
+  getGraphEdgeColor,
+} from "./graphPresentation";
 
 const ROW_HEIGHT = 28;
 const ROW_GAP = 4;
@@ -18,7 +22,6 @@ const LANE_WIDTH = 18;
 const GRAPH_PADDING = 24;
 const MIN_GRAPH_WIDTH = 96;
 const FIRST_COLOR_SLOT = 0;
-const STASH_COLOR_SLOT = 1;
 const EDGE_CORNER = 12;
 const AVATAR_RADIUS = 11;
 const MERGE_NODE_RADIUS = 4.5;
@@ -144,159 +147,6 @@ function colorClass(base: string, slot: number): string {
   return `${base} ${base}--lane-${slot % GRAPH_LANE_SLOTS}`;
 }
 
-function buildPrimaryComponent(commits: readonly CommitSummary[]): Set<string> {
-  const adjacent = new Map<string, Set<string>>();
-  const connect = (left: string, right: string) => {
-    if (!adjacent.has(left)) adjacent.set(left, new Set());
-    if (!adjacent.has(right)) adjacent.set(right, new Set());
-    adjacent.get(left)?.add(right);
-    adjacent.get(right)?.add(left);
-  };
-
-  for (const commit of commits) {
-    if (!adjacent.has(commit.oid)) adjacent.set(commit.oid, new Set());
-    for (const parentOid of commit.parent_oids) connect(commit.oid, parentOid);
-  }
-
-  const head = commits.find((commit) => (
-    commit.decorations.some((decoration) => decoration.is_head)
-  )) ?? commits[0];
-  if (!head) return new Set();
-
-  const connected = new Set<string>();
-  const pending = [head.oid];
-  while (pending.length > 0) {
-    const oid = pending.pop();
-    if (!oid || connected.has(oid)) continue;
-    connected.add(oid);
-    for (const neighbor of adjacent.get(oid) ?? []) pending.push(neighbor);
-  }
-  return connected;
-}
-
-// Colors belong to branch spans rather than physical lane numbers. A branch
-// can be placed in a high-numbered lane when many older lines are still open;
-// using `lane % palette` there shifts and repeats the visible color sequence.
-function buildBranchColors(commits: readonly CommitSummary[]): Map<string, number> {
-  const rowOf = new Map<string, number>();
-  for (let index = 0; index < commits.length; index += 1) rowOf.set(commits[index].oid, index);
-
-  const primaryComponent = buildPrimaryComponent(commits);
-  const groupOf = new Map<string, number>();
-  const spans: { start: number; end: number; lane: number }[] = [];
-  const anchorOf: string[] = [];
-  const offPageRow = commits.length;
-  const openGroup = (row: number, lane: number, anchor: string): number => {
-    spans.push({ start: row, end: row, lane });
-    anchorOf.push(anchor);
-    return spans.length - 1;
-  };
-  const extend = (group: number, row: number) => {
-    spans[group].start = Math.min(spans[group].start, row);
-    spans[group].end = Math.max(spans[group].end, row);
-  };
-  const parentRow = (parentOid: string) => rowOf.get(parentOid) ?? offPageRow;
-
-  for (let index = 0; index < commits.length; index += 1) {
-    const commit = commits[index];
-    if (commit.stash) continue;
-
-    let group = groupOf.get(commit.oid);
-    if (group === undefined) {
-      group = openGroup(index, commit.graph.lane, commit.oid);
-      groupOf.set(commit.oid, group);
-    }
-    extend(group, index);
-
-    for (let edgeIndex = 0; edgeIndex < commit.graph.edges.length; edgeIndex += 1) {
-      const edge = commit.graph.edges[edgeIndex];
-      const parentOid = edge.parent_oid;
-
-      if (edgeIndex === 0) {
-        if (!groupOf.has(parentOid)) groupOf.set(parentOid, group);
-        extend(group, parentRow(parentOid));
-        continue;
-      }
-
-      let mergeGroup = groupOf.get(parentOid);
-      if (mergeGroup === undefined) {
-        mergeGroup = openGroup(index, edge.to_lane, parentOid);
-        groupOf.set(parentOid, mergeGroup);
-      }
-      extend(mergeGroup, index);
-      extend(mergeGroup, parentRow(parentOid));
-    }
-  }
-
-  const stashGroups = new Set<number>();
-  for (let index = 0; index < commits.length; index += 1) {
-    const commit = commits[index];
-    if (!commit.stash || groupOf.has(commit.oid)) continue;
-
-    const group = openGroup(index, commit.graph.lane, commit.oid);
-    stashGroups.add(group);
-    groupOf.set(commit.oid, group);
-    for (const edge of commit.graph.edges) extend(group, parentRow(edge.parent_oid));
-  }
-
-  const slots = new Array<number>(spans.length);
-  const order = spans
-    .map((_, group) => group)
-    .sort((left, right) => (
-      spans[left].start - spans[right].start
-        || spans[left].lane - spans[right].lane
-        || left - right
-    ));
-  let restart = 0;
-
-  for (const group of order) {
-    const floor = stashGroups.has(group) ? STASH_COLOR_SLOT : FIRST_COLOR_SLOT;
-    const lane = spans[group].lane;
-    const paletteBlock = Math.floor(lane / GRAPH_LANE_SLOTS);
-    const independentComponent = !primaryComponent.has(anchorOf[group]);
-    const taken = new Set<number>();
-    for (const other of order) {
-      if (slots[other] === undefined) continue;
-      if (
-        !independentComponent
-        && Math.floor(spans[other].lane / GRAPH_LANE_SLOTS) !== paletteBlock
-      ) continue;
-      if (spans[other].start <= spans[group].end && spans[group].start <= spans[other].end) {
-        taken.add(slots[other]);
-      }
-    }
-
-    // The first palette-sized block is canonical: lane 0 is primary, lane 1
-    // secondary, and so on. Reusing that color for another span in the same
-    // physical lane keeps long-lived trunk/feature lines stable across merges.
-    if (lane < GRAPH_LANE_SLOTS && lane >= floor) {
-      slots[group] = lane;
-      continue;
-    }
-
-    // Every overflow block restarts the palette. Within that block a branch
-    // moves right only when an overlapping sibling already owns its preferred
-    // color. Thus lanes 10–12 restart at 0–2, while the overlapping octopus
-    // fan-out in lanes 14–17 still spreads across colors 4–8.
-    const preferred = Math.max(floor, lane % GRAPH_LANE_SLOTS);
-    let chosen: number | undefined;
-    for (let offset = 0; offset < GRAPH_LANE_SLOTS; offset += 1) {
-      const candidate = (preferred + offset) % GRAPH_LANE_SLOTS;
-      if (candidate >= floor && !taken.has(candidate)) {
-        chosen = candidate;
-        break;
-      }
-    }
-
-    slots[group] = chosen ?? Math.max(floor, restart % GRAPH_LANE_SLOTS);
-    restart += Number(chosen === undefined);
-  }
-
-  const colors = new Map<string, number>();
-  for (const [oid, group] of groupOf) colors.set(oid, slots[group]);
-  return colors;
-}
-
 function rowY(index: number): number {
   return index * ROW_STRIDE + ROW_HEIGHT / 2;
 }
@@ -409,9 +259,12 @@ function edgeCorner(startX: number, startY: number, endX: number, endY: number):
   ));
 }
 
-function buildGraphGeometry(commits: readonly CommitSummary[]): GraphGeometry {
+function buildGraphGeometry(
+  commits: readonly CommitSummary[],
+  hasWip: boolean,
+): GraphGeometry {
   const commitIndex = new Map<string, number>();
-  const colors = buildBranchColors(commits);
+  const colors = buildPresentationBranchColors(commits, hasWip);
 
   for (let index = 0; index < commits.length; index += 1) {
     const commit = commits[index];
@@ -434,10 +287,7 @@ function buildGraphGeometry(commits: readonly CommitSummary[]): GraphGeometry {
       const endX = laneX(endLane);
       const endY = Math.min(rowY(targetIndex), commits.length * ROW_STRIDE - ROW_GAP);
       const data = buildEdgePath(startX, startY, endX, endY, parentVisible, edge.merge);
-      const commitColor = colors.get(commit.oid) ?? FIRST_COLOR_SLOT;
-      const color = edgeIndex === 0 || commit.stash
-        ? commitColor
-        : colors.get(edge.parent_oid) ?? commitColor;
+      const color = getGraphEdgeColor(commit, edgeIndex, colors);
 
       const path = {
         key: `${commit.oid}:${edge.parent_oid}:${edgeIndex}`,
@@ -895,7 +745,8 @@ export function CommitGraph({
 }: CommitGraphProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const nodeMaskId = `gc-node-mask-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
-  const geometry = useMemo(() => buildGraphGeometry(commits), [commits]);
+  const hasWip = Boolean(wip);
+  const geometry = useMemo(() => buildGraphGeometry(commits, hasWip), [commits, hasWip]);
   const wipPath = useMemo(() => {
     if (!wip?.headOid) return null;
 

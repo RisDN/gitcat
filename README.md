@@ -12,9 +12,9 @@ Lightweight, Windows-first desktop Git client. Tauri v2 + React UI, Rust core, a
 - LOCAL, REMOTE, and TAGS sidebar with filtering, a current-branch marker, `/`-segment folders for local branches, remote-grouped remote branches with owner avatars, and a right-click branch menu for pull, push, branch creation, rename, safe deletion, and name copy.
 - Double-clicking a remote branch checks it out directly as a local tracking branch, with no intermediate name prompt.
 - Compact, column-aligned commit DAG with colored lanes, relative time markers behind the lanes, WIP pseudo-node connected to HEAD, initials avatars, arrow-key stepping between the WIP row and history, and loading of older commits.
-- The checked-out branch and WIP own the primary lane, while `main`/`master` owns the secondary lane when another branch is active. Stashes use short-lived side lanes without displacing either branch; independent tips and new merge-parent lines open to the right, matching GitKraken's graph placement.
+- Within a connected history, clean layout follows Git's visible row order and ancestry; checkout decoration alone does not reshuffle lanes. When the worktree has WIP, its current HEAD span is anchored in the primary lane. Stashes anchor to the branch they were created from, use the lowest available short-lived lane, and move right only when WIP or another active route occupies a lower lane.
 - Ref labels, row highlight, and the WIP node take the color of the branch they belong to; the default palette is the ten-color GitLens lane set.
-- Stash entries collapse into a single graph row each instead of the raw index/untracked helper commits, and are drawn as a dashed line in their own color.
+- Stash entries display Git's index-parent object as one dashed graph row while hiding the outer merge and untracked plumbing commits; their visible order follows Git's topo/date traversal rather than reflog selector order.
 - Double-click a local branch label in the graph to check that branch out.
 - `Ctrl+F` search across commit subjects and full description/body text; matches stay highlighted while the rest of the graph dims.
 - Graph rows show the commit description under the subject; commit details list `Co-authored-by` trailers as separate authors.

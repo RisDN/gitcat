@@ -15,7 +15,6 @@ pub(crate) const REF_FORMAT: &str = "%(refname)%00%(refname:short)%00%(objectnam
 pub(crate) const LOG_FORMAT: &str =
     "%x1e%H%x00%h%x00%P%x00%an%x00%ae%x00%at%x00%ai%x00%ct%x00%ci%x00%s%x00%b%x00";
 pub(crate) const DETAIL_FORMAT: &str = "%x1e%H%x00%h%x00%T%x00%P%x00%an%x00%ae%x00%at%x00%ai%x00%cn%x00%ce%x00%ct%x00%ci%x00%s%x00%b%x00";
-pub(crate) const STASH_FORMAT: &str = "%gd%x00%H%x00%gs%x00";
 pub(crate) const STASH_GRAPH_FORMAT: &str = "%gd%x00%H%x00%P%x00%gs%x00";
 
 #[derive(Debug)]
@@ -41,17 +40,34 @@ pub(crate) struct ParsedCommitDetails {
 pub(crate) struct StashCommit {
     pub reference: StashRef,
     pub label: String,
+    pub stash_oid: String,
+    pub base_oid: Option<String>,
 }
 
 #[derive(Debug, Default)]
 pub(crate) struct StashGraph {
     pub commits: HashMap<String, StashCommit>,
     pub hidden: HashSet<String>,
+    pub outer_to_visible: HashMap<String, String>,
 }
 
 impl StashGraph {
     pub fn is_empty(&self) -> bool {
         self.commits.is_empty() && self.hidden.is_empty()
+    }
+
+    pub fn entries(&self) -> Vec<StashEntry> {
+        let mut entries = self
+            .commits
+            .values()
+            .map(|stash| StashEntry {
+                index: stash.reference.index,
+                oid: stash.stash_oid.clone(),
+                message: stash.label.clone(),
+            })
+            .collect::<Vec<_>>();
+        entries.sort_unstable_by_key(|stash| stash.index);
+        entries
     }
 }
 
@@ -783,31 +799,6 @@ fn parse_range(value: &str, prefix: char) -> ApiResult<(u32, u32)> {
     ))
 }
 
-pub(crate) fn parse_stashes(output: &[u8]) -> ApiResult<Vec<StashEntry>> {
-    let mut stashes = Vec::new();
-    for line in output.split(|byte| *byte == b'\n') {
-        let fields: Vec<&[u8]> = trim_line(line).split(|byte| *byte == 0).collect();
-        if fields.first().is_none_or(|field| field.is_empty()) {
-            continue;
-        }
-        if fields.len() < 3 {
-            return Err(parse_error("Malformed stash list record"));
-        }
-        let selector = text(fields[0]);
-        let index = selector
-            .strip_prefix("stash@{")
-            .and_then(|value| value.strip_suffix('}'))
-            .and_then(|value| value.parse().ok())
-            .ok_or_else(|| parse_error("Malformed stash selector"))?;
-        stashes.push(StashEntry {
-            index,
-            oid: text(fields[1]).into_owned(),
-            message: text(fields[2]).into_owned(),
-        });
-    }
-    Ok(stashes)
-}
-
 pub(crate) fn parse_stash_graph(output: &[u8]) -> ApiResult<StashGraph> {
     let mut graph = StashGraph::default();
     for line in output.split(|byte| *byte == b'\n') {
@@ -824,16 +815,46 @@ pub(crate) fn parse_stash_graph(output: &[u8]) -> ApiResult<StashGraph> {
             .and_then(|value| value.strip_suffix('}'))
             .and_then(|value| value.parse().ok())
             .ok_or_else(|| parse_error("Malformed stash selector"))?;
-        let oid = text(fields[1]).into_owned();
+        let stash_oid = text(fields[1]).into_owned();
         let parents = split_oids(fields[2]);
-        graph.hidden.extend(parents.into_iter().skip(1));
-        graph.commits.insert(
-            oid,
-            StashCommit {
-                reference: StashRef { index, selector },
-                label: stash_label(&text(fields[3])),
-            },
-        );
+        let base_oid = parents.first().cloned();
+        let visible_oid = parents.get(1).cloned().unwrap_or_else(|| stash_oid.clone());
+        let label = stash_label(&text(fields[3]));
+
+        if visible_oid != stash_oid {
+            graph.hidden.insert(stash_oid.clone());
+            graph.hidden.extend(
+                parents
+                    .iter()
+                    .skip(2)
+                    .filter(|oid| {
+                        oid.as_str() != visible_oid.as_str()
+                            && Some(oid.as_str()) != base_oid.as_deref()
+                    })
+                    .cloned(),
+            );
+        }
+        graph
+            .outer_to_visible
+            .insert(stash_oid.clone(), visible_oid.clone());
+
+        if let Some(existing) = graph.commits.get_mut(&visible_oid) {
+            // `git stash list` is newest-first. GitKraken collapses stash
+            // entries that share the same visible index-parent commit: the
+            // oldest member supplies the displayed label, while actions and
+            // diffs continue to target the newest member inserted first.
+            existing.label = label;
+        } else {
+            graph.commits.insert(
+                visible_oid,
+                StashCommit {
+                    reference: StashRef { index, selector },
+                    label,
+                    stash_oid,
+                    base_oid,
+                },
+            );
+        }
     }
     Ok(graph)
 }
@@ -953,19 +974,68 @@ mod tests {
     }
 
     #[test]
-    fn parses_stash_graph_with_hidden_parents_and_labels() {
-        let bytes = b"stash@{0}\0aaa\0base index untracked\0WIP on main: 400e481 feat: header\0\nstash@{1}\0bbb\0base2 index2\0On feature/x: cleanup: drop dead code\0\n";
+    fn parses_stash_graph_with_visible_index_commits_and_hidden_plumbing() {
+        let bytes = b"stash@{0}\0aaa\0base index untracked\0WIP on main: 400e481 feat: header\0\nstash@{1}\0bbb\0base2 index2\0On feature/x: cleanup: drop dead code\0\nstash@{2}\0ccc\0base3\0On malformed: one parent fallback\0\n";
         let graph = parse_stash_graph(bytes).unwrap();
-        assert_eq!(graph.commits.len(), 2);
-        assert_eq!(graph.commits["aaa"].label, "WIP on main");
-        assert_eq!(graph.commits["aaa"].reference.index, 0);
-        assert_eq!(graph.commits["bbb"].label, "cleanup: drop dead code");
-        assert_eq!(graph.commits["bbb"].reference.selector, "stash@{1}");
+        assert_eq!(graph.commits.len(), 3);
+
+        let first = &graph.commits["index"];
+        assert_eq!(first.label, "WIP on main");
+        assert_eq!(first.reference.index, 0);
+        assert_eq!(first.stash_oid, "aaa");
+        assert_eq!(first.base_oid.as_deref(), Some("base"));
+
+        let second = &graph.commits["index2"];
+        assert_eq!(second.label, "cleanup: drop dead code");
+        assert_eq!(second.reference.selector, "stash@{1}");
+        assert_eq!(second.stash_oid, "bbb");
+        assert_eq!(second.base_oid.as_deref(), Some("base2"));
+
+        let fallback = &graph.commits["ccc"];
+        assert_eq!(fallback.label, "one parent fallback");
+        assert_eq!(fallback.stash_oid, "ccc");
+        assert_eq!(fallback.base_oid.as_deref(), Some("base3"));
+
         assert_eq!(graph.hidden.len(), 3);
-        assert!(graph.hidden.contains("index"));
+        assert!(graph.hidden.contains("aaa"));
+        assert!(graph.hidden.contains("bbb"));
         assert!(graph.hidden.contains("untracked"));
-        assert!(graph.hidden.contains("index2"));
         assert!(!graph.hidden.contains("base"));
+        assert!(!graph.hidden.contains("base2"));
+        assert!(!graph.hidden.contains("base3"));
+        assert!(!graph.hidden.contains("index"));
+        assert!(!graph.hidden.contains("index2"));
+        assert!(!graph.hidden.contains("ccc"));
+        assert_eq!(graph.outer_to_visible["aaa"], "index");
+        assert_eq!(graph.outer_to_visible["bbb"], "index2");
+        assert_eq!(graph.outer_to_visible["ccc"], "ccc");
+    }
+
+    #[test]
+    fn shared_index_parent_keeps_oldest_label_and_newest_action_identity() {
+        let bytes = b"stash@{0}\0outer-b\0base shared-index\0On main: oracle: collision B\0\nstash@{1}\0outer-a\0base shared-index\0On main: oracle: collision A\0\n";
+        let graph = parse_stash_graph(bytes).unwrap();
+        assert_eq!(graph.commits.len(), 1);
+
+        let stash = &graph.commits["shared-index"];
+        assert_eq!(stash.label, "oracle: collision A");
+        assert_eq!(stash.reference.index, 0);
+        assert_eq!(stash.reference.selector, "stash@{0}");
+        assert_eq!(stash.stash_oid, "outer-b");
+        assert_eq!(stash.base_oid.as_deref(), Some("base"));
+        assert_eq!(graph.outer_to_visible["outer-a"], "shared-index");
+        assert_eq!(graph.outer_to_visible["outer-b"], "shared-index");
+        assert!(graph.hidden.contains("outer-a"));
+        assert!(graph.hidden.contains("outer-b"));
+
+        assert_eq!(
+            graph.entries(),
+            vec![StashEntry {
+                index: 0,
+                oid: "outer-b".into(),
+                message: "oracle: collision A".into(),
+            }]
+        );
     }
 
     #[test]
