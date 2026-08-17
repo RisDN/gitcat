@@ -104,8 +104,7 @@ pub fn layout_commits_with_context(
             let steps_out_to_a_merge_lane = parent_index == 0
                 && commit.stash.is_none()
                 && parent_lane > lane
-                && merge_reserved_lane == Some(parent_lane)
-                && merge_reserved.get(commit.oid.as_str()) != Some(&lane);
+                && merge_reserved_lane == Some(parent_lane);
             if steps_out_to_a_merge_lane && lanes.heads[lane].is_none() {
                 lanes.heads[lane] = Some(parent_oid.clone());
             }
@@ -746,6 +745,36 @@ mod tests {
         assert_eq!(commits[9].graph.lane, 5, "trunk-d");
         assert_eq!(commits[10].graph.lane, 6, "trunk-e");
         assert_eq!(commits[7].graph.edges[1].to_lane, 6, "side-4 merge edge");
+    }
+
+    #[test]
+    fn a_ladder_rung_holds_its_lane_until_the_trunk_has_passed_it() {
+        let mut commits = vec![
+            commit("filler-b-tip", &["filler-b-base"]),
+            commit("filler-a-tip", &["filler-a-base"]),
+            commit("m4", &["m3", "t5"]),
+            commit("m3", &["m2", "t4"]),
+            commit("t5", &["t4"]),
+            commit("m2", &["m1", "t3"]),
+            commit("t4", &["t3"]),
+            commit("m1", &["s1", "t2"]),
+            commit("t3", &["t2"]),
+            commit("s1", &["t1"]),
+            commit("filler-b-base", &["t1"]),
+            commit("filler-a-base", &["t1"]),
+            commit("t2", &["t1"]),
+            commit("t1", &["root"]),
+            commit("root", &[]),
+        ];
+        let mut lanes = LaneState { heads: Vec::new() };
+
+        layout_clean(&mut commits, &mut lanes);
+
+        let lanes_by_row: Vec<usize> = commits.iter().map(|commit| commit.graph.lane).collect();
+        assert_eq!(
+            lanes_by_row,
+            vec![0, 1, 2, 2, 3, 2, 4, 2, 5, 2, 0, 1, 3, 0, 0]
+        );
     }
 
     #[test]
