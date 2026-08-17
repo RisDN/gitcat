@@ -39,6 +39,7 @@ pub fn layout_commits_with_context(
     let mut parent_lanes: HashMap<String, usize> = HashMap::new();
 
     let mut terminated_lanes: HashSet<usize> = HashSet::new();
+    let mut merge_reserved: HashMap<String, usize> = HashMap::new();
 
     for commit in commits.iter() {
         let lane = lane_for_commit(
@@ -46,6 +47,7 @@ pub fn layout_commits_with_context(
             commit,
             &materialized_lanes,
             &terminated_lanes,
+            &merge_reserved,
         );
 
         // A malformed or externally supplied cursor may contain the same head
@@ -66,9 +68,11 @@ pub fn layout_commits_with_context(
                 .heads
                 .iter()
                 .position(|head| head.as_deref() == Some(parent_oid.as_str()));
+            let merge_reserved_lane = merge_reserved.get(parent_oid.as_str()).copied();
             let pulls_first_parent_left = parent_index == 0
                 && commit.stash.is_none()
                 && lanes.heads[lane].is_none()
+                && merge_reserved_lane != claimed_lane
                 && claimed_lane.is_some_and(|claimed_lane| lane < claimed_lane);
 
             let parent_lane = if anchors_wip_span || pulls_first_parent_left {
@@ -84,7 +88,10 @@ pub fn layout_commits_with_context(
                     None => {
                         let inherits_lane = parent_index == 0 && commit.stash.is_none();
                         if parent_index > 0 {
-                            allocate_lane(&mut lanes.heads, parent_oid, None, lane + 1)
+                            let allocated =
+                                allocate_lane(&mut lanes.heads, parent_oid, None, lane + 1);
+                            merge_reserved.insert(parent_oid.clone(), allocated);
+                            allocated
                         } else {
                             let preferred_lane =
                                 (inherits_lane && lanes.heads[lane].is_none()).then_some(lane);
@@ -93,6 +100,15 @@ pub fn layout_commits_with_context(
                     }
                 }
             };
+
+            let steps_out_to_a_merge_lane = parent_index == 0
+                && commit.stash.is_none()
+                && parent_lane > lane
+                && merge_reserved_lane == Some(parent_lane)
+                && merge_reserved.get(commit.oid.as_str()) != Some(&lane);
+            if steps_out_to_a_merge_lane && lanes.heads[lane].is_none() {
+                lanes.heads[lane] = Some(parent_oid.clone());
+            }
 
             parent_lanes.insert(parent_oid.clone(), parent_lane);
         }
@@ -218,7 +234,17 @@ fn lane_for_commit(
     commit: &CommitSummary,
     materialized_lanes: &HashSet<usize>,
     terminated_lanes: &HashSet<usize>,
+    merge_reserved: &HashMap<String, usize>,
 ) -> usize {
+    if let Some(lane) = merge_reserved.get(commit.oid.as_str()) {
+        if heads
+            .get(*lane)
+            .is_some_and(|head| head.as_deref() == Some(commit.oid.as_str()))
+        {
+            return *lane;
+        }
+    }
+
     if let Some(lane) = heads
         .iter()
         .position(|head| head.as_deref() == Some(commit.oid.as_str()))
@@ -693,6 +719,36 @@ mod tests {
     }
 
     #[test]
+    fn repeated_merges_of_one_trunk_step_it_right_lane_by_lane() {
+        let mut commits = vec![
+            commit("side-1", &["side-2"]),
+            commit("filler-a", &["filler-a1"]),
+            commit("filler-b", &["filler-b1"]),
+            commit("trunk-a", &["trunk-b"]),
+            commit("side-2", &["side-3", "trunk-c"]),
+            commit("side-3", &["side-4", "trunk-d"]),
+            commit("trunk-b", &["trunk-c"]),
+            commit("side-4", &["side-5", "trunk-e"]),
+            commit("trunk-c", &["trunk-d"]),
+            commit("trunk-d", &["trunk-e"]),
+            commit("trunk-e", &[]),
+            commit("side-5", &[]),
+            commit("filler-a1", &[]),
+            commit("filler-b1", &[]),
+        ];
+        let mut lanes = LaneState { heads: Vec::new() };
+
+        layout_clean(&mut commits, &mut lanes);
+
+        assert_eq!(commits[3].graph.lane, 3, "trunk-a");
+        assert_eq!(commits[6].graph.lane, 3, "trunk-b");
+        assert_eq!(commits[8].graph.lane, 4, "trunk-c");
+        assert_eq!(commits[9].graph.lane, 5, "trunk-d");
+        assert_eq!(commits[10].graph.lane, 6, "trunk-e");
+        assert_eq!(commits[7].graph.edges[1].to_lane, 6, "side-4 merge edge");
+    }
+
+    #[test]
     fn merge_convergence_reserves_an_open_lane_to_the_left() {
         let mut commits = vec![
             commit("merge", &["left", "right"]),
@@ -863,6 +919,7 @@ mod tests {
             &commit("orphan-tip", &["orphan-root"]),
             &materialized_lanes,
             &HashSet::new(),
+            &HashMap::new(),
         );
 
         assert_eq!(lane, 7);
