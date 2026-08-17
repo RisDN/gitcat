@@ -48,6 +48,8 @@ const STASH_INDEX_COLLISION_ORACLE: &str = include_str!(
     "fixtures/graph-conformance/oracles/gitkraken-12.4.0-windows/stash-index-collision.json"
 );
 const MERGE_LADDER: &str = include_str!("fixtures/graph-conformance/scenarios/merge-ladder.json");
+const MERGE_LADDER_ORACLE: &str =
+    include_str!("fixtures/graph-conformance/oracles/gitkraken-12.4.0-windows/merge-ladder.json");
 const CONVERGENCE_LANE_REUSE: &str =
     include_str!("fixtures/graph-conformance/scenarios/convergence-lane-reuse.json");
 const CONVERGENCE_LANE_REUSE_ORACLE: &str = include_str!(
@@ -225,8 +227,6 @@ fn graph_conformance_scenarios_are_valid() {
     validate_scenario(&stash_index_collision);
     let convergence_lane_reuse = parse_scenario(CONVERGENCE_LANE_REUSE);
     validate_scenario(&convergence_lane_reuse);
-    // merge-ladder has no GitKraken oracle yet; it is wired into
-    // gitcat_history_matches_gitkraken_semantic_oracles once one is recorded.
     let merge_ladder = parse_scenario(MERGE_LADDER);
     validate_scenario(&merge_ladder);
 
@@ -265,6 +265,10 @@ fn graph_conformance_scenarios_are_valid() {
     let oracle: serde_json::Value = serde_json::from_str(CONVERGENCE_LANE_REUSE_ORACLE)
         .expect("GitKraken convergence lane reuse oracle is valid JSON");
     validate_oracle(&convergence_lane_reuse, &oracle);
+
+    let oracle: serde_json::Value = serde_json::from_str(MERGE_LADDER_ORACLE)
+        .expect("GitKraken merge ladder oracle is valid JSON");
+    validate_oracle(&merge_ladder, &oracle);
 }
 
 #[tokio::test]
@@ -282,6 +286,7 @@ async fn gitcat_history_matches_gitkraken_semantic_oracles() {
         ),
         (STASH_INDEX_COLLISION, STASH_INDEX_COLLISION_ORACLE),
         (CONVERGENCE_LANE_REUSE, CONVERGENCE_LANE_REUSE_ORACLE),
+        (MERGE_LADDER, MERGE_LADDER_ORACLE),
     ] {
         let scenario = parse_scenario(scenario_json);
         validate_scenario(&scenario);

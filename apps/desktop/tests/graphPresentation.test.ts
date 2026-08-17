@@ -6,6 +6,7 @@ import checkoutWipOracleJson from "../../../crates/gitcat-git-cli/tests/fixtures
 import convergenceLaneReuseOracleJson from "../../../crates/gitcat-git-cli/tests/fixtures/graph-conformance/oracles/gitkraken-12.4.0-windows/convergence-lane-reuse.json";
 import disconnectedCheckoutOracleJson from "../../../crates/gitcat-git-cli/tests/fixtures/graph-conformance/oracles/gitkraken-12.4.0-windows/disconnected-checkout.json";
 import disconnectedInteriorReuseOracleJson from "../../../crates/gitcat-git-cli/tests/fixtures/graph-conformance/oracles/gitkraken-12.4.0-windows/disconnected-interior-reuse.json";
+import mergeLadderOracleJson from "../../../crates/gitcat-git-cli/tests/fixtures/graph-conformance/oracles/gitkraken-12.4.0-windows/merge-ladder.json";
 import stashCheckoutOracleJson from "../../../crates/gitcat-git-cli/tests/fixtures/graph-conformance/oracles/gitkraken-12.4.0-windows/stash-checkout.json";
 import stashIndexCollisionOracleJson from "../../../crates/gitcat-git-cli/tests/fixtures/graph-conformance/oracles/gitkraken-12.4.0-windows/stash-index-collision.json";
 import stashLifecycleOracleJson from "../../../crates/gitcat-git-cli/tests/fixtures/graph-conformance/oracles/gitkraken-12.4.0-windows/stash-lifecycle.json";
@@ -89,6 +90,7 @@ const ORACLES = [
   convergenceLaneReuseOracleJson,
   disconnectedCheckoutOracleJson,
   disconnectedInteriorReuseOracleJson,
+  mergeLadderOracleJson,
   stashCheckoutOracleJson,
   stashIndexCollisionOracleJson,
   stashLifecycleOracleJson,

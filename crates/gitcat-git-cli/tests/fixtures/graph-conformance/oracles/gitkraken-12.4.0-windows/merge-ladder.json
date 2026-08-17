@@ -1,0 +1,338 @@
+{
+  "schema_version": 1,
+  "scenario": "merge-ladder",
+  "observed_on": "2026-08-18",
+  "reference": {
+    "product": "GitKraken Desktop",
+    "version": "12.4.0",
+    "platform": "windows",
+    "theme": "dark",
+    "application_zoom_percent": 100,
+    "show_all_commits": true,
+    "smart_branch_visibility": false,
+    "hidden_refs": [],
+    "solo_refs": [],
+    "pinned_refs": []
+  },
+  "checkpoints": [
+    {
+      "id": "head-main",
+      "head": "main",
+      "rows": [
+        {
+          "commit": "filler-b-tip",
+          "row": 0,
+          "lane": 0,
+          "color_slot": 0,
+          "refs": [
+            {
+              "name": "filler-b",
+              "checked_out": false,
+              "color_slot": 0
+            }
+          ],
+          "edges": [
+            {
+              "parent": "filler-b-base",
+              "parent_index": 0,
+              "from_lane": 0,
+              "to_lane": 0,
+              "color_slot": 0
+            }
+          ]
+        },
+        {
+          "commit": "filler-a-tip",
+          "row": 1,
+          "lane": 1,
+          "color_slot": 1,
+          "refs": [
+            {
+              "name": "filler-a",
+              "checked_out": false,
+              "color_slot": 1
+            }
+          ],
+          "edges": [
+            {
+              "parent": "filler-a-base",
+              "parent_index": 0,
+              "from_lane": 1,
+              "to_lane": 1,
+              "color_slot": 1
+            }
+          ]
+        },
+        {
+          "commit": "m4",
+          "row": 2,
+          "lane": 2,
+          "color_slot": 2,
+          "refs": [
+            {
+              "name": "side",
+              "checked_out": false,
+              "color_slot": 2
+            }
+          ],
+          "edges": [
+            {
+              "parent": "m3",
+              "parent_index": 0,
+              "from_lane": 2,
+              "to_lane": 2,
+              "color_slot": 2
+            },
+            {
+              "parent": "t5",
+              "parent_index": 1,
+              "from_lane": 2,
+              "to_lane": 3,
+              "color_slot": 3
+            }
+          ]
+        },
+        {
+          "commit": "m3",
+          "row": 3,
+          "lane": 2,
+          "color_slot": 2,
+          "refs": [],
+          "edges": [
+            {
+              "parent": "m2",
+              "parent_index": 0,
+              "from_lane": 2,
+              "to_lane": 2,
+              "color_slot": 2
+            },
+            {
+              "parent": "t4",
+              "parent_index": 1,
+              "from_lane": 2,
+              "to_lane": 4,
+              "color_slot": 4
+            }
+          ]
+        },
+        {
+          "commit": "t5",
+          "row": 4,
+          "lane": 3,
+          "color_slot": 3,
+          "refs": [
+            {
+              "name": "main",
+              "checked_out": true,
+              "color_slot": 3
+            }
+          ],
+          "edges": [
+            {
+              "parent": "t4",
+              "parent_index": 0,
+              "from_lane": 3,
+              "to_lane": 4,
+              "color_slot": 3
+            }
+          ]
+        },
+        {
+          "commit": "m2",
+          "row": 5,
+          "lane": 2,
+          "color_slot": 2,
+          "refs": [],
+          "edges": [
+            {
+              "parent": "m1",
+              "parent_index": 0,
+              "from_lane": 2,
+              "to_lane": 2,
+              "color_slot": 2
+            },
+            {
+              "parent": "t3",
+              "parent_index": 1,
+              "from_lane": 2,
+              "to_lane": 5,
+              "color_slot": 5
+            }
+          ]
+        },
+        {
+          "commit": "t4",
+          "row": 6,
+          "lane": 4,
+          "color_slot": 4,
+          "refs": [],
+          "edges": [
+            {
+              "parent": "t3",
+              "parent_index": 0,
+              "from_lane": 4,
+              "to_lane": 5,
+              "color_slot": 4
+            }
+          ]
+        },
+        {
+          "commit": "m1",
+          "row": 7,
+          "lane": 2,
+          "color_slot": 2,
+          "refs": [],
+          "edges": [
+            {
+              "parent": "s1",
+              "parent_index": 0,
+              "from_lane": 2,
+              "to_lane": 2,
+              "color_slot": 2
+            },
+            {
+              "parent": "t2",
+              "parent_index": 1,
+              "from_lane": 2,
+              "to_lane": 3,
+              "color_slot": 3
+            }
+          ]
+        },
+        {
+          "commit": "t3",
+          "row": 8,
+          "lane": 5,
+          "color_slot": 5,
+          "refs": [],
+          "edges": [
+            {
+              "parent": "t2",
+              "parent_index": 0,
+              "from_lane": 5,
+              "to_lane": 3,
+              "color_slot": 5
+            }
+          ]
+        },
+        {
+          "commit": "s1",
+          "row": 9,
+          "lane": 2,
+          "color_slot": 2,
+          "refs": [],
+          "edges": [
+            {
+              "parent": "t1",
+              "parent_index": 0,
+              "from_lane": 2,
+              "to_lane": 0,
+              "color_slot": 2
+            }
+          ]
+        },
+        {
+          "commit": "filler-b-base",
+          "row": 10,
+          "lane": 0,
+          "color_slot": 0,
+          "refs": [],
+          "edges": [
+            {
+              "parent": "t1",
+              "parent_index": 0,
+              "from_lane": 0,
+              "to_lane": 0,
+              "color_slot": 0
+            }
+          ]
+        },
+        {
+          "commit": "filler-a-base",
+          "row": 11,
+          "lane": 1,
+          "color_slot": 1,
+          "refs": [],
+          "edges": [
+            {
+              "parent": "t1",
+              "parent_index": 0,
+              "from_lane": 1,
+              "to_lane": 0,
+              "color_slot": 1
+            }
+          ]
+        },
+        {
+          "commit": "t2",
+          "row": 12,
+          "lane": 3,
+          "color_slot": 3,
+          "refs": [],
+          "edges": [
+            {
+              "parent": "t1",
+              "parent_index": 0,
+              "from_lane": 3,
+              "to_lane": 0,
+              "color_slot": 3
+            }
+          ]
+        },
+        {
+          "commit": "t1",
+          "row": 13,
+          "lane": 0,
+          "color_slot": 0,
+          "refs": [],
+          "edges": [
+            {
+              "parent": "root",
+              "parent_index": 0,
+              "from_lane": 0,
+              "to_lane": 0,
+              "color_slot": 0
+            }
+          ]
+        },
+        {
+          "commit": "root",
+          "row": 14,
+          "lane": 0,
+          "color_slot": 0,
+          "refs": [],
+          "edges": []
+        }
+      ],
+      "wip": null,
+      "stashes": [],
+      "crossings": [
+        {
+          "at": "t4",
+          "topmost": "m3",
+          "note": "the merge line from m3 (lane 2) and t5's step-out (lane 3) both end on lane 4; m3 is the newer row and paints over t5. Confirmed against a GitKraken screenshot of this exact repository, 2026-08-18."
+        },
+        {
+          "at": "t3",
+          "topmost": "m2",
+          "note": "m2's line (lane 2) and t4's step-out (lane 4) tie on paint lane 5; the tie falls to the newer row, so m2 paints over t4. Confirmed against a GitKraken screenshot of this exact repository, 2026-08-18."
+        },
+        {
+          "at": "t2",
+          "topmost": "t3",
+          "note": "t3 arrives from lane 5, the highest lane feeding this convergence, and paints over m1's line from lane 2. Confirmed against a GitKraken screenshot of this exact repository, 2026-08-18."
+        },
+        {
+          "at": "t1",
+          "topmost": "t2",
+          "note": "four routes converge; t2 sweeps in from lane 3, the highest lane here, and paints over s1, filler-a and filler-b. Confirmed against a GitKraken screenshot of this exact repository, 2026-08-18."
+        }
+      ]
+    }
+  ],
+  "conclusions": {
+    "ladder_rung_reserves_the_lane_it_steps_out_of": true,
+    "vacated_rung_lane_is_reclaimed_only_after_the_trunk_has_passed_it": true,
+    "color_follows_the_physical_lane": true
+  }
+}
