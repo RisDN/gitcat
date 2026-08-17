@@ -195,7 +195,12 @@ export function useContextMenuActions({
                 }
                 break;
             case "stash_drop":
-                if (commit.stash) setConfirmRequest({ kind: "delete_stash", oid: commit.stash.oid, selector: commit.stash.selector });
+                if (commit.stash) setConfirmRequest({
+                    kind: "delete_stash",
+                    oid: commit.stash.oid,
+                    selector: commit.stash.selector,
+                    message: commit.subject,
+                });
                 break;
             case "branch":
                 setPrompt({ kind: "create_branch", startOid: commit.oid });

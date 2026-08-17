@@ -142,10 +142,15 @@ export function useDialogActions({
                     message: `This is a destructive operation, are you sure you want to delete "${confirmRequest.name}"?`,
                     confirmLabel: "Delete",
                 };
-            case "delete_stash": return {
-                message: `This is a destructive operation, are you sure you want to delete ${confirmRequest.selector}?`,
-                confirmLabel: "Delete",
-            };
+            case "delete_stash": {
+                const label = confirmRequest.message.trim();
+                return {
+                    message: label
+                        ? `This is a destructive operation, are you sure you want to delete stash with message "${label}"?`
+                        : `This is a destructive operation, are you sure you want to delete ${confirmRequest.selector}?`,
+                    confirmLabel: "Delete",
+                };
+            }
         }
     }, [confirmRequest]);
 
