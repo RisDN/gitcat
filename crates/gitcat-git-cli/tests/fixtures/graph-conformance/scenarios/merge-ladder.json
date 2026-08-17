@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "id": "merge-ladder",
+  "description": "A side branch repeatedly merges the same trunk, so each merge line reaches a trunk commit further down and the spans overlap. Two unrelated branches are held open to the right of the side branch, forcing every merge line to cross their routes. Covers both the merge ladder and the only paint-order crossings outside convergence-lane-reuse.",
+  "initial_branch": "main",
+  "commits": [
+    {
+      "id": "root",
+      "parents": [],
+      "subject": "fixture: root",
+      "date": "2000-01-01T00:00:00 +0000"
+    },
+    {
+      "id": "t1",
+      "parents": ["root"],
+      "subject": "fixture: t1 trunk base",
+      "date": "2000-01-01T00:01:00 +0000"
+    },
+    {
+      "id": "t2",
+      "parents": ["t1"],
+      "subject": "fixture: t2 trunk",
+      "date": "2000-01-01T00:02:00 +0000"
+    },
+    {
+      "id": "filler-a-base",
+      "parents": ["t1"],
+      "subject": "fixture: filler-a-base",
+      "date": "2000-01-01T00:03:00 +0000"
+    },
+    {
+      "id": "filler-b-base",
+      "parents": ["t1"],
+      "subject": "fixture: filler-b-base",
+      "date": "2000-01-01T00:04:00 +0000"
+    },
+    {
+      "id": "s1",
+      "parents": ["t1"],
+      "subject": "fixture: s1 side branch base",
+      "date": "2000-01-01T00:05:00 +0000"
+    },
+    {
+      "id": "t3",
+      "parents": ["t2"],
+      "subject": "fixture: t3 trunk",
+      "date": "2000-01-01T00:06:00 +0000"
+    },
+    {
+      "id": "m1",
+      "parents": ["s1", "t2"],
+      "subject": "fixture: side merges trunk at t2",
+      "date": "2000-01-01T00:07:00 +0000"
+    },
+    {
+      "id": "t4",
+      "parents": ["t3"],
+      "subject": "fixture: t4 trunk",
+      "date": "2000-01-01T00:08:00 +0000"
+    },
+    {
+      "id": "m2",
+      "parents": ["m1", "t3"],
+      "subject": "fixture: side merges trunk at t3",
+      "date": "2000-01-01T00:09:00 +0000"
+    },
+    {
+      "id": "t5",
+      "parents": ["t4"],
+      "subject": "fixture: t5 trunk tip",
+      "date": "2000-01-01T00:10:00 +0000"
+    },
+    {
+      "id": "m3",
+      "parents": ["m2", "t4"],
+      "subject": "fixture: side merges trunk at t4",
+      "date": "2000-01-01T00:11:00 +0000"
+    },
+    {
+      "id": "m4",
+      "parents": ["m3", "t5"],
+      "subject": "fixture: side merges trunk at t5",
+      "date": "2000-01-01T00:12:00 +0000"
+    },
+    {
+      "id": "filler-a-tip",
+      "parents": ["filler-a-base"],
+      "subject": "fixture: filler-a-tip",
+      "date": "2000-01-01T00:13:00 +0000"
+    },
+    {
+      "id": "filler-b-tip",
+      "parents": ["filler-b-base"],
+      "subject": "fixture: filler-b-tip",
+      "date": "2000-01-01T00:14:00 +0000"
+    }
+  ],
+  "refs": [
+    { "name": "refs/heads/main", "target": "t5" },
+    { "name": "refs/heads/side", "target": "m4" },
+    { "name": "refs/heads/filler-a", "target": "filler-a-tip" },
+    { "name": "refs/heads/filler-b", "target": "filler-b-tip" }
+  ],
+  "steps": [
+    {
+      "kind": "checkpoint",
+      "id": "head-main"
+    }
+  ]
+}

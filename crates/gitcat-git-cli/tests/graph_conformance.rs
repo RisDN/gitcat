@@ -47,6 +47,7 @@ const STASH_INDEX_COLLISION: &str =
 const STASH_INDEX_COLLISION_ORACLE: &str = include_str!(
     "fixtures/graph-conformance/oracles/gitkraken-12.4.0-windows/stash-index-collision.json"
 );
+const MERGE_LADDER: &str = include_str!("fixtures/graph-conformance/scenarios/merge-ladder.json");
 const CONVERGENCE_LANE_REUSE: &str =
     include_str!("fixtures/graph-conformance/scenarios/convergence-lane-reuse.json");
 const CONVERGENCE_LANE_REUSE_ORACLE: &str = include_str!(
@@ -224,6 +225,10 @@ fn graph_conformance_scenarios_are_valid() {
     validate_scenario(&stash_index_collision);
     let convergence_lane_reuse = parse_scenario(CONVERGENCE_LANE_REUSE);
     validate_scenario(&convergence_lane_reuse);
+    // merge-ladder has no GitKraken oracle yet; it is wired into
+    // gitcat_history_matches_gitkraken_semantic_oracles once one is recorded.
+    let merge_ladder = parse_scenario(MERGE_LADDER);
+    validate_scenario(&merge_ladder);
 
     let oracle: serde_json::Value =
         serde_json::from_str(CHECKOUT_SWITCH_ORACLE).expect("GitKraken oracle is valid JSON");
@@ -419,6 +424,24 @@ fn materialize_disconnected_interior_reuse_for_gitkraken() {
 #[ignore = "manually materializes a repository for GitKraken reference capture"]
 fn materialize_stash_index_collision_for_gitkraken() {
     let scenario = parse_scenario(STASH_INDEX_COLLISION);
+    validate_scenario(&scenario);
+
+    let repository = materialize_scenario(&scenario);
+    let instructions = repository
+        .parent()
+        .expect("materialized repository has a parent")
+        .join("capture-instructions.txt");
+    fs::write(&instructions, capture_instructions(&scenario, &repository))
+        .expect("write capture instructions");
+
+    println!("GitKraken fixture: {}", repository.display());
+    println!("Capture checklist: {}", instructions.display());
+}
+
+#[test]
+#[ignore = "manually materializes a repository for GitKraken reference capture"]
+fn materialize_merge_ladder_for_gitkraken() {
+    let scenario = parse_scenario(MERGE_LADDER);
     validate_scenario(&scenario);
 
     let repository = materialize_scenario(&scenario);
