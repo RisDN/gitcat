@@ -130,21 +130,20 @@ export function buildBranchColors(
         || left - right
     ));
   let restart = 0;
-  const wipReserve = hasWip ? 1 : 0;
 
   for (const group of order) {
     const floor = stashGroups.has(group) && hasWip
       ? STASH_COLOR_FLOOR_WITH_WIP
       : FIRST_COLOR_SLOT;
     const lane = spans[group].lane;
-    const paletteBlock = Math.floor((lane - wipReserve) / GRAPH_LANE_SLOTS);
+    const paletteBlock = Math.floor(lane / GRAPH_LANE_SLOTS);
     const independentComponent = !primaryComponent.has(anchorOf[group]);
     const taken = new Set<number>();
     for (const other of order) {
       if (slots[other] === undefined) continue;
       if (
         !independentComponent
-        && Math.floor((spans[other].lane - wipReserve) / GRAPH_LANE_SLOTS) !== paletteBlock
+        && Math.floor(spans[other].lane / GRAPH_LANE_SLOTS) !== paletteBlock
       ) continue;
       if (spans[other].start <= spans[group].end && spans[group].start <= spans[other].end) {
         taken.add(slots[other]);
@@ -164,7 +163,7 @@ export function buildBranchColors(
     // moves right only when an overlapping sibling already owns its preferred
     // color. Thus lanes 10-12 restart at 0-2, while overlapping fan-out still
     // spreads across the remaining slots.
-    const preferred = Math.max(floor, (lane - wipReserve) % GRAPH_LANE_SLOTS);
+    const preferred = Math.max(floor, lane % GRAPH_LANE_SLOTS);
     let chosen: number | undefined;
     for (let offset = 0; offset < GRAPH_LANE_SLOTS; offset += 1) {
       const candidate = (preferred + offset) % GRAPH_LANE_SLOTS;

@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use gitcat_contracts::{CommitSummary, GraphCell, GraphEdge, LaneState, RefKind};
+use gitcat_contracts::{CommitSummary, GraphCell, GraphEdge, LaneState};
 
 const STASH_LANE_FLOOR: usize = 0;
 
@@ -26,9 +26,6 @@ pub fn layout_commits_with_context(
     lanes: &mut LaneState,
     context: &GraphLayoutContext,
 ) {
-    let priority_components = build_priority_components(commits);
-    let first_page = lanes.heads.is_empty();
-    let classify_disconnected_tips = first_page && !priority_components.is_empty();
     seed_wip_lane(context, &mut lanes.heads);
     let mut materialized_lanes = lanes
         .heads
@@ -41,14 +38,14 @@ pub fn layout_commits_with_context(
     let mut commit_lanes = Vec::with_capacity(commits.len());
     let mut parent_lanes: HashMap<String, usize> = HashMap::new();
 
+    let mut terminated_lanes: HashSet<usize> = HashSet::new();
+
     for commit in commits.iter() {
-        let disconnected_tip =
-            classify_disconnected_tips && !priority_components.contains(commit.oid.as_str());
         let lane = lane_for_commit(
             &mut lanes.heads,
             commit,
-            disconnected_tip,
             &materialized_lanes,
+            &terminated_lanes,
         );
 
         // A malformed or externally supplied cursor may contain the same head
@@ -124,6 +121,17 @@ pub fn layout_commits_with_context(
                 lanes.heads[lane] = Some(parent_oid.clone());
             }
         }
+
+        // A lane emptied by a convergence is recycled: its route continued in
+        // another lane. A lane whose own route simply ended stays dead.
+        for (index, head) in lanes.heads.iter().enumerate() {
+            if head.is_some() {
+                terminated_lanes.remove(&index);
+            }
+        }
+        if lanes.heads[lane].is_none() {
+            terminated_lanes.insert(lane);
+        }
     }
 
     for (index, commit) in commits.iter_mut().enumerate() {
@@ -195,47 +203,6 @@ fn reachable_ancestors<'a>(
     reachable
 }
 
-fn build_priority_components(commits: &[CommitSummary]) -> HashSet<String> {
-    let mut adjacent: HashMap<&str, Vec<&str>> = HashMap::new();
-    for commit in commits {
-        adjacent.entry(commit.oid.as_str()).or_default();
-        for parent_oid in &commit.parent_oids {
-            adjacent
-                .entry(commit.oid.as_str())
-                .or_default()
-                .push(parent_oid.as_str());
-            adjacent
-                .entry(parent_oid.as_str())
-                .or_default()
-                .push(commit.oid.as_str());
-        }
-    }
-
-    let mut pending = commits
-        .iter()
-        .filter(|commit| {
-            commit.decorations.iter().any(|decoration| {
-                decoration.is_head
-                    || (decoration.kind == RefKind::LocalBranch
-                        && matches!(decoration.name.as_str(), "main" | "master"))
-            })
-        })
-        .map(|commit| commit.oid.as_str())
-        .collect::<Vec<_>>();
-    let mut connected = HashSet::new();
-
-    while let Some(oid) = pending.pop() {
-        if !connected.insert(oid.to_owned()) {
-            continue;
-        }
-        if let Some(neighbors) = adjacent.get(oid) {
-            pending.extend(neighbors.iter().copied());
-        }
-    }
-
-    connected
-}
-
 fn seed_wip_lane(context: &GraphLayoutContext, heads: &mut Vec<Option<String>>) {
     if !heads.is_empty() {
         return;
@@ -249,8 +216,8 @@ fn seed_wip_lane(context: &GraphLayoutContext, heads: &mut Vec<Option<String>>) 
 fn lane_for_commit(
     heads: &mut Vec<Option<String>>,
     commit: &CommitSummary,
-    disconnected_tip: bool,
     materialized_lanes: &HashSet<usize>,
+    terminated_lanes: &HashSet<usize>,
 ) -> usize {
     if let Some(lane) = heads
         .iter()
@@ -274,26 +241,14 @@ fn lane_for_commit(
         return lane;
     }
 
-    if disconnected_tip {
-        // GitKraken may fill a never-drawn gap between active routes (the
-        // simulation's orphan lane), but it does not recycle a branch column
-        // after that branch has materialized and finished.
-        return allocate_unmaterialized_interior_hole_or_after_rightmost(
-            heads,
-            &commit.oid,
-            0,
-            materialized_lanes,
-        );
-    }
-
-    allocate_after_rightmost(heads, &commit.oid, 0)
+    allocate_interior_hole_or_after_rightmost(heads, &commit.oid, 0, terminated_lanes)
 }
 
-fn allocate_unmaterialized_interior_hole_or_after_rightmost(
+fn allocate_interior_hole_or_after_rightmost(
     heads: &mut Vec<Option<String>>,
     oid: &str,
     floor: usize,
-    materialized_lanes: &HashSet<usize>,
+    terminated_lanes: &HashSet<usize>,
 ) -> usize {
     let leftmost_active = heads.iter().position(Option::is_some);
     let rightmost_active = heads.iter().rposition(Option::is_some);
@@ -301,7 +256,7 @@ fn allocate_unmaterialized_interior_hole_or_after_rightmost(
         .zip(rightmost_active)
         .and_then(|(left, right)| {
             ((left + 1).max(floor)..right)
-                .find(|lane| heads[*lane].is_none() && !materialized_lanes.contains(lane))
+                .find(|lane| heads[*lane].is_none() && !terminated_lanes.contains(lane))
         });
 
     if let Some(lane) = interior_hole {
@@ -866,17 +821,35 @@ mod tests {
     #[test]
     fn independent_tip_opens_after_the_rightmost_active_lane() {
         let mut lanes = LaneState {
-            heads: vec![Some("expected".into()), None, Some("other".into())],
+            heads: vec![Some("expected".into()), Some("other".into())],
         };
         let mut commits = vec![commit("new-tip", &[])];
 
         layout_clean(&mut commits, &mut lanes);
 
-        assert_eq!(commits[0].graph.lane, 3);
+        assert_eq!(commits[0].graph.lane, 2);
         assert_eq!(
             lanes.heads,
-            vec![Some("expected".into()), None, Some("other".into()), None,]
+            vec![Some("expected".into()), Some("other".into()), None]
         );
+    }
+
+    #[test]
+    fn independent_tip_reuses_a_lane_emptied_by_a_convergence() {
+        let mut commits = vec![
+            commit("trunk", &["trunk-base"]),
+            commit("side", &["trunk-base"]),
+            commit("right", &["right-base"]),
+            commit("trunk-base", &["root"]),
+            commit("new-tip", &[]),
+        ];
+        let mut lanes = LaneState { heads: Vec::new() };
+
+        layout_clean(&mut commits, &mut lanes);
+
+        assert_eq!(commits[1].graph.lane, 1);
+        assert_eq!(commits[3].graph.lane, 0);
+        assert_eq!(commits[4].graph.lane, 1);
     }
 
     #[test]
@@ -888,8 +861,8 @@ mod tests {
         let lane = lane_for_commit(
             &mut heads,
             &commit("orphan-tip", &["orphan-root"]),
-            true,
             &materialized_lanes,
+            &HashSet::new(),
         );
 
         assert_eq!(lane, 7);
@@ -991,7 +964,7 @@ mod tests {
     #[test]
     fn independent_tip_does_not_reuse_a_rightmost_bending_lane() {
         let mut lanes = LaneState {
-            heads: vec![Some("base".into()), None, Some("base".into())],
+            heads: vec![Some("base".into()), Some("base".into())],
         };
         let mut commits = vec![
             commit("tip", &["middle"]),
@@ -1001,8 +974,8 @@ mod tests {
 
         layout_clean(&mut commits, &mut lanes);
 
-        assert_eq!(commits[0].graph.lane, 3);
-        assert_eq!(commits[1].graph.lane, 3);
+        assert_eq!(commits[0].graph.lane, 2);
+        assert_eq!(commits[1].graph.lane, 2);
         assert_eq!(commits[1].graph.edges[0].to_lane, 0);
     }
 
