@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -258,9 +260,11 @@ pub struct CommitSummary {
     pub graph: GraphCell,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LaneState {
     pub heads: Vec<Option<String>>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub merge_reserved: BTreeMap<String, usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -1227,7 +1227,7 @@ impl GitBackend for GitCliBackend {
             .cursor
             .as_ref()
             .map(|cursor| cursor.lanes.clone())
-            .unwrap_or(LaneState { heads: Vec::new() });
+            .unwrap_or_default();
         layout_commits_with_context(&mut commits, &mut lanes, &layout);
         let next_cursor = has_more.then(|| HistoryCursor {
             generation: generation.clone(),

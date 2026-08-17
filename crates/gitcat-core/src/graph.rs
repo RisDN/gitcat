@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use gitcat_contracts::{CommitSummary, GraphCell, GraphEdge, LaneState};
 
@@ -39,7 +39,6 @@ pub fn layout_commits_with_context(
     let mut parent_lanes: HashMap<String, usize> = HashMap::new();
 
     let mut terminated_lanes: HashSet<usize> = HashSet::new();
-    let mut merge_reserved: HashMap<String, usize> = HashMap::new();
 
     for commit in commits.iter() {
         let lane = lane_for_commit(
@@ -47,7 +46,7 @@ pub fn layout_commits_with_context(
             commit,
             &materialized_lanes,
             &terminated_lanes,
-            &merge_reserved,
+            &lanes.merge_reserved,
         );
 
         // A malformed or externally supplied cursor may contain the same head
@@ -68,7 +67,7 @@ pub fn layout_commits_with_context(
                 .heads
                 .iter()
                 .position(|head| head.as_deref() == Some(parent_oid.as_str()));
-            let merge_reserved_lane = merge_reserved.get(parent_oid.as_str()).copied();
+            let merge_reserved_lane = lanes.merge_reserved.get(parent_oid.as_str()).copied();
             let pulls_first_parent_left = parent_index == 0
                 && commit.stash.is_none()
                 && lanes.heads[lane].is_none()
@@ -90,7 +89,7 @@ pub fn layout_commits_with_context(
                         if parent_index > 0 {
                             let allocated =
                                 allocate_lane(&mut lanes.heads, parent_oid, None, lane + 1);
-                            merge_reserved.insert(parent_oid.clone(), allocated);
+                            lanes.merge_reserved.insert(parent_oid.clone(), allocated);
                             allocated
                         } else {
                             let preferred_lane =
@@ -233,7 +232,7 @@ fn lane_for_commit(
     commit: &CommitSummary,
     materialized_lanes: &HashSet<usize>,
     terminated_lanes: &HashSet<usize>,
-    merge_reserved: &HashMap<String, usize>,
+    merge_reserved: &BTreeMap<String, usize>,
 ) -> usize {
     if let Some(lane) = merge_reserved.get(commit.oid.as_str()) {
         if heads
@@ -411,11 +410,8 @@ mod tests {
         feature_checked_out[0].decorations[0].is_head = true;
         feature_checked_out[1].decorations[0].is_head = false;
 
-        layout_clean(&mut main_checked_out, &mut LaneState { heads: Vec::new() });
-        layout_clean(
-            &mut feature_checked_out,
-            &mut LaneState { heads: Vec::new() },
-        );
+        layout_clean(&mut main_checked_out, &mut LaneState::default());
+        layout_clean(&mut feature_checked_out, &mut LaneState::default());
 
         for commits in [&main_checked_out, &feature_checked_out] {
             assert_eq!(commits[0].graph.lane, 0);
@@ -438,14 +434,10 @@ mod tests {
         feature_checked_out[0].decorations[0].is_head = true;
         feature_checked_out[1].decorations[0].is_head = false;
 
-        layout_with_wip(
-            &mut main_checked_out,
-            &mut LaneState { heads: Vec::new() },
-            "main",
-        );
+        layout_with_wip(&mut main_checked_out, &mut LaneState::default(), "main");
         layout_with_wip(
             &mut feature_checked_out,
-            &mut LaneState { heads: Vec::new() },
+            &mut LaneState::default(),
             "feature",
         );
 
@@ -469,7 +461,7 @@ mod tests {
         // therefore covers the hidden WIP anchor only; cross-page convergence
         // needs a richer cursor contract before it can be asserted faithfully.
         let mut first_page = vec![commit("visible-tip", &["visible-parent"])];
-        let mut lanes = LaneState { heads: Vec::new() };
+        let mut lanes = LaneState::default();
 
         layout_with_wip(&mut first_page, &mut lanes, "detached-head");
 
@@ -486,7 +478,7 @@ mod tests {
             commit("mid", &["base"]),
             commit("base", &[]),
         ];
-        let mut lanes = LaneState { heads: Vec::new() };
+        let mut lanes = LaneState::default();
 
         layout_clean(&mut commits, &mut lanes);
 
@@ -504,7 +496,7 @@ mod tests {
             branch_tip(commit("main", &["base"]), "main", true),
             commit("base", &[]),
         ];
-        let mut lanes = LaneState { heads: Vec::new() };
+        let mut lanes = LaneState::default();
 
         layout_clean(&mut commits, &mut lanes);
 
@@ -524,7 +516,7 @@ mod tests {
             stash_commit("stash-older", &["base"]),
             commit("base", &[]),
         ];
-        let mut lanes = LaneState { heads: Vec::new() };
+        let mut lanes = LaneState::default();
 
         layout_clean(&mut commits, &mut lanes);
 
@@ -543,7 +535,7 @@ mod tests {
             branch_tip(commit("main", &["base"]), "main", false),
             commit("base", &[]),
         ];
-        let mut lanes = LaneState { heads: Vec::new() };
+        let mut lanes = LaneState::default();
 
         layout_with_wip(&mut commits, &mut lanes, "feature");
 
@@ -563,7 +555,7 @@ mod tests {
             branch_tip(commit("main", &["base"]), "main", false),
             commit("base", &[]),
         ];
-        let mut lanes = LaneState { heads: Vec::new() };
+        let mut lanes = LaneState::default();
 
         layout_with_wip(&mut commits, &mut lanes, "feature");
 
@@ -585,10 +577,10 @@ mod tests {
             commit("base", &[]),
         ];
         let mut one_batch = history.clone();
-        let mut one_batch_lanes = LaneState { heads: Vec::new() };
+        let mut one_batch_lanes = LaneState::default();
         layout_clean(&mut one_batch, &mut one_batch_lanes);
 
-        let mut paged_lanes = LaneState { heads: Vec::new() };
+        let mut paged_lanes = LaneState::default();
         let mut pages = history
             .into_iter()
             .map(|commit| vec![commit])
@@ -628,7 +620,7 @@ mod tests {
             commit("feature-base", &["base"]),
             commit("base", &[]),
         ];
-        let mut lanes = LaneState { heads: Vec::new() };
+        let mut lanes = LaneState::default();
 
         layout_clean(&mut commits, &mut lanes);
 
@@ -656,7 +648,7 @@ mod tests {
             commit("main-base", &["shared-base"]),
             commit("shared-base", &[]),
         ];
-        let mut lanes = LaneState { heads: Vec::new() };
+        let mut lanes = LaneState::default();
 
         layout_clean(&mut commits, &mut lanes);
 
@@ -670,7 +662,7 @@ mod tests {
     #[test]
     fn linear_history_stays_in_one_lane() {
         let mut commits = vec![commit("a", &["b"]), commit("b", &["c"]), commit("c", &[])];
-        let mut lanes = LaneState { heads: Vec::new() };
+        let mut lanes = LaneState::default();
 
         layout_clean(&mut commits, &mut lanes);
 
@@ -688,7 +680,7 @@ mod tests {
             commit("right", &["base"]),
             commit("base", &[]),
         ];
-        let mut lanes = LaneState { heads: Vec::new() };
+        let mut lanes = LaneState::default();
 
         layout_clean(&mut commits, &mut lanes);
 
@@ -708,6 +700,7 @@ mod tests {
         let mut commits = vec![commit("merge", &["first", "second"])];
         let mut lanes = LaneState {
             heads: vec![Some("merge".into()), None, Some("carried".into())],
+            ..LaneState::default()
         };
 
         layout_clean(&mut commits, &mut lanes);
@@ -735,7 +728,7 @@ mod tests {
             commit("filler-a1", &[]),
             commit("filler-b1", &[]),
         ];
-        let mut lanes = LaneState { heads: Vec::new() };
+        let mut lanes = LaneState::default();
 
         layout_clean(&mut commits, &mut lanes);
 
@@ -766,7 +759,7 @@ mod tests {
             commit("t1", &["root"]),
             commit("root", &[]),
         ];
-        let mut lanes = LaneState { heads: Vec::new() };
+        let mut lanes = LaneState::default();
 
         layout_clean(&mut commits, &mut lanes);
 
@@ -800,11 +793,11 @@ mod tests {
         const STASH_ROW: usize = 8;
 
         let mut without_stash = ladder();
-        layout_clean(&mut without_stash, &mut LaneState { heads: Vec::new() });
+        layout_clean(&mut without_stash, &mut LaneState::default());
 
         let mut with_stash = ladder();
         with_stash.insert(STASH_ROW, stash_commit("stash", &["trunk-e"]));
-        layout_clean(&mut with_stash, &mut LaneState { heads: Vec::new() });
+        layout_clean(&mut with_stash, &mut LaneState::default());
 
         for (row, commit) in without_stash.iter().enumerate() {
             let shifted = row + usize::from(row >= STASH_ROW);
@@ -823,7 +816,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known open limitation: the merge-line reservation map is page-local, see docs/graph-layout-agent-handoff.md"]
     fn paged_layout_matches_one_batch_across_a_merge_ladder() {
         let commits = vec![
             commit("side-1", &["side-2"]),
@@ -843,13 +835,13 @@ mod tests {
         ];
 
         let mut one_batch = commits.clone();
-        let mut one_batch_lanes = LaneState { heads: Vec::new() };
+        let mut one_batch_lanes = LaneState::default();
         layout_clean(&mut one_batch, &mut one_batch_lanes);
 
         for split in 1..commits.len() {
             let mut first_page = commits[..split].to_vec();
             let mut second_page = commits[split..].to_vec();
-            let mut paged_lanes = LaneState { heads: Vec::new() };
+            let mut paged_lanes = LaneState::default();
             layout_clean(&mut first_page, &mut paged_lanes);
             layout_clean(&mut second_page, &mut paged_lanes);
 
@@ -877,6 +869,7 @@ mod tests {
         ];
         let mut lanes = LaneState {
             heads: vec![None, Some("merge".into())],
+            ..LaneState::default()
         };
 
         layout_clean(&mut commits, &mut lanes);
@@ -899,12 +892,12 @@ mod tests {
         ];
 
         let mut one_batch = commits.clone();
-        let mut one_batch_lanes = LaneState { heads: Vec::new() };
+        let mut one_batch_lanes = LaneState::default();
         layout_clean(&mut one_batch, &mut one_batch_lanes);
 
         let mut first_page = commits[..2].to_vec();
         let mut second_page = commits[2..].to_vec();
-        let mut paged_lanes = LaneState { heads: Vec::new() };
+        let mut paged_lanes = LaneState::default();
         layout_clean(&mut first_page, &mut paged_lanes);
         assert_eq!(
             paged_lanes.heads,
@@ -953,7 +946,7 @@ mod tests {
         ];
 
         let mut one_batch = commits.clone();
-        let mut one_batch_lanes = LaneState { heads: Vec::new() };
+        let mut one_batch_lanes = LaneState::default();
         layout_clean(&mut one_batch, &mut one_batch_lanes);
 
         assert_eq!(
@@ -968,7 +961,7 @@ mod tests {
         for split in 1..commits.len() {
             let mut first_page = commits[..split].to_vec();
             let mut second_page = commits[split..].to_vec();
-            let mut paged_lanes = LaneState { heads: Vec::new() };
+            let mut paged_lanes = LaneState::default();
             layout_clean(&mut first_page, &mut paged_lanes);
             layout_clean(&mut second_page, &mut paged_lanes);
 
@@ -997,6 +990,7 @@ mod tests {
     fn independent_tip_opens_after_the_rightmost_active_lane() {
         let mut lanes = LaneState {
             heads: vec![Some("expected".into()), Some("other".into())],
+            ..LaneState::default()
         };
         let mut commits = vec![commit("new-tip", &[])];
 
@@ -1018,7 +1012,7 @@ mod tests {
             commit("trunk-base", &["root"]),
             commit("new-tip", &[]),
         ];
-        let mut lanes = LaneState { heads: Vec::new() };
+        let mut lanes = LaneState::default();
 
         layout_clean(&mut commits, &mut lanes);
 
@@ -1038,7 +1032,7 @@ mod tests {
             &commit("orphan-tip", &["orphan-root"]),
             &materialized_lanes,
             &HashSet::new(),
-            &HashMap::new(),
+            &BTreeMap::new(),
         );
 
         assert_eq!(lane, 7);
@@ -1070,7 +1064,7 @@ mod tests {
 
         for head in ["main", "target"] {
             let mut commits = history(head);
-            let mut lanes = LaneState { heads: Vec::new() };
+            let mut lanes = LaneState::default();
 
             layout_clean(&mut commits, &mut lanes);
 
@@ -1113,7 +1107,7 @@ mod tests {
 
         for head in ["main", "target"] {
             let mut commits = history(head);
-            let mut lanes = LaneState { heads: Vec::new() };
+            let mut lanes = LaneState::default();
 
             layout_clean(&mut commits, &mut lanes);
 
@@ -1141,6 +1135,7 @@ mod tests {
     fn independent_tip_does_not_reuse_a_rightmost_bending_lane() {
         let mut lanes = LaneState {
             heads: vec![Some("base".into()), Some("base".into())],
+            ..LaneState::default()
         };
         let mut commits = vec![
             commit("tip", &["middle"]),
@@ -1162,7 +1157,7 @@ mod tests {
             commit("head", &["base"]),
             commit("base", &[]),
         ];
-        let mut lanes = LaneState { heads: Vec::new() };
+        let mut lanes = LaneState::default();
 
         layout_clean(&mut commits, &mut lanes);
 
@@ -1181,7 +1176,7 @@ mod tests {
         ];
 
         let mut commits = history.clone();
-        let mut lanes = LaneState { heads: Vec::new() };
+        let mut lanes = LaneState::default();
         layout_clean(&mut commits, &mut lanes);
 
         assert_eq!(commits[0].graph.lane, 0);
@@ -1194,7 +1189,7 @@ mod tests {
             history[1].clone(),
             history[4].clone(),
         ];
-        let mut swapped_lanes = LaneState { heads: Vec::new() };
+        let mut swapped_lanes = LaneState::default();
         layout_clean(&mut swapped, &mut swapped_lanes);
 
         assert_eq!(swapped[0].graph.lane, 0);
@@ -1213,7 +1208,7 @@ mod tests {
             commit("base", &["older"]),
             commit("older", &[]),
         ];
-        let mut lanes = LaneState { heads: Vec::new() };
+        let mut lanes = LaneState::default();
 
         layout_clean(&mut commits, &mut lanes);
 
@@ -1242,7 +1237,7 @@ mod tests {
             commit("update-1", &["base"]),
             commit("base", &[]),
         ];
-        let mut lanes = LaneState { heads: Vec::new() };
+        let mut lanes = LaneState::default();
 
         layout_clean(&mut commits, &mut lanes);
 
@@ -1267,7 +1262,7 @@ mod tests {
             commit("head-tip", &["base"]),
             commit("base", &[]),
         ];
-        let mut lanes = LaneState { heads: Vec::new() };
+        let mut lanes = LaneState::default();
 
         layout_clean(&mut commits, &mut lanes);
 
@@ -1287,7 +1282,7 @@ mod tests {
             commit("main-tip", &["main-1"]),
             commit("main-1", &[]),
         ];
-        let mut lanes = LaneState { heads: Vec::new() };
+        let mut lanes = LaneState::default();
 
         layout_clean(&mut commits, &mut lanes);
 
@@ -1309,7 +1304,7 @@ mod tests {
             commit("base", &["older"]),
             commit("older", &[]),
         ];
-        let mut lanes = LaneState { heads: Vec::new() };
+        let mut lanes = LaneState::default();
 
         layout_clean(&mut commits, &mut lanes);
 

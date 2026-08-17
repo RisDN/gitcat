@@ -177,6 +177,7 @@ export interface CommitSummary {
 
 export interface LaneState {
   heads: Array<string | null>;
+  merge_reserved?: Record<string, number>;
 }
 
 export interface HistoryCursor {
