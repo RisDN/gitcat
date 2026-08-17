@@ -749,6 +749,51 @@ mod tests {
     }
 
     #[test]
+    fn a_stash_shares_the_first_unrendered_rung_of_a_merge_ladder() {
+        let ladder = || {
+            vec![
+                commit("side-1", &["side-2"]),
+                commit("filler-a", &["filler-a1"]),
+                commit("filler-b", &["filler-b1"]),
+                commit("trunk-a", &["trunk-b"]),
+                commit("side-2", &["side-3", "trunk-c"]),
+                commit("side-3", &["side-4", "trunk-d"]),
+                commit("trunk-b", &["trunk-c"]),
+                commit("side-4", &["side-5", "trunk-e"]),
+                commit("trunk-c", &["trunk-d"]),
+                commit("trunk-d", &["trunk-e"]),
+                commit("trunk-e", &[]),
+                commit("side-5", &[]),
+                commit("filler-a1", &[]),
+                commit("filler-b1", &[]),
+            ]
+        };
+        const STASH_ROW: usize = 8;
+
+        let mut without_stash = ladder();
+        layout_clean(&mut without_stash, &mut LaneState { heads: Vec::new() });
+
+        let mut with_stash = ladder();
+        with_stash.insert(STASH_ROW, stash_commit("stash", &["trunk-e"]));
+        layout_clean(&mut with_stash, &mut LaneState { heads: Vec::new() });
+
+        for (row, commit) in without_stash.iter().enumerate() {
+            let shifted = row + usize::from(row >= STASH_ROW);
+            assert_eq!(
+                with_stash[shifted].graph.lane, commit.graph.lane,
+                "{} moved when a stash was inserted",
+                commit.oid
+            );
+        }
+
+        let stash_lane = with_stash[STASH_ROW].graph.lane;
+        assert_eq!(stash_lane, 4, "stash");
+        assert_eq!(with_stash[STASH_ROW + 1].graph.lane, stash_lane, "trunk-c");
+        assert_eq!(with_stash[7].graph.lane, 0, "side-4");
+        assert_eq!(with_stash[6].graph.lane, 3, "trunk-b");
+    }
+
+    #[test]
     #[ignore = "known open limitation: the merge-line reservation map is page-local, see docs/graph-layout-agent-handoff.md"]
     fn paged_layout_matches_one_batch_across_a_merge_ladder() {
         let commits = vec![

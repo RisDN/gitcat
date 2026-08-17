@@ -508,6 +508,54 @@ test("a disconnected component in a newly opened low lane keeps its canonical co
   });
 });
 
+test("every palette block restarts, so lanes 0, 10 and 20 share color zero", () => {
+  const commits = [
+    commit("block-0", 0, [edge("base", 0, 0)], { head: true }),
+    commit("block-1", 10, [edge("base", 10, 0)]),
+    commit("block-2", 20, [edge("base", 20, 0)]),
+    commit("block-2-next", 21, [edge("base", 21, 0)]),
+    commit("base", 0, []),
+  ];
+
+  assert.deepEqual(colors(commits, false), {
+    "block-0": 0,
+    "block-1": 0,
+    "block-2": 0,
+    "block-2-next": 1,
+    base: 0,
+  });
+});
+
+test("overlapping siblings in the third palette block resolve inside that block", () => {
+  const commits = [
+    commit("low", 1, [edge("base", 1, 0)], { head: true }),
+    commit("twin-a", 21, [edge("base", 21, 0)]),
+    commit("twin-b", 31, [edge("base", 31, 0)]),
+    commit("base", 0, []),
+  ];
+
+  const actual = colors(commits, false);
+  assert.equal(actual.low, 1);
+  assert.equal(actual["twin-a"], 1);
+  assert.equal(actual["twin-b"], 1);
+});
+
+test("a convergence paints the physically backmost route on top", () => {
+  const commits = [
+    commit("front", 0, [edge("base", 0, 0)], { head: true }),
+    commit("back", 5, [edge("base", 5, 0)]),
+    commit("middle", 2, [edge("base", 2, 0)]),
+    commit("base", 0, []),
+  ];
+
+  const geometry = buildGraphGeometry(commits, false);
+  const incoming = geometry.paths
+    .filter((path) => path.key.split(":")[1] === "base")
+    .map((path) => path.key.split(":")[0]);
+
+  assert.deepEqual(incoming, ["front", "middle", "back"]);
+});
+
 for (const oracle of ORACLES) {
   for (const checkpoint of oracle.checkpoints) {
     test(`GitKraken oracle colors: ${oracle.scenario}/${checkpoint.id}`, () => {
