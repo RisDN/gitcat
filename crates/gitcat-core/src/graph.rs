@@ -87,7 +87,7 @@ pub fn layout_commits_with_context(
                     None => {
                         let inherits_lane = parent_index == 0 && commit.stash.is_none();
                         if parent_index > 0 {
-                            allocate_after_rightmost(&mut lanes.heads, parent_oid, 0)
+                            allocate_lane(&mut lanes.heads, parent_oid, None, lane + 1)
                         } else {
                             let preferred_lane =
                                 (inherits_lane && lanes.heads[lane].is_none()).then_some(lane);
@@ -724,7 +724,7 @@ mod tests {
     }
 
     #[test]
-    fn new_merge_parent_opens_after_the_rightmost_active_lane() {
+    fn new_merge_parent_opens_beside_its_merge_not_past_unrelated_lanes() {
         let mut commits = vec![commit("merge", &["first", "second"])];
         let mut lanes = LaneState {
             heads: vec![Some("merge".into()), None, Some("carried".into())],
@@ -734,7 +734,7 @@ mod tests {
 
         assert_eq!(commits[0].graph.lane, 0);
         assert_eq!(commits[0].graph.edges[0].to_lane, 0);
-        assert_eq!(commits[0].graph.edges[1].to_lane, 3);
+        assert_eq!(commits[0].graph.edges[1].to_lane, 1);
     }
 
     #[test]
