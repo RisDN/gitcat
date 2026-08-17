@@ -749,6 +749,51 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "known open limitation: the merge-line reservation map is page-local, see docs/graph-layout-agent-handoff.md"]
+    fn paged_layout_matches_one_batch_across_a_merge_ladder() {
+        let commits = vec![
+            commit("side-1", &["side-2"]),
+            commit("filler-a", &["filler-a1"]),
+            commit("filler-b", &["filler-b1"]),
+            commit("trunk-a", &["trunk-b"]),
+            commit("side-2", &["side-3", "trunk-c"]),
+            commit("side-3", &["side-4", "trunk-d"]),
+            commit("trunk-b", &["trunk-c"]),
+            commit("side-4", &["side-5", "trunk-e"]),
+            commit("trunk-c", &["trunk-d"]),
+            commit("trunk-d", &["trunk-e"]),
+            commit("trunk-e", &[]),
+            commit("side-5", &[]),
+            commit("filler-a1", &[]),
+            commit("filler-b1", &[]),
+        ];
+
+        let mut one_batch = commits.clone();
+        let mut one_batch_lanes = LaneState { heads: Vec::new() };
+        layout_clean(&mut one_batch, &mut one_batch_lanes);
+
+        for split in 1..commits.len() {
+            let mut first_page = commits[..split].to_vec();
+            let mut second_page = commits[split..].to_vec();
+            let mut paged_lanes = LaneState { heads: Vec::new() };
+            layout_clean(&mut first_page, &mut paged_lanes);
+            layout_clean(&mut second_page, &mut paged_lanes);
+
+            let paged_graphs: Vec<_> = first_page
+                .iter()
+                .chain(&second_page)
+                .map(|commit| commit.graph.clone())
+                .collect();
+            let one_batch_graphs: Vec<_> = one_batch
+                .iter()
+                .map(|commit| commit.graph.clone())
+                .collect();
+
+            assert_eq!(paged_graphs, one_batch_graphs, "split at {split}");
+        }
+    }
+
+    #[test]
     fn merge_convergence_reserves_an_open_lane_to_the_left() {
         let mut commits = vec![
             commit("merge", &["left", "right"]),
