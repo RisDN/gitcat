@@ -466,7 +466,12 @@
 }
 
 .gc-commit-row__subject {
-  @apply min-w-0 cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap px-[7px] text-[11px] font-[570] text-foreground;
+  @apply min-w-0 cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap px-[7px] text-[11px] font-[440];
+  color: color-mix(in srgb, var(--gc-text) 72%, var(--gc-muted));
+}
+
+.gc-commit-row--selected .gc-commit-row__subject {
+  color: var(--gc-text);
 }
 
 .gc-commit-row__description {
