@@ -76,7 +76,7 @@ function App() {
     const pendingSelectionRef = useRef<{ index: number; subject: string } | null>(null);
     const [wipSelected, setWipSelected] = useState(false);
     const [wipTitleHint, setWipTitleHint] = useState<string | null>(null);
-    const wipRowRef = useRef<HTMLButtonElement>(null);
+    const wipRowRef = useRef<HTMLDivElement>(null);
     const [details, setDetails] = useState<Awaited<ReturnType<typeof gitcatApi.commitDetails>> | null>(null);
     const [commitActions, setCommitActions] = useState<CommitActionAvailability[]>([]);
     const [diff, setDiff] = useState<FileDiff | null>(null);
@@ -822,8 +822,10 @@ function App() {
                             setDiffMode={setDiffMode}
                             setSearchOpen={setSearchOpen}
                             setSearchQuery={setSearchQuery}
+                            setWipDraftMessage={(message) => updateActiveCommitDraft({ ...activeCommitDraft, message })}
                             settings={persisted.settings}
                             snapshot={snapshot}
+                            wipDraftMessage={activeCommitDraft.message}
                             wipLane={wipLane}
                             wipRowRef={wipRowRef}
                             wipRowStyle={wipRowStyle}

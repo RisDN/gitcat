@@ -17,7 +17,7 @@ export interface CommitSelectionParams {
     setSelectedPath: Dispatch<SetStateAction<string | undefined>>;
     setSelectedWorktreeFile: Dispatch<SetStateAction<{ path: string; staged: boolean } | null>>;
     setWipSelected: Dispatch<SetStateAction<boolean>>;
-    wipRowRef: RefObject<HTMLButtonElement | null>;
+    wipRowRef: RefObject<HTMLDivElement | null>;
     wipSelected: boolean;
 }
 

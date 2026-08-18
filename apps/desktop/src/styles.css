@@ -42,7 +42,11 @@
   --gc-lane-7: #f2ca33;
   --gc-lane-8: #7bd938;
   --gc-lane-9: #2ece9d;
-  --gc-row-gap: 4px;
+  --gc-row-gap: 3px;
+  /* The WIP row needs more clearance than a commit row so its dashed node
+     and the first commit node do not swallow the connector between them.
+     Mirrored by WIP_GAP in CommitGraph.tsx. */
+  --gc-wip-row-gap: 4px;
 }
 
 @theme inline {
@@ -255,6 +259,12 @@
   stroke-dasharray: 4 5;
 }
 
+/* The WIP connector is a short run, so it uses a tighter dash than the stash
+   edges to still read as a dashed line. */
+.gc-commit-graph__edge--wip {
+  stroke-dasharray: 3 3;
+}
+
 .gc-commit-graph__edge--lane-0 { stroke: var(--gc-lane-0); }
 .gc-commit-graph__edge--lane-1 { stroke: var(--gc-lane-1); }
 .gc-commit-graph__edge--lane-2 { stroke: var(--gc-lane-2); }
@@ -292,14 +302,14 @@
 
 .gc-commit-row,
 .gc-wip-row {
-  @apply relative h-7 cursor-default rounded;
+  @apply relative h-6.5 cursor-default rounded;
 }
 
 .gc-wip-row {
   --gc-branch-row-origin: 131px;
   --gc-row-branch-color: var(--gc-lane-0);
-  @apply w-full bg-transparent p-0 text-left text-foreground;
-  margin-bottom: var(--gc-row-gap);
+  @apply w-full cursor-pointer bg-transparent p-0 text-left text-foreground;
+  margin-bottom: var(--gc-wip-row-gap);
 }
 
 .gc-commit-row:hover .gc-commit-row__decorations {
@@ -391,7 +401,7 @@
 .gc-commit-row__graph-slot--lane-9 { --gc-graph-slot-color: var(--gc-lane-9); }
 
 .gc-wip-row__rail i {
-  @apply absolute top-1/2 z-[3] h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-dashed bg-background;
+  @apply absolute top-1/2 z-[3] h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-dashed bg-background;
   left: var(--gc-wip-lane-x, 24px);
   border-color: var(--gc-graph-slot-color);
 }
@@ -400,7 +410,38 @@
   @apply flex min-w-0 items-center gap-[6px] overflow-hidden whitespace-nowrap px-[7px];
 }
 
-.gc-wip-row__message strong { @apply text-[11px]; }
+/*
+ * The summary field sizes itself to its own text: the wrapper is an inline grid
+ * whose ::after mirrors the typed value in the same cell as the input, so the
+ * widest of the two drives the width. Pure CSS, no measuring pass.
+ */
+.gc-wip-row__summary {
+  @apply inline-grid h-[21px] max-w-full flex-[0_1_auto] cursor-text items-center overflow-hidden rounded-[4px] border border-border bg-background px-[7px] text-[11px] leading-[1.2] text-foreground;
+  min-width: 75px;
+}
+
+.gc-wip-row__summary::after,
+.gc-wip-row__summary input {
+  @apply col-start-1 row-start-1 w-auto min-w-0 whitespace-pre text-[11px] leading-[1.2];
+  font: inherit;
+}
+
+.gc-wip-row__summary::after {
+  @apply invisible;
+  content: attr(data-value);
+}
+
+.gc-wip-row__summary input {
+  @apply w-full cursor-text border-0 bg-transparent p-0 text-foreground outline-0;
+}
+
+.gc-wip-row__summary input::placeholder {
+  color: color-mix(in srgb, var(--gc-muted) 80%, transparent);
+}
+
+.gc-wip-row__summary:focus-within {
+  border-color: var(--gc-accent);
+}
 .gc-wip-row__change-icon { @apply shrink-0 text-warning [stroke-width:2.5]; }
 .gc-wip-row small { @apply overflow-hidden text-ellipsis text-[9px] text-muted; }
 

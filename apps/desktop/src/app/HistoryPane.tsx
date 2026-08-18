@@ -58,10 +58,12 @@ export interface HistoryPaneProps {
     setDiffMode: (mode: DiffViewMode) => void;
     setSearchOpen: (open: boolean) => void;
     setSearchQuery: (query: string) => void;
+    setWipDraftMessage: (message: string) => void;
     settings: AppSettings;
     snapshot: RepositorySnapshot | null;
+    wipDraftMessage: string;
     wipLane: number;
-    wipRowRef: React.RefObject<HTMLButtonElement | null>;
+    wipRowRef: React.RefObject<HTMLDivElement | null>;
     wipRowStyle: React.CSSProperties;
     wipSelected: boolean;
     wipStats: FileChangeCounts;
@@ -106,8 +108,10 @@ export function HistoryPane({
     setDiffMode,
     setSearchOpen,
     setSearchQuery,
+    setWipDraftMessage,
     settings,
     snapshot,
+    wipDraftMessage,
     wipLane,
     wipRowRef,
     wipRowStyle,
@@ -171,24 +175,46 @@ export function HistoryPane({
                         }}
                     >
                     {worktreeReachable ? (
-                        <button
+                        <div
+                            aria-label="Working copy changes"
                             className={`gc-wip-row ${wipSelected ? "gc-wip-row--selected" : ""}`}
                             onClick={selectWip}
                             onKeyDown={(event) => {
+                                if (event.target !== event.currentTarget) return;
                                 if (event.key === "ArrowDown") {
                                     event.preventDefault();
                                     selectFirstCommitFromWip();
+                                    return;
+                                }
+                                if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    selectWip();
                                 }
                             }}
                             ref={wipRowRef}
                             style={wipRowStyle}
-                            type="button"
+                            tabIndex={0}
                         >
                             {columns.refs ? <span className="gc-wip-row__refs" /> : null}
                             {columns.graph ? <span className="gc-wip-row__rail"><i /></span> : null}
                             {columns.message ? (
                                 <span className="gc-wip-row__message">
-                                    <strong>{wipTitleHint ?? "// WIP"}</strong>
+                                    <span
+                                        className="gc-wip-row__summary"
+                                        data-value={wipDraftMessage || (wipTitleHint ?? "// WIP")}
+                                    >
+                                        <input
+                                            aria-label="Commit summary"
+                                            onChange={(event) => setWipDraftMessage(event.target.value)}
+                                            onClick={(event) => event.stopPropagation()}
+                                            onFocus={() => { if (!wipSelected) selectWip(); }}
+                                            onKeyDown={(event) => event.stopPropagation()}
+                                            placeholder={wipTitleHint ?? "// WIP"}
+                                            size={1}
+                                            type="text"
+                                            value={wipDraftMessage}
+                                        />
+                                    </span>
                                     <ChangeCountSummary counts={wipStats} size="md" />
                                     {columns.author ? null : conflictBadge}
                                 </span>
@@ -196,7 +222,7 @@ export function HistoryPane({
                             {columns.author ? <span className="min-w-0">{conflictBadge}</span> : null}
                             {columns.date ? <span /> : null}
                             {columns.sha ? <span /> : null}
-                        </button>
+                        </div>
                     ) : null}
                     {history ? (
                         <CommitGraph
