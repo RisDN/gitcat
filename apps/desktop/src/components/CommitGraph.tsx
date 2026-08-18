@@ -15,8 +15,8 @@ import {
   getGraphEdgeColor,
 } from "./graphPresentation";
 
-const ROW_HEIGHT = 28;
-const ROW_GAP = 4;
+const ROW_HEIGHT = 26;
+const ROW_GAP = 3;
 const ROW_STRIDE = ROW_HEIGHT + ROW_GAP;
 const LANE_WIDTH = 18;
 const GRAPH_PADDING = 24;
@@ -26,8 +26,14 @@ const EDGE_CORNER = 12;
 const AVATAR_RADIUS = 11;
 const MERGE_NODE_RADIUS = 4.5;
 const STASH_NODE_RADIUS = 3;
-const WIP_NODE_RADIUS = 12;
-const WIP_ROW_Y = -(ROW_GAP + ROW_HEIGHT / 2);
+const WIP_NODE_RADIUS = 10;
+// The dashed WIP circle carries a 2px border, so its outer edge sits one pixel
+// past the radius. The connector starts there instead of at the node centre,
+// which keeps the dash phase anchored to the circle no matter how short the run.
+const WIP_NODE_EDGE = WIP_NODE_RADIUS + 1;
+// Mirrors --gc-wip-row-gap in styles.css.
+const WIP_GAP = 4;
+const WIP_ROW_Y = -(WIP_GAP + ROW_HEIGHT / 2);
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
@@ -755,12 +761,12 @@ export function CommitGraph({
 
     const headLane = commits[headIndex].graph.lane;
     return {
-      data: buildEdgePath(laneX(wip.lane), WIP_ROW_Y, laneX(headLane), rowY(headIndex), true, false),
+      data: buildEdgePath(laneX(wip.lane), WIP_ROW_Y + WIP_NODE_EDGE, laneX(headLane), rowY(headIndex), true, false),
       lane: Math.max(wip.lane, headLane),
       color: FIRST_COLOR_SLOT,
     };
   }, [commits, wip?.headOid, wip?.lane]);
-  const maskTop = wipPath ? WIP_ROW_Y - WIP_NODE_RADIUS : 0;
+  const maskTop = wipPath ? WIP_ROW_Y + WIP_NODE_EDGE : 0;
   const timeMarkers = useMemo(() => buildTimeMarkers(commits, Math.floor(Date.now() / 1_000)), [commits]);
   const hasMultipleBranches = useMemo(() => {
     const branchNames = new Set<string>();
@@ -900,9 +906,6 @@ export function CommitGraph({
                   r={isMergeNode(commit) ? MERGE_NODE_RADIUS - 1 : AVATAR_RADIUS}
                 />
               )))}
-              {wipPath ? (
-                <circle cx={laneX(wip?.lane ?? 0)} cy={WIP_ROW_Y} fill="black" r={WIP_NODE_RADIUS} />
-              ) : null}
             </mask>
           </defs>
           <g mask={`url(#${nodeMaskId})`}>
