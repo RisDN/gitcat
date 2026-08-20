@@ -648,6 +648,7 @@ pub enum CommitActionKind {
     Reset,
     CreateTag,
     CopySha,
+    Reword,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -60,3 +60,59 @@ export function githubRemoteIconUrls(remotes: readonly RemoteInfo[]): Map<string
     }
     return iconUrls;
 }
+
+// Turns a fetch/push URL into the repository's https web address so the UI can
+// build links to commits and branches. Returns null for URLs that are not a
+// host/path pair (local paths, unknown schemes).
+export function remoteWebBaseUrl(url: string): string | null {
+    const trimmed = url.trim().replace(/\/+$/, "");
+    if (!trimmed) return null;
+    const httpMatch = /^https?:\/\/(?:[^@/\s]*@)?([^/\s:]+)(?::\d+)?\/(.+?)(?:\.git)?$/i.exec(trimmed);
+    if (httpMatch) return `https://${httpMatch[1]}/${httpMatch[2]}`;
+    const sshMatch = /^(?:ssh:\/\/)?(?:[^@/\s]+@)?([^/\s:]+)(?::\d+)?[:/](.+?)(?:\.git)?$/i.exec(trimmed);
+    if (sshMatch && sshMatch[2].includes("/")) return `https://${sshMatch[1]}/${sshMatch[2]}`;
+    return null;
+}
+
+// Web links follow the GitHub path layout, which GitLab and Bitbucket also
+// redirect for commits; there is no per-host mapping yet.
+export function remoteCommitUrl(
+    snapshot: RepositorySnapshot | null,
+    remoteName: string,
+    oid: string,
+): string | null {
+    const base = remoteBaseFor(snapshot, remoteName);
+    return base ? `${base}/commit/${oid}` : null;
+}
+
+export function remoteBranchUrl(
+    snapshot: RepositorySnapshot | null,
+    remoteName: string,
+    branch: string,
+): string | null {
+    const base = remoteBaseFor(snapshot, remoteName);
+    return base ? `${base}/tree/${branch.split("/").map(encodeURIComponent).join("/")}` : null;
+}
+
+function remoteBaseFor(snapshot: RepositorySnapshot | null, remoteName: string): string | null {
+    const remote = snapshot?.remotes.find((candidate) => candidate.name === remoteName);
+    if (!remote) return null;
+    return remoteWebBaseUrl(remote.fetch_url) ?? remoteWebBaseUrl(remote.push_url);
+}
+
+// The remote a commit row links to: the branch's own remote when the click
+// landed on a remote ref, otherwise the upstream remote, otherwise origin.
+export function linkRemoteName(
+    snapshot: RepositorySnapshot | null,
+    preferred?: string | null,
+): string | null {
+    const remotes = snapshot?.remotes ?? [];
+    if (remotes.length === 0) return null;
+    if (preferred && remotes.some((remote) => remote.name === preferred)) return preferred;
+    const head = snapshot?.local_branches.find((candidate) => candidate.is_head);
+    if (head?.upstream) {
+        const upstreamRemote = remoteNameOf(head.upstream);
+        if (remotes.some((remote) => remote.name === upstreamRemote)) return upstreamRemote;
+    }
+    return remotes.find((remote) => remote.name === "origin")?.name ?? remotes[0].name;
+}

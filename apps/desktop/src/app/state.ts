@@ -1,7 +1,7 @@
 import type { gitcatApi } from "../lib/api";
 import type { BranchScope } from "../components/ref-sidebar";
 import type { TabView } from "../components/top-tabs";
-import type { BranchInfo, CommitSummary, RepositoryInfo } from "../lib/types";
+import type { BranchInfo, CommitSummary, RefLabel, RepositoryInfo } from "../lib/types";
 
 export interface RuntimeRepository {
     repository_id: string;
@@ -14,7 +14,8 @@ export type PromptState =
     | { kind: "alias_tab"; tabId: string; current: string }
     | { kind: "create_branch"; startOid: string }
     | { kind: "rename_branch"; branch: BranchInfo }
-    | { kind: "create_tag"; oid: string }
+    | { kind: "create_tag"; oid: string; annotated: boolean }
+    | { kind: "set_upstream"; branch: BranchInfo }
     | null;
 
 export type ConfirmState =
@@ -26,6 +27,8 @@ export interface CommitMenuState {
     x: number;
     y: number;
     commit: CommitSummary;
+    // The ref label the click landed on, when it landed on one.
+    decoration?: RefLabel | null;
 }
 
 export interface TabMenuState {

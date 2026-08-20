@@ -1,5 +1,5 @@
 import { CalendarClock, Check } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { identityInitials, parseCoAuthors } from "../../lib";
 import type { ChangedFile, CommitDetails as CommitDetailsType } from "../../lib/types";
@@ -20,6 +20,8 @@ interface CommitDetailsProps {
     onCopySha: () => void;
     onJumpToCommit?: (oid: string) => void;
     onReword?: (message: string) => Promise<boolean>;
+    // Opens the message editor once per token, when the token names this commit.
+    editRequest?: { oid: string; token: number } | null;
 }
 
 function composeMessage(subject: string, body: string): string {
@@ -38,18 +40,28 @@ const STATUS_LABEL: Record<string, string> = {
     unmerged: "U",
 };
 
-export function CommitDetails({ details, selectedPath, busy = false, fileViewMode, onFileViewModeChange, onSelectFile, onCopySha, onJumpToCommit, onReword }: CommitDetailsProps) {
+export function CommitDetails({ details, selectedPath, busy = false, fileViewMode, onFileViewModeChange, onSelectFile, onCopySha, onJumpToCommit, onReword, editRequest }: CommitDetailsProps) {
     const [editing, setEditing] = useState(false);
     const [subject, setSubject] = useState(details.subject);
     const [body, setBody] = useState(details.body);
+    const appliedEditToken = useRef(0);
 
     // Reset the editor whenever a different commit loads or the message changes
-    // underneath (e.g. after a successful reword reloads details).
+    // underneath (e.g. after a successful reword reloads details). An unseen
+    // edit request for this commit opens it instead; the token keeps a later
+    // refresh from reopening an editor the user has closed.
     useEffect(() => {
-        setEditing(false);
+        const requested = Boolean(
+            onReword
+            && editRequest
+            && editRequest.oid === details.oid
+            && editRequest.token !== appliedEditToken.current,
+        );
+        if (requested && editRequest) appliedEditToken.current = editRequest.token;
+        setEditing(requested);
         setSubject(details.subject);
         setBody(details.body);
-    }, [details.oid, details.subject, details.body]);
+    }, [details.oid, details.subject, details.body, editRequest, onReword]);
 
     const dirty = subject.trim() !== details.subject.trim() || body.trim() !== details.body.trim();
     const canSave = Boolean(onReword) && subject.trim().length > 0 && dirty && !busy;

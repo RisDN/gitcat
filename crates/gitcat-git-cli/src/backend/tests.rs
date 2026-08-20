@@ -1817,6 +1817,7 @@ async fn commit_action_availability_matches_current_head_context() {
             .is_some_and(|reason| reason.contains("already in the current HEAD history"))
     );
     assert!(action(&main_actions, CommitActionKind::Revert).enabled);
+    assert!(action(&main_actions, CommitActionKind::Reword).enabled);
 
     let side_actions = backend
         .commit_action_availability(directory.path(), &side_oid)
@@ -1829,6 +1830,13 @@ async fn commit_action_availability_matches_current_head_context() {
             .disabled_reason
             .as_deref()
             .is_some_and(|reason| reason.contains("not in the current HEAD history"))
+    );
+    assert!(!action(&side_actions, CommitActionKind::Reword).enabled);
+    assert!(
+        action(&side_actions, CommitActionKind::Reword)
+            .disabled_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("reachable from the current branch"))
     );
 
     fs::write(directory.path().join("dirty.txt"), "dirty\n").expect("write dirty file");
@@ -1843,6 +1851,8 @@ async fn commit_action_availability_matches_current_head_context() {
     assert!(action(&dirty_actions, CommitActionKind::CreateTag).enabled);
     assert!(action(&dirty_actions, CommitActionKind::Reset).enabled);
     assert!(action(&dirty_actions, CommitActionKind::CopySha).enabled);
+    // Still the off-branch commit, so rewording stays unavailable.
+    assert!(!action(&dirty_actions, CommitActionKind::Reword).enabled);
 }
 
 #[test]

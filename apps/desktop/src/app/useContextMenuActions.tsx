@@ -1,20 +1,29 @@
-import { Copy, Download, FolderInput, FolderPlus, FolderX, GitBranchPlus, GitCommitHorizontal, GitPullRequestArrow, PackageCheck, PackageOpen, Pencil, RotateCcw, Tag, Trash2, Upload, X, } from "lucide-react";
+import { Copy, Download, FolderInput, FolderPlus, FolderX, GitBranchPlus, GitCommitHorizontal, GitMerge, GitPullRequestArrow, Link, PackageCheck, PackageOpen, Pencil, RotateCcw, Tag, Trash2, Upload, X, } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction, } from "react";
 
+import { primaryBranchDecoration } from "../components/CommitGraph";
 import type { ContextAction } from "../components/ContextMenu";
-import { branchNameWithoutRemote } from "../components/ref-sidebar";
+import { branchNameWithoutRemote, remoteNameOf, type BranchScope } from "../components/ref-sidebar";
 import type { ToastMessage } from "../components/ToastRegion";
 import { PULL_LABELS } from "../components/toolbar";
 import { gitcatApi } from "../lib/api";
 import type {
     BranchInfo,
     CommitActionAvailability,
+    CommitSummary,
     PersistedState,
     PullMode,
+    RefLabel,
     RepositorySnapshot,
     ResetMode,
 } from "../lib/types";
-import { branchAcceptsPull, branchPushTarget } from "./branches";
+import {
+    branchAcceptsPull,
+    branchPushTarget,
+    linkRemoteName,
+    remoteBranchUrl,
+    remoteCommitUrl,
+} from "./branches";
 import { expectedState } from "./snapshot";
 import type {
     BranchMenuState,
@@ -26,6 +35,60 @@ import type {
     TabMenuState,
 } from "./state";
 import { workspaceTabs } from "./workspace";
+
+// The ref a commit-row context menu acts on, resolved against the snapshot.
+// A click anywhere in the row uses the row's primary ref, so the label and the
+// rest of the row open the same menu. Both the menu builder and the action
+// dispatcher read this, so it lives outside the hook.
+interface CommitRefContext {
+    branchRef: RefLabel | null;
+    displayName: string | null;
+    headName: string | null;
+    isHeadRef: boolean;
+    isRemoteRef: boolean;
+    localName: string | null;
+    refInfo: BranchInfo | undefined;
+    remoteName: string | null;
+    scope: BranchScope;
+    tracksHead: boolean;
+}
+
+function commitRefContext(
+    commit: CommitSummary,
+    decoration: RefLabel | null | undefined,
+    snapshot: RepositorySnapshot | null,
+): CommitRefContext {
+    const headName = snapshot?.head.kind === "branch" ? snapshot.head.name : null;
+    const clicked = decoration ?? primaryBranchDecoration(commit);
+    const branchRef = clicked
+        && (clicked.kind === "local_branch" || clicked.kind === "remote_branch")
+        ? clicked
+        : null;
+    const isRemoteRef = branchRef?.kind === "remote_branch";
+    const localName = branchRef
+        ? (isRemoteRef ? branchNameWithoutRemote(branchRef.name) : branchRef.name)
+        : null;
+    const refInfo = branchRef
+        ? (isRemoteRef
+            ? snapshot?.remote_branches.find((candidate) => candidate.name === branchRef.name)
+            : snapshot?.local_branches.find((candidate) => candidate.name === branchRef.name))
+        : undefined;
+    return {
+        branchRef,
+        displayName: branchRef?.name ?? null,
+        headName,
+        isHeadRef: Boolean(branchRef && !isRemoteRef && localName === headName),
+        isRemoteRef,
+        localName,
+        refInfo,
+        remoteName: linkRemoteName(
+            snapshot,
+            isRemoteRef && branchRef ? remoteNameOf(branchRef.name) : null,
+        ),
+        scope: isRemoteRef ? "remote" : "local",
+        tracksHead: Boolean(isRemoteRef && headName && localName === headName),
+    };
+}
 
 export interface ContextMenuActionsParams {
     activateRepositoryTab: (nextId: string | undefined) => void;
@@ -50,6 +113,7 @@ export interface ContextMenuActionsParams {
     setTabMenu: Dispatch<SetStateAction<TabMenuState | null>>;
     showError: (title: string, error: unknown) => void;
     snapshot: RepositorySnapshot | null;
+    startCommitReword: (oid: string) => void;
     tabMenu: TabMenuState | null;
     workspace: PersistedState["workspace"];
 }
@@ -87,6 +151,7 @@ export function useContextMenuActions({
     setTabMenu,
     showError,
     snapshot,
+    startCommitReword,
     tabMenu,
     workspace,
 }: ContextMenuActionsParams): ContextMenuActions {
@@ -147,36 +212,182 @@ export function useContextMenuActions({
         const enabled = (kind: CommitActionAvailability["kind"]) => (
             commitMenuActionMap.get(kind)?.enabled ?? false
         );
-        const resetTarget = snapshot?.head.kind === "branch" ? snapshot.head.name : "branch";
-        return [
-            { id: "checkout", label: "Checkout commit (detached)", icon: <GitCommitHorizontal size={15} />, disabled: !enabled("checkout") },
-            { id: "branch", label: "Create branch here…", icon: <GitBranchPlus size={15} />, disabled: !enabled("create_branch") },
-            { id: "tag", label: "Create tag here…", icon: <Tag size={15} />, disabled: !enabled("create_tag") },
-            { id: "cherry_pick", label: "Cherry-pick commit", icon: <GitPullRequestArrow size={15} />, disabled: !enabled("cherry_pick"), separatorBefore: true },
+        const reference = commitRefContext(commitMenu.commit, commitMenu.decoration, snapshot);
+        const { branchRef, displayName, headName, isHeadRef, isRemoteRef, localName, refInfo, remoteName } = reference;
+        const resetTarget = headName ?? "branch";
+
+        // Blocks shared by every variant, in the order GitKraken lists them.
+        const resetItem: ContextAction = {
+            id: "reset",
+            label: `Reset ${resetTarget} to this commit`,
+            icon: <RotateCcw size={15} />,
+            disabled: !enabled("reset"),
+            submenu: [
+                { id: "reset:soft", label: "Soft - keep all changes" },
+                { id: "reset:mixed", label: "Mixed - keep working copy but reset index" },
+                { id: "reset:hard", label: "Hard - discard all changes" },
+            ],
+        };
+        const historyItems = (withCherryPick: boolean): ContextAction[] => [
+            { id: "branch", label: "Create branch here…", icon: <GitBranchPlus size={15} />, disabled: !enabled("create_branch"), separatorBefore: true },
+            ...(withCherryPick
+                ? [{ id: "cherry_pick", label: "Cherry pick commit", icon: <GitPullRequestArrow size={15} />, disabled: !enabled("cherry_pick") }]
+                : []),
+            resetItem,
+            { id: "reword", label: "Edit commit message…", icon: <Pencil size={15} />, disabled: !enabled("reword") },
             { id: "revert", label: "Revert commit", icon: <RotateCcw size={15} />, disabled: !enabled("revert") },
-            {
-                id: "reset",
-                label: `Reset ${resetTarget} to this commit`,
-                icon: <Trash2 size={15} />,
-                disabled: !enabled("reset"),
-                separatorBefore: true,
-                submenu: [
-                    { id: "reset:soft", label: "Soft - keep all changes" },
-                    { id: "reset:mixed", label: "Mixed - keep working copy but reset index" },
-                    { id: "reset:hard", label: "Hard - discard all changes" },
-                ],
-            },
-            { id: "copy", label: "Copy full commit SHA", icon: <Copy size={15} />, separatorBefore: true },
         ];
-    }, [commitMenu, commitMenuActionMap, snapshot?.head]);
+        const copyItems = (): ContextAction[] => [
+            ...(branchRef
+                ? [{ id: "copy_branch", label: "Copy branch name", icon: <Copy size={15} />, separatorBefore: true }]
+                : []),
+            { id: "copy", label: "Copy commit sha", icon: <Copy size={15} />, separatorBefore: !branchRef },
+            ...(branchRef && remoteName && remoteBranchUrl(snapshot, remoteName, localName ?? "")
+                ? [{ id: "copy_link_branch", label: `Copy link to branch: ${displayName}`, icon: <Link size={15} /> }]
+                : []),
+            ...(remoteName && remoteCommitUrl(snapshot, remoteName, commitMenu.commit.oid)
+                ? [{ id: "copy_link_commit", label: `Copy link to this commit on remote: ${remoteName}`, icon: <Link size={15} /> }]
+                : []),
+        ];
+        const tagItems = (): ContextAction[] => [
+            { id: "tag", label: "Create tag here…", icon: <Tag size={15} />, disabled: !enabled("create_tag"), separatorBefore: true },
+            { id: "tag_annotated", label: "Create annotated tag here…", icon: <Tag size={15} />, disabled: !enabled("create_tag") },
+        ];
+
+        // The checked-out branch: no checkout of itself, no merge into itself,
+        // but it owns the remote-tracking actions.
+        if (isHeadRef && refInfo) {
+            return [
+                { id: "pull", label: PULL_LABELS[defaultPullMode], icon: <Download size={15} />, disabled: !branchAcceptsPull(snapshot, refInfo, "local") },
+                { id: "push", label: "Push", icon: <Upload size={15} />, disabled: !branchPushTarget(snapshot, refInfo, "local") },
+                { id: "set_upstream", label: "Set upstream…", icon: <Link size={15} /> },
+                { id: "checkout", label: "Checkout this commit", icon: <GitCommitHorizontal size={15} />, disabled: !enabled("checkout"), separatorBefore: true },
+                ...historyItems(false),
+                { id: "rename_ref", label: `Rename ${displayName}…`, icon: <Pencil size={15} />, separatorBefore: true },
+                ...copyItems(),
+                ...tagItems(),
+            ];
+        }
+
+        // Any other branch ref: a remote-tracking ref of the checked-out branch
+        // keeps pull/push, everything else only integrates into HEAD.
+        if (branchRef) {
+            const canDelete = !isRemoteRef && Boolean(refInfo) && !refInfo?.is_head;
+            return [
+                ...(reference.tracksHead && refInfo
+                    ? [
+                        { id: "pull", label: PULL_LABELS[defaultPullMode], icon: <Download size={15} />, disabled: !branchAcceptsPull(snapshot, refInfo, reference.scope) },
+                        { id: "push", label: "Push", icon: <Upload size={15} />, disabled: !branchPushTarget(snapshot, refInfo, reference.scope) },
+                    ]
+                    : []),
+                {
+                    id: "merge_ref",
+                    label: `Merge ${displayName} into ${headName ?? "HEAD"}`,
+                    icon: <GitMerge size={15} />,
+                    disabled: !headName,
+                },
+                {
+                    id: "checkout_menu",
+                    label: "Checkout",
+                    icon: <GitCommitHorizontal size={15} />,
+                    separatorBefore: true,
+                    submenu: [
+                        { id: "checkout_ref", label: displayName ?? "branch" },
+                        { id: "checkout", label: "this commit", disabled: !enabled("checkout") },
+                    ],
+                },
+                ...historyItems(true),
+                ...(isRemoteRef
+                    ? []
+                    : [
+                        { id: "rename_ref", label: `Rename ${displayName}…`, icon: <Pencil size={15} />, disabled: !refInfo, separatorBefore: true },
+                        { id: "delete_ref", label: `Delete ${displayName}…`, icon: <Trash2 size={15} />, danger: true, disabled: !canDelete },
+                    ]),
+                ...copyItems(),
+                ...tagItems(),
+            ];
+        }
+
+        // A plain commit row.
+        return [
+            { id: "checkout", label: "Checkout this commit", icon: <GitCommitHorizontal size={15} />, disabled: !enabled("checkout") },
+            ...historyItems(true),
+            ...copyItems(),
+            ...tagItems(),
+        ];
+    }, [commitMenu, commitMenuActionMap, defaultPullMode, snapshot]);
 
     const executeCommitAction = useCallback((action: string) => {
         if (!commitMenu) return;
         const commit = commitMenu.commit;
+        const reference = commitRefContext(commit, commitMenu.decoration, snapshot);
         setCommitMenu(null);
+        const copyText = (text: string, title: string) => {
+            void navigator.clipboard.writeText(text)
+                .then(() => addToast({ tone: "success", title }))
+                .catch((error) => showError(`Could not copy ${title.toLowerCase()}`, error));
+        };
         switch (action) {
             case "copy":
                 void copySha(commit.oid);
+                break;
+            case "copy_branch":
+                if (reference.displayName) copyText(reference.displayName, "Branch name copied");
+                break;
+            case "copy_link_branch": {
+                const url = reference.remoteName && reference.localName
+                    ? remoteBranchUrl(snapshot, reference.remoteName, reference.localName)
+                    : null;
+                if (url) copyText(url, "Branch link copied");
+                break;
+            }
+            case "copy_link_commit": {
+                const url = reference.remoteName
+                    ? remoteCommitUrl(snapshot, reference.remoteName, commit.oid)
+                    : null;
+                if (url) copyText(url, "Commit link copied");
+                break;
+            }
+            case "checkout_ref":
+                if (reference.localName) {
+                    const name = reference.localName;
+                    void runMutation(`Checked out ${name}`, (repository) => gitcatApi.checkoutBranch(repository.repository_id, name));
+                }
+                break;
+            case "merge_ref":
+                if (reference.displayName) {
+                    const name = reference.displayName;
+                    void runMutation(`Merged ${name}`, (repository) => gitcatApi.mergeBranch(repository.repository_id, name));
+                }
+                break;
+            case "pull":
+                pullActiveRepository();
+                break;
+            case "push": {
+                const target = reference.refInfo
+                    ? branchPushTarget(snapshot, reference.refInfo, reference.scope)
+                    : null;
+                if (!target) break;
+                void runMutation("Push complete", (repository) => gitcatApi.push(repository.repository_id, {
+                    remote: target.remote,
+                    branch: target.branch,
+                    set_upstream: target.setUpstream,
+                }));
+                break;
+            }
+            case "set_upstream":
+                if (reference.refInfo) setPrompt({ kind: "set_upstream", branch: reference.refInfo });
+                break;
+            case "rename_ref":
+                if (reference.refInfo && !reference.isRemoteRef) setPrompt({ kind: "rename_branch", branch: reference.refInfo });
+                break;
+            case "delete_ref":
+                if (reference.refInfo && !reference.isRemoteRef) {
+                    setConfirmRequest({ kind: "delete_branch", name: reference.refInfo.name, force: false });
+                }
+                break;
+            case "reword":
+                startCommitReword(commit.oid);
                 break;
             case "stash_apply":
                 if (commit.stash) {
@@ -206,7 +417,10 @@ export function useContextMenuActions({
                 setPrompt({ kind: "create_branch", startOid: commit.oid });
                 break;
             case "tag":
-                setPrompt({ kind: "create_tag", oid: commit.oid });
+                setPrompt({ kind: "create_tag", oid: commit.oid, annotated: false });
+                break;
+            case "tag_annotated":
+                setPrompt({ kind: "create_tag", oid: commit.oid, annotated: true });
                 break;
             case "checkout":
                 if (window.confirm(`Check out ${commit.short_oid} in detached HEAD state?`)) {
@@ -245,7 +459,18 @@ export function useContextMenuActions({
                 break;
             }
         }
-    }, [commitMenu, copySha, runMutation, setConfirmRequest, snapshot]);
+    }, [
+        addToast,
+        commitMenu,
+        copySha,
+        pullActiveRepository,
+        runMutation,
+        setConfirmRequest,
+        setPrompt,
+        showError,
+        snapshot,
+        startCommitReword,
+    ]);
 
     const tabContextActions = useMemo<ContextAction[]>(() => {
         if (!tabMenu) return [];

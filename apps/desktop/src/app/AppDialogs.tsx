@@ -27,7 +27,16 @@ export interface AppDialogsProps {
     executeCommitAction: (action: string) => void;
     executeTabAction: (action: string) => void;
     prompt: PromptState;
-    promptConfig: { title: string; label: string; placeholder?: string; initialValue?: string; confirmLabel: string } | null | undefined;
+    promptConfig: {
+        title: string;
+        label: string;
+        placeholder?: string;
+        initialValue?: string;
+        secondaryLabel?: string;
+        secondaryPlaceholder?: string;
+        secondaryRequired?: boolean;
+        confirmLabel: string;
+    } | null | undefined;
     runMutation: RunMutation;
     setBranchMenu: Dispatch<SetStateAction<BranchMenuState | null>>;
     setCommitMenu: Dispatch<SetStateAction<CommitMenuState | null>>;
@@ -41,7 +50,7 @@ export interface AppDialogsProps {
     settingsOpen: boolean;
     snapshot: RepositorySnapshot | null;
     startDialog: "clone" | "create" | null;
-    submitPrompt: (value: string) => void;
+    submitPrompt: (value: string, secondaryValue?: string) => void;
     tabContextActions: ContextAction[];
     tabMenu: TabMenuState | null;
     toasts: ToastMessage[];

@@ -94,6 +94,9 @@ function App() {
     const [startDialog, setStartDialog] = useState<"clone" | "create" | null>(null);
     const [confirmRequest, setConfirmRequest] = useState<ConfirmState>(null);
     const [commitMenu, setCommitMenu] = useState<CommitMenuState | null>(null);
+    // Opening the message editor from the graph has to wait for the commit's
+    // details to load, so the request travels as an (oid, token) pair.
+    const [rewordRequest, setRewordRequest] = useState<{ oid: string; token: number } | null>(null);
     const [tabMenu, setTabMenu] = useState<TabMenuState | null>(null);
     const [branchMenu, setBranchMenu] = useState<BranchMenuState | null>(null);
     const {
@@ -363,6 +366,11 @@ function App() {
         wipSelected,
     });
 
+    const startCommitReword = useCallback((oid: string) => {
+        jumpToCommit(oid);
+        setRewordRequest((current) => ({ oid, token: (current?.token ?? 0) + 1 }));
+    }, [jumpToCommit]);
+
     const { openConflictEditor, resolveConflictEntry, resolveConflictPaths } = useConflictActions({
         activeRepository,
         activeRepositoryIdRef,
@@ -536,6 +544,7 @@ function App() {
         setTabMenu,
         showError,
         snapshot,
+        startCommitReword,
         tabMenu,
         workspace: persisted.workspace,
     });
@@ -856,6 +865,7 @@ function App() {
                                 resolveConflictEntry={resolveConflictEntry}
                                 resolveConflictPaths={resolveConflictPaths}
                                 rewordCommit={rewordCommit}
+                                rewordRequest={rewordRequest}
                                 runMutation={runMutation}
                                 selectedOid={selectedOid}
                                 selectedPath={selectedPath}

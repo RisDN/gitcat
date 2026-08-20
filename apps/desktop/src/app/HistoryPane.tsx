@@ -232,7 +232,7 @@ export function HistoryPane({
                             detachedHeadOid={snapshot?.head.kind === "detached" ? snapshot.head.oid : null}
                             hideHeadDecoration={false}
                             onNavigateBeforeFirst={worktreeReachable ? selectWipFromGraph : undefined}
-                            onCommitContextMenu={(request: CommitContextMenuRequest) => setCommitMenu({ x: request.clientX, y: request.clientY, commit: request.commit })}
+                            onCommitContextMenu={(request: CommitContextMenuRequest) => setCommitMenu({ x: request.clientX, y: request.clientY, commit: request.commit, decoration: request.decoration ?? null })}
                             onCopySha={(oid) => void copySha(oid)}
                             onRefDoubleClick={(decoration) => {
                                 if (decoration.kind === "local_branch" && !decoration.is_head) {

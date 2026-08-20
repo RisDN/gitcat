@@ -5,6 +5,11 @@ import type { ComponentPropsWithRef, KeyboardEvent as ReactKeyboardEvent, ReactN
 import { cx } from "../lib";
 import { MenuIcon, MenuItem, MenuItemHost, MenuLabel, MenuSurface } from "./menu";
 
+// Both surfaces size to their longest label, so these are the floor used when
+// placing a submenu before it has been measured.
+const MENU_MIN_WIDTH = "min-w-61";
+const NESTED_MENU_MIN_WIDTH = "min-w-67";
+const MENU_MAX_WIDTH = "max-w-[min(26rem,calc(100vw-1rem))]";
 const NESTED_MENU_WIDTH = 268;
 
 // Slightly lighter border and rounder corners than the in-app menus.
@@ -48,6 +53,7 @@ export function ContextMenu({
   onClose: () => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const submenuRef = useRef<HTMLDivElement>(null);
   const buttonRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [position, setPosition] = useState({ left: Math.max(8, x), top: Math.max(8, y) });
   const [openSubmenu, setOpenSubmenu] = useState<{ id: string; left: number; top: number } | null>(null);
@@ -59,6 +65,21 @@ export function ContextMenu({
     if (left + width > window.innerWidth - 8) left = bounds.left - width + 4;
     setOpenSubmenu({ id, left: Math.max(8, left), top: Math.max(8, bounds.top - 6) });
   };
+
+  // `openSubmenuFor` places the panel from the minimum width; a wider label can
+  // still push it off-screen, so pull it back once it has been laid out.
+  useLayoutEffect(() => {
+    const panel = submenuRef.current;
+    if (!openSubmenu || !panel) return;
+    const bounds = panel.getBoundingClientRect();
+    const overflow = bounds.right - (window.innerWidth - 8);
+    if (overflow <= 0) return;
+    setOpenSubmenu((current) => (
+      current && current.id === openSubmenu.id
+        ? { ...current, left: Math.max(8, current.left - overflow) }
+        : current
+    ));
+  }, [openSubmenu]);
 
   useLayoutEffect(() => {
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -97,7 +118,7 @@ export function ContextMenu({
   return (
     <div className="fixed inset-0 z-200" onMouseDown={onClose} role="presentation">
       <ContextSurface
-        className="absolute w-61"
+        className={cx("absolute w-max", MENU_MIN_WIDTH, MENU_MAX_WIDTH)}
         ref={menuRef}
         onContextMenu={(event) => event.preventDefault()}
         onKeyDown={(event) => {
@@ -147,7 +168,8 @@ export function ContextMenu({
                 </MenuItem>
                 {open ? (
                   <ContextSurface
-                    className="fixed z-201 w-67"
+                    className={cx("fixed z-201 w-max", NESTED_MENU_MIN_WIDTH, MENU_MAX_WIDTH)}
+                    ref={submenuRef}
                     role="menu"
                     style={{ left: openSubmenu.left, top: openSubmenu.top }}
                   >

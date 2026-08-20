@@ -44,6 +44,9 @@ export interface CommitContextMenuRequest {
   commit: CommitSummary;
   clientX: number;
   clientY: number;
+  // Set when the click landed on a ref label; the menu offers ref-specific
+  // actions for it instead of the plain commit actions.
+  decoration?: RefLabel;
 }
 
 export interface WipConnector {
@@ -174,6 +177,13 @@ function sortedDecorations(decorations: readonly GraphRefLabel[]): GraphRefLabel
       || left.name.localeCompare(right.name)
       || left.full_name.localeCompare(right.full_name)
   ));
+}
+
+// The ref a row acts on when a click did not land on a specific label: the one
+// the ref stack draws first, so the row menu and the label menu agree.
+export function primaryBranchDecoration(commit: CommitSummary): RefLabel | null {
+  const branches = commit.decorations.filter(isBranchDecoration);
+  return sortedDecorations(branches)[0] ?? null;
 }
 
 function visibleDecorations(
@@ -391,6 +401,7 @@ function RefLabelPill({
   linkedRemote,
   remoteIconUrl,
   linkedRemoteIconUrl,
+  onContextMenu,
   onDoubleClick,
 }: {
   decoration: GraphRefLabel;
@@ -398,6 +409,7 @@ function RefLabelPill({
   linkedRemote?: GraphRefLabel;
   remoteIconUrl?: string;
   linkedRemoteIconUrl?: string;
+  onContextMenu?: (decoration: RefLabel, event: ReactMouseEvent<HTMLElement>) => void;
   onDoubleClick?: (decoration: RefLabel) => void;
 }) {
   const [remoteImageFailed, setRemoteImageFailed] = useState(false);
@@ -421,6 +433,11 @@ function RefLabelPill({
   return (
     <span
       className={classes}
+      onContextMenu={onContextMenu && !decoration.synthetic ? (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onContextMenu(decoration, event);
+      } : undefined}
       onDoubleClick={canCheckout && onDoubleClick ? (event) => {
         event.stopPropagation();
         onDoubleClick(decoration);
@@ -461,11 +478,13 @@ function CommitRefStack({
   decorations,
   hasMultipleBranches,
   remoteIconUrls,
+  onRefContextMenu,
   onRefDoubleClick,
 }: {
   decorations: readonly GraphRefLabel[];
   hasMultipleBranches: boolean;
   remoteIconUrls?: ReadonlyMap<string, string>;
+  onRefContextMenu?: (decoration: RefLabel, event: ReactMouseEvent<HTMLElement>) => void;
   onRefDoubleClick?: (decoration: RefLabel) => void;
 }) {
   if (decorations.length === 0) return null;
@@ -506,6 +525,7 @@ function CommitRefStack({
         inactive={primaryInactive}
         linkedRemote={linkedRemotes.get(primary.full_name)}
         linkedRemoteIconUrl={remoteIconUrl(linkedRemotes.get(primary.full_name))}
+        onContextMenu={onRefContextMenu}
         onDoubleClick={onRefDoubleClick}
         remoteIconUrl={remoteIconUrl(primary)}
       />
@@ -520,6 +540,7 @@ function CommitRefStack({
                 key={decoration.full_name}
                 linkedRemote={linkedRemotes.get(decoration.full_name)}
                 linkedRemoteIconUrl={remoteIconUrl(linkedRemotes.get(decoration.full_name))}
+                onContextMenu={onRefContextMenu}
                 onDoubleClick={onRefDoubleClick}
                 remoteIconUrl={remoteIconUrl(decoration)}
               />
@@ -596,8 +617,8 @@ const CommitRow = memo(function CommitRow({
   onRefDoubleClick,
   formatTimestamp,
 }: CommitRowProps) {
-  const openContextMenu = (clientX: number, clientY: number) => {
-    onCommitContextMenu?.({ commit, clientX, clientY });
+  const openContextMenu = (clientX: number, clientY: number, decoration?: RefLabel) => {
+    onCommitContextMenu?.({ commit, clientX, clientY, decoration });
   };
 
   const handleContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -670,6 +691,9 @@ const CommitRow = memo(function CommitRow({
           <CommitRefStack
             decorations={decorations}
             hasMultipleBranches={hasMultipleBranches}
+            onRefContextMenu={onCommitContextMenu
+              ? (decoration, event) => openContextMenu(event.clientX, event.clientY, decoration)
+              : undefined}
             onRefDoubleClick={onRefDoubleClick}
             remoteIconUrls={remoteIconUrls}
           />

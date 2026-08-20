@@ -1098,6 +1098,11 @@ class DemoGitCatApi implements GitCatApi {
       : targetInHeadHistory
         ? null
         : "Commit is not in the current HEAD history";
+    const rewordUnavailable = !headOid
+      ? "Check out a commit before editing its message"
+      : targetInHeadHistory
+        ? null
+        : "Only commits reachable from the current branch can be edited";
     return [
       action("checkout", true, false),
       action("create_branch", false, false),
@@ -1105,6 +1110,7 @@ class DemoGitCatApi implements GitCatApi {
       action("revert", true, true, revertUnavailable),
       action("reset", false, true),
       action("create_tag", false, false),
+      action("reword", false, false, rewordUnavailable),
       { kind: "copy_sha", enabled: true, disabled_reason: null, requires_confirmation: false },
     ];
   }

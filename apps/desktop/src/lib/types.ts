@@ -365,7 +365,8 @@ export type CommitActionKind =
   | "revert"
   | "reset"
   | "create_tag"
-  | "copy_sha";
+  | "copy_sha"
+  | "reword";
 
 export interface CommitActionAvailability {
   kind: CommitActionKind;

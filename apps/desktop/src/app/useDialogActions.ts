@@ -25,7 +25,7 @@ export function useDialogActions({
     setPrompt,
     snapshot,
 }: DialogActionsParams) {
-    const submitPrompt = useCallback((value: string) => {
+    const submitPrompt = useCallback((value: string, secondaryValue?: string) => {
         if (!prompt) return;
         const currentPrompt = prompt;
         setPrompt(null);
@@ -81,8 +81,13 @@ export function useDialogActions({
             case "rename_branch":
                 void runMutation("Branch renamed", (repository) => gitcatApi.renameBranch(repository.repository_id, currentPrompt.branch.name, value));
                 break;
-            case "create_tag":
-                void runMutation("Tag created", (repository) => gitcatApi.createTag(repository.repository_id, value, currentPrompt.oid, null));
+            case "create_tag": {
+                const message = currentPrompt.annotated ? (secondaryValue?.trim() || value) : null;
+                void runMutation("Tag created", (repository) => gitcatApi.createTag(repository.repository_id, value, currentPrompt.oid, message));
+                break;
+            }
+            case "set_upstream":
+                void runMutation("Upstream updated", (repository) => gitcatApi.setUpstream(repository.repository_id, currentPrompt.branch.name, value));
                 break;
         }
     }, [prompt, runMutation]);
@@ -95,7 +100,24 @@ export function useDialogActions({
             case "alias_tab": return { title: "Rename repository tab", label: "Tab name", initialValue: prompt.current, confirmLabel: "Rename" };
             case "create_branch": return { title: "Create branch", label: "Branch name", placeholder: "feature/short-name", confirmLabel: "Create and checkout" };
             case "rename_branch": return { title: "Rename branch", label: "New branch name", initialValue: prompt.branch.name, confirmLabel: "Rename" };
-            case "create_tag": return { title: "Create tag", label: "Tag name", placeholder: "v1.0.0", confirmLabel: "Create tag" };
+            case "create_tag": return prompt.annotated
+                ? {
+                    title: "Create annotated tag",
+                    label: "Tag name",
+                    placeholder: "v1.0.0",
+                    secondaryLabel: "Tag message",
+                    secondaryPlaceholder: "Release 1.0.0",
+                    secondaryRequired: true,
+                    confirmLabel: "Create tag",
+                }
+                : { title: "Create tag", label: "Tag name", placeholder: "v1.0.0", confirmLabel: "Create tag" };
+            case "set_upstream": return {
+                title: "Set upstream",
+                label: "Upstream branch",
+                placeholder: "origin/main",
+                initialValue: prompt.branch.upstream ?? "",
+                confirmLabel: "Set upstream",
+            };
         }
     }, [prompt]);
 

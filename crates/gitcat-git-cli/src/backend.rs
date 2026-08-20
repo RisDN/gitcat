@@ -2471,6 +2471,24 @@ impl GitBackend for GitCliBackend {
             Some(false) => Some("Commit is not in the current HEAD history"),
             None => Some("Check out a commit before reverting"),
         };
+        // Rewording replays the descendants of the target, so it needs the same
+        // guards `reword_commit` itself enforces: reachable from HEAD and no
+        // merge in the replayed range.
+        let reword_unavailable = match (head_oid, target_in_head_history) {
+            (Some(head_oid), Some(true)) => {
+                if head_oid == oid.as_str() {
+                    None
+                } else if self.range_has_merge(path, &oid, head_oid).await? {
+                    Some("A later commit is a merge, so this message cannot be edited")
+                } else {
+                    None
+                }
+            }
+            (_, Some(false)) => {
+                Some("Only commits reachable from the current branch can be edited")
+            }
+            _ => Some("Check out a commit before editing its message"),
+        };
         let action = |kind, requires_clean, requires_confirmation, unavailable: Option<&str>| {
             let disabled_reason = if operation_busy {
                 Some("Finish or abort the current Git operation first".to_owned())
@@ -2502,6 +2520,7 @@ impl GitBackend for GitCliBackend {
             action(CommitActionKind::Revert, true, false, revert_unavailable),
             action(CommitActionKind::Reset, false, true, None),
             action(CommitActionKind::CreateTag, false, false, None),
+            action(CommitActionKind::Reword, false, false, reword_unavailable),
             CommitActionAvailability {
                 kind: CommitActionKind::CopySha,
                 enabled: true,

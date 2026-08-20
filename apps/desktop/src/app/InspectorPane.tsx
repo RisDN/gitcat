@@ -33,6 +33,7 @@ export interface InspectorPaneProps {
     resolveConflictEntry: (entry: StatusEntry, resolution: ConflictResolution) => void;
     resolveConflictPaths: (paths: string[], resolution: ConflictResolution) => void;
     rewordCommit: (oid: string, message: string) => Promise<boolean>;
+    rewordRequest: { oid: string; token: number } | null;
     runMutation: RunMutation;
     selectedOid: string | null;
     selectedPath: string | undefined;
@@ -67,6 +68,7 @@ export function InspectorPane({
     resolveConflictEntry,
     resolveConflictPaths,
     rewordCommit,
+    rewordRequest,
     runMutation,
     selectedOid,
     selectedPath,
@@ -130,6 +132,7 @@ export function InspectorPane({
                 onCopySha={() => void copySha(details.oid)}
                 onJumpToCommit={jumpToCommit}
                 onReword={snapshot ? (message) => rewordCommit(details.oid, message) : undefined}
+                editRequest={rewordRequest}
                 onSelectFile={openCommitFile}
                 selectedPath={selectedPath}
             />
