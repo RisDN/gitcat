@@ -63,10 +63,13 @@ export const DEFAULT_GRAPH_COLUMN_WIDTHS: GraphColumnWidths = {
   sha: 64,
 };
 
+// Compact squeezes every column to its floor except the message, which is the
+// one column whose content is worth reading: the point of compacting is to give
+// the subject line more room, not to crush it along with everything else.
 export const COMPACT_GRAPH_COLUMN_WIDTHS: GraphColumnWidths = {
   refs: GRAPH_COLUMN_MIN_WIDTH.refs,
   graph: MIN_GRAPH_COLUMN_WIDTH,
-  message: GRAPH_COLUMN_MIN_WIDTH.message,
+  message: DEFAULT_GRAPH_COLUMN_WIDTHS.message,
   author: GRAPH_COLUMN_MIN_WIDTH.author,
   date: GRAPH_COLUMN_MIN_WIDTH.date,
   sha: GRAPH_COLUMN_MIN_WIDTH.sha,

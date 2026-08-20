@@ -14,6 +14,7 @@ import {
   COMPACT_GRAPH_COLUMN_WIDTHS,
   DEFAULT_GRAPH_COLUMN_WIDTHS,
   effectiveGraphColumnWidth,
+  GRAPH_COLUMN_MIN_WIDTH,
   graphColumnOffset,
   graphColumnsMinWidth,
   graphColumnsTemplate,
@@ -126,14 +127,20 @@ test("rows offset their lanes by the dragged ref width", () => {
   assert.equal(graphColumnOffset(columns({ refs: false }), DEFAULT_GRAPH_COLUMN_WIDTHS, LANE_EXTENT), 0);
 });
 
-test("compact widths sit at every column floor", () => {
-  for (const key of ["refs", "message", "author", "date", "sha"] as const) {
+test("compact widths sit at every column floor but the message", () => {
+  for (const key of ["refs", "author", "date", "sha"] as const) {
     assert.equal(
       graphColumnWidth(key, COMPACT_GRAPH_COLUMN_WIDTHS, LANE_EXTENT),
-      COMPACT_GRAPH_COLUMN_WIDTHS[key],
+      GRAPH_COLUMN_MIN_WIDTH[key],
     );
   }
   assert.equal(effectiveGraphColumnWidth(COMPACT_GRAPH_COLUMN_WIDTHS, LANE_EXTENT), MIN_GRAPH_COLUMN_WIDTH);
+  // Compacting the chrome is what buys the subject line its room, so the
+  // message column keeps the full width it has in the default layout.
+  assert.equal(
+    graphColumnWidth("message", COMPACT_GRAPH_COLUMN_WIDTHS, LANE_EXTENT),
+    DEFAULT_GRAPH_COLUMN_WIDTHS.message,
+  );
 });
 
 function commitOnLane(oid: string, lane: number): CommitSummary {
