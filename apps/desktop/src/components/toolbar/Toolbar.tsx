@@ -139,7 +139,7 @@ export function Toolbar({
   }, [conflictOpen]);
 
   return (
-    <header className="z-15 grid min-h-15.25 flex-[0_0_61px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2.75 border-b border-border bg-[color-mix(in_srgb,var(--gc-panel)_91%,black)] px-3 py-2">
+    <header className="gc-no-select z-15 grid min-h-15.25 flex-[0_0_61px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2.75 border-b border-border bg-[color-mix(in_srgb,var(--gc-panel)_91%,black)] px-3 py-2">
       <div className="flex min-w-0 items-center gap-2">
         <IconButton
           aria-label={`${leftPanelVisible ? "Hide" : "Show"} branches panel`}

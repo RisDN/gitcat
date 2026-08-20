@@ -178,6 +178,23 @@
   }
 }
 
+/*
+ * Chrome panes (graph rows, worktree status lists, toolbar) behave like native
+ * widgets: dragging over them selects nothing. Text inputs inside them keep
+ * normal selection so the inline WIP summary and menu fields stay editable.
+ */
+.gc-no-select {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.gc-no-select input,
+.gc-no-select textarea,
+.gc-no-select [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 /* Shared shimmer for loading placeholders. */
 @utility skeleton {
   @apply block overflow-hidden animate-shimmer;

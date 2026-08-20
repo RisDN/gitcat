@@ -59,7 +59,7 @@ export function StatusSection({
   viewMode: FileViewMode;
 }) {
   return (
-    <section className={cx("border-b border-border", open && "flex min-h-24 flex-1 flex-col")}>
+    <section className={cx("gc-no-select border-b border-border", open && "flex min-h-24 flex-1 flex-col")}>
       <header className="flex h-9 flex-[0_0_auto] items-center justify-between pl-1.25 pr-2">
         <button
           aria-expanded={open}

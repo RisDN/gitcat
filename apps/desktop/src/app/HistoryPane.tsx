@@ -151,7 +151,7 @@ export function HistoryPane({
                 />
             ) : (
                 <div
-                    className="flex min-h-0 min-w-0 flex-1 flex-col"
+                    className="gc-no-select flex min-h-0 min-w-0 flex-1 flex-col"
                     style={{
                         "--gc-graph-column-width": `${graphColumnWidth}px`,
                         "--gc-graph-columns-template": graphColumnsTemplate(columns),
