@@ -13,6 +13,7 @@ import type { BranchTreeNode } from "./branchTree";
 import { branchIndent, buildBranchTree } from "./branchTree";
 import { RefButton, RefCounter, RefName, RefRow, RefStatic, RemoteIcon, TagNode } from "./RefRow";
 import { RefSection, SidebarEmpty } from "./RefSection";
+import type { RefSectionKey, RefSectionState } from "./sections";
 
 const REF_INDENT = "pl-[calc(6px+var(--gc-ref-depth)*13px)]";
 
@@ -31,6 +32,8 @@ interface RefSidebarProps {
   remoteIconUrls?: ReadonlyMap<string, string>;
   tags: RefLabel[];
   collapseKeybind: string;
+  sections: RefSectionState;
+  onToggleSection: (section: RefSectionKey) => void;
   onCollapse: () => void;
   onCheckout: (branch: BranchInfo) => void;
   onCreateBranch: () => void;
@@ -54,6 +57,8 @@ export function RefSidebar({
   remoteIconUrls,
   tags,
   collapseKeybind,
+  sections,
+  onToggleSection,
   onCollapse,
   onCheckout,
   onCreateBranch,
@@ -61,7 +66,6 @@ export function RefSidebar({
   onBranchContextMenu,
 }: RefSidebarProps) {
   const [filter, setFilter] = useState("");
-  const [sections, setSections] = useState({ local: true, remote: true, tags: false });
   const needle = filter.trim().toLocaleLowerCase();
   const filteredLocal = useMemo(
     () => localBranches.filter((branch) => branch.name.toLocaleLowerCase().includes(needle)),
@@ -82,9 +86,6 @@ export function RefSidebar({
     }
     return [...groups.entries()];
   }, [filteredRemote]);
-
-  const toggle = (section: keyof typeof sections) =>
-    setSections((current) => ({ ...current, [section]: !current[section] }));
 
   const openBranchMenu = (branch: BranchInfo, scope: BranchScope, event: ReactMouseEvent) => {
     event.preventDefault();
@@ -162,22 +163,32 @@ export function RefSidebar({
 
   return (
     <SidePanel className="overflow-x-hidden" aria-label="References">
-      <div className="mx-2.25 my-2.5 mb-2.25 flex h-9.75 flex-[0_0_39px] items-center gap-2 rounded-[5px] border border-border bg-background px-2.25 text-muted focus-within:border-accent focus-within:text-accent">
-        <Search size={14} />
-        <Input
-          aria-label="Filter branches"
-          className="min-w-0 flex-1 border-0 bg-transparent outline-0 placeholder:text-muted"
-          onChange={(event) => setFilter(event.target.value)}
-          placeholder="Filter branches"
-          value={filter}
-        />
+      <div className="mx-2.25 my-2.5 mb-2.25 flex h-9.75 flex-[0_0_39px] items-center gap-1.5">
+        <IconButton
+          aria-label="Hide branches panel"
+          className="size-8!"
+          onClick={onCollapse}
+          title={`Hide branches panel (${collapseKeybind})`}
+        >
+          <PanelLeftClose size={16} />
+        </IconButton>
+        <div className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-[5px] border border-border bg-background px-2.25 text-muted focus-within:border-accent focus-within:text-accent">
+          <Search size={14} />
+          <Input
+            aria-label="Filter branches"
+            className="min-w-0 flex-1 border-0 bg-transparent outline-0 placeholder:text-muted"
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder="Filter branches"
+            value={filter}
+          />
+        </div>
       </div>
 
       <RefSection
         count={filteredLocal.length}
         icon={<Monitor size={14} />}
         label="LOCAL"
-        onToggle={() => toggle("local")}
+        onToggle={() => onToggleSection("local")}
         open={sections.local}
         trailing={
           <IconButton aria-label="Create branch" onClick={onCreateBranch} title="Create branch">
@@ -193,7 +204,7 @@ export function RefSidebar({
         count={filteredRemote.length}
         icon={<Cloud size={14} />}
         label="REMOTE"
-        onToggle={() => toggle("remote")}
+        onToggle={() => onToggleSection("remote")}
         open={sections.remote}
       >
         {remoteGroups.map(([remote, branches]) => (
@@ -228,7 +239,7 @@ export function RefSidebar({
         count={tags.length}
         icon={<Tag size={14} />}
         label="TAGS"
-        onToggle={() => toggle("tags")}
+        onToggle={() => onToggleSection("tags")}
         open={sections.tags}
       >
         {tags.map((tag) => (

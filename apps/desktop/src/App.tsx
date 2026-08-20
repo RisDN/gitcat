@@ -5,7 +5,7 @@ import { getCommitGraphWidth, getCommitLaneX, getCommitRowBranchOrigin, getWipLa
 import { emptyChangeCounts, fileChangeCounts, sumChangeCounts } from "./components/file-tree";
 import type { FolderCollapseTarget } from "./components/file-tree";
 import { OperationBanner } from "./components/OperationBanner";
-import { RefSidebar, type BranchContextMenuRequest } from "./components/ref-sidebar";
+import { REF_RAIL_WIDTH, RefPanel, type BranchContextMenuRequest } from "./components/ref-sidebar";
 import { StartPage } from "./components/start-page";
 import { AppShell, Resizer } from "./components/shell";
 import { ConfirmBar, Toolbar } from "./components/toolbar";
@@ -725,8 +725,6 @@ function App() {
                             conflictIndicator={conflictIndicator}
                             conflictTarget={conflictTarget}
                             conflictTargets={conflictTargets}
-                            leftPanelKeybind={persisted.settings.keybinds.toggle_left_panel}
-                            leftPanelVisible={leftPanelVisible}
                             onCreateBranch={createBranchAtHead}
                             onConflictIndicator={showConflictIndicator}
                             onConflictTargetChange={selectConflictTarget}
@@ -737,7 +735,6 @@ function App() {
                             onSettings={() => setSettingsOpen(true)}
                             onStash={stashActiveRepository}
                             onStashPop={popLatestStash}
-                            onToggleLeftPanel={() => setLeftPanelVisible((visible) => !visible)}
                             onToggleRightPanel={() => setRightPanelVisible((visible) => !visible)}
                             operation={snapshot?.operation_state ?? "normal"}
                             pullMode={persisted.settings.default_pull_mode}
@@ -764,14 +761,15 @@ function App() {
                     <main
                         className="grid min-h-0 flex-auto overflow-hidden bg-background"
                         style={{
-                            gridTemplateColumns: `${leftPanelVisible ? sidebarWidth : 0}px ${leftPanelVisible ? 5 : 0}px minmax(0, 1fr) ${rightPanelVisible ? 5 : 0}px ${rightPanelVisible ? detailsWidth : 0}px`,
+                            gridTemplateColumns: `${leftPanelVisible ? sidebarWidth : REF_RAIL_WIDTH}px ${leftPanelVisible ? 5 : 0}px minmax(0, 1fr) ${rightPanelVisible ? 5 : 0}px ${rightPanelVisible ? detailsWidth : 0}px`,
                         }}
                     >
-                        <div className="min-h-0 min-w-0 overflow-hidden" hidden={!leftPanelVisible} style={{ gridColumn: 1 }}>
-                            <RefSidebar
-                                collapseKeybind={persisted.settings.keybinds.toggle_left_panel}
+                        <div className="min-h-0 min-w-0 overflow-hidden" style={{ gridColumn: 1 }}>
+                            <RefPanel
+                                collapsed={!leftPanelVisible}
                                 localBranches={snapshot?.local_branches ?? []}
                                 onCollapse={() => setLeftPanelVisible(false)}
+                                onExpand={() => setLeftPanelVisible(true)}
                                 onBranchContextMenu={(request: BranchContextMenuRequest) => {
                                     setCommitMenu(null);
                                     setTabMenu(null);
@@ -790,6 +788,7 @@ function App() {
                                 remoteBranches={snapshot?.remote_branches ?? []}
                                 remoteIconUrls={remoteIconUrls}
                                 tags={snapshot?.tags ?? []}
+                                toggleKeybind={persisted.settings.keybinds.toggle_left_panel}
                             />
                         </div>
                         <Resizer hidden={!leftPanelVisible} onPointerDown={(event) => beginResize("left", event)} style={{ gridColumn: 2 }} />

@@ -4,8 +4,6 @@ import {
   ChevronDown,
   Download,
   GitBranchPlus,
-  PanelLeftClose,
-  PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
   Search,
@@ -42,8 +40,6 @@ interface ToolbarProps {
   canStash: boolean;
   canPop: boolean;
   pullMode: PullMode;
-  leftPanelVisible: boolean;
-  leftPanelKeybind: string;
   rightPanelVisible: boolean;
   rightPanelKeybind: string;
   searchKeybind: string;
@@ -59,7 +55,6 @@ interface ToolbarProps {
   onStashPop: () => void;
   onSearch: () => void;
   onSettings: () => void;
-  onToggleLeftPanel: () => void;
   onToggleRightPanel: () => void;
   onConflictIndicator: () => void;
   onConflictTargetChange: (target: string | null) => void;
@@ -74,8 +69,6 @@ export function Toolbar({
   canStash,
   canPop,
   pullMode,
-  leftPanelVisible,
-  leftPanelKeybind,
   rightPanelVisible,
   rightPanelKeybind,
   searchKeybind,
@@ -91,7 +84,6 @@ export function Toolbar({
   onStashPop,
   onSearch,
   onSettings,
-  onToggleLeftPanel,
   onToggleRightPanel,
   onConflictIndicator,
   onConflictTargetChange,
@@ -141,13 +133,6 @@ export function Toolbar({
   return (
     <header className="gc-no-select z-15 grid min-h-15.25 flex-[0_0_61px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2.75 border-b border-border bg-[color-mix(in_srgb,var(--gc-panel)_91%,black)] px-3 py-2">
       <div className="flex min-w-0 items-center gap-2">
-        <IconButton
-          aria-label={`${leftPanelVisible ? "Hide" : "Show"} branches panel`}
-          onClick={onToggleLeftPanel}
-          title={`${leftPanelVisible ? "Hide" : "Show"} branches panel (${leftPanelKeybind})`}
-        >
-          {leftPanelVisible ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
-        </IconButton>
         <RepositoryContext branchName={branchName} repositoryName={repositoryName} />
       </div>
 
