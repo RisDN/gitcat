@@ -1,7 +1,7 @@
 import { AlertTriangle, LoaderCircle, Tag, } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, } from "react";
 
-import { getCommitGraphWidth, getCommitLaneX, getCommitRowBranchOrigin, getWipLane, getWipLaneColorVariable, } from "./components/CommitGraph";
+import { getCommitGraphWidth, getCommitLaneXCss, getCommitRowBranchOrigin, getWipLane, getWipLaneColorVariable, } from "./components/CommitGraph";
 import { emptyChangeCounts, fileChangeCounts, sumChangeCounts } from "./components/file-tree";
 import type { FolderCollapseTarget } from "./components/file-tree";
 import { OperationBanner } from "./components/OperationBanner";
@@ -28,6 +28,7 @@ import type {
     FileDiff,
     FileViewMode,
     GraphColumnSettings,
+    GraphColumnWidths,
     HistoryPage,
     PersistedState,
     RepositorySnapshot,
@@ -140,6 +141,11 @@ function App() {
     const graphColumns = persisted.settings.graph_columns;
     const setGraphColumns = useCallback((columns: GraphColumnSettings) => {
         setPersisted((current) => ({ ...current, settings: { ...current.settings, graph_columns: columns } }));
+    }, []);
+
+    const graphColumnWidths = persisted.settings.graph_column_widths;
+    const setGraphColumnWidths = useCallback((widths: GraphColumnWidths) => {
+        setPersisted((current) => ({ ...current, settings: { ...current.settings, graph_column_widths: widths } }));
     }, []);
 
     const diffMode = persisted.settings.diff_view_mode;
@@ -622,18 +628,21 @@ function App() {
         () => getWipLane(history?.commits ?? [], currentHeadOid),
         [currentHeadOid, history],
     );
-    const graphColumnWidth = useMemo(
+    // Widest the graph column can usefully get: every lane spread out.
+    const graphLaneExtent = useMemo(
         () => getCommitGraphWidth(history?.commits ?? []),
         [history],
     );
     const wipLaneColor = getWipLaneColorVariable();
-    const wipLaneX = getCommitLaneX(wipLane);
+    // The lane position parks against the dragged graph width in CSS, so the
+    // WIP row follows a column resize without re-rendering the history.
+    const wipLaneX = getCommitLaneXCss(wipLane);
     const wipRowStyle = {
-        "--gc-branch-origin": `${wipLaneX}px`,
-        "--gc-branch-interactive-origin": `${wipLaneX + 11}px`,
-        "--gc-branch-row-origin": `${getCommitRowBranchOrigin(wipLane, graphColumns)}px`,
+        "--gc-branch-origin": wipLaneX,
+        "--gc-branch-interactive-origin": `calc(${wipLaneX} + 11px)`,
+        "--gc-branch-row-origin": getCommitRowBranchOrigin(wipLane, graphColumns),
         "--gc-row-branch-color": wipLaneColor,
-        "--gc-wip-lane-x": `${wipLaneX}px`,
+        "--gc-wip-lane-x": wipLaneX,
     } as React.CSSProperties;
     const activeCommitDraft = activeTabId
         ? commitDrafts[activeTabId] ?? EMPTY_COMMIT_DRAFT
@@ -799,13 +808,14 @@ function App() {
                             centerView={centerView}
                             checkoutRemoteBranch={checkoutRemoteBranch}
                             closeDiff={closeDiff}
+                            columnWidths={graphColumnWidths}
                             columns={graphColumns}
                             copySha={copySha}
                             currentHeadOid={currentHeadOid}
                             diff={diff}
                             diffLoading={diffLoading}
                             diffMode={diffMode}
-                            graphColumnWidth={graphColumnWidth}
+                            graphLaneExtent={graphLaneExtent}
                             graphMatches={graphMatches}
                             history={history}
                             historyLoading={historyLoading}
@@ -825,6 +835,7 @@ function App() {
                             selectWip={selectWip}
                             selectWipFromGraph={selectWipFromGraph}
                             selectedOid={selectedOid}
+                            setColumnWidths={setGraphColumnWidths}
                             setColumns={setGraphColumns}
                             setCommitMenu={setCommitMenu}
                             setDiffMode={setDiffMode}

@@ -13,6 +13,10 @@ const MAX_DIFF_CONTEXT_LINES: u16 = 100;
 const MAX_DIFF_BYTES: usize = 128 * 1024 * 1024;
 const MAX_GRAPH_PALETTE_COLORS: usize = 64;
 const MAX_SETTINGS_IMPORT_BYTES: usize = 4 * 1024 * 1024;
+// Column widths are dragged in the UI, which clamps them per column; these are
+// the outer bounds a hand-edited state file must still respect.
+const MIN_COLUMN_WIDTH: u16 = 16;
+const MAX_COLUMN_WIDTH: u16 = 2000;
 const SETTINGS_EXPORT_FORMAT: &str = "gitcat-settings";
 const SETTINGS_EXPORT_VERSION: u64 = 1;
 
@@ -219,6 +223,24 @@ pub fn validate_settings(settings: &AppSettings) -> ApiResult<()> {
         ));
     }
 
+    let widths = settings.graph_column_widths;
+    let stored_widths = [
+        widths.refs,
+        widths.graph.unwrap_or(MIN_COLUMN_WIDTH),
+        widths.message,
+        widths.author,
+        widths.date,
+        widths.sha,
+    ];
+    if stored_widths
+        .iter()
+        .any(|width| !(MIN_COLUMN_WIDTH..=MAX_COLUMN_WIDTH).contains(width))
+    {
+        return Err(invalid_settings(
+            "commit list column widths must be between 16 and 2000 pixels",
+        ));
+    }
+
     let keybinds = &settings.keybinds;
     let bindings = [
         keybinds.next_repository.as_str(),
@@ -411,7 +433,9 @@ mod tests {
     use std::fs;
     use std::sync::{Arc, Barrier};
 
-    use gitcat_contracts::{ErrorCode, GraphColumnSettings, PersistedState, PullMode};
+    use gitcat_contracts::{
+        ErrorCode, GraphColumnSettings, GraphColumnWidths, PersistedState, PullMode,
+    };
     use tempfile::tempdir;
 
     use super::*;
@@ -513,6 +537,32 @@ mod tests {
         );
 
         settings.graph_columns.message = true;
+        assert!(validate_settings(&settings).is_ok());
+    }
+
+    #[test]
+    fn out_of_range_column_widths_are_rejected() {
+        let mut settings = AppSettings {
+            graph_column_widths: GraphColumnWidths {
+                message: MAX_COLUMN_WIDTH + 1,
+                ..GraphColumnWidths::default()
+            },
+            ..AppSettings::default()
+        };
+        assert_eq!(
+            validate_settings(&settings).unwrap_err().code,
+            ErrorCode::InvalidSettings
+        );
+
+        settings.graph_column_widths.message = 300;
+        settings.graph_column_widths.graph = Some(MIN_COLUMN_WIDTH - 1);
+        assert_eq!(
+            validate_settings(&settings).unwrap_err().code,
+            ErrorCode::InvalidSettings
+        );
+
+        // An unset graph width means "follow the lane extent", not zero.
+        settings.graph_column_widths.graph = None;
         assert!(validate_settings(&settings).is_ok());
     }
 

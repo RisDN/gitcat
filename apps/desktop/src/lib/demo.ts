@@ -327,6 +327,7 @@ const defaultState = (): PersistedState => ({
     file_view_mode: "path",
     diff_view_mode: "hunk",
     graph_columns: { refs: true, graph: true, message: true, author: true, date: true, sha: true },
+    graph_column_widths: { refs: 118, graph: null, message: 300, author: 86, date: 116, sha: 64 },
     keybinds: { ...DEFAULT_KEYBINDS },
     active_theme_id: DEFAULT_THEME_ID,
     themes: cloneDefaultThemes(),

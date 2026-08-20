@@ -311,6 +311,34 @@ impl Default for GraphColumnSettings {
     }
 }
 
+/// Pixel width of each commit list column. The last visible column always
+/// stretches to fill the row, so its stored width only matters once another
+/// column is toggled on to its right. `graph` is `None` while the graph column
+/// follows the lane extent it computes for itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GraphColumnWidths {
+    pub refs: u16,
+    pub graph: Option<u16>,
+    pub message: u16,
+    pub author: u16,
+    pub date: u16,
+    pub sha: u16,
+}
+
+impl Default for GraphColumnWidths {
+    fn default() -> Self {
+        Self {
+            refs: 118,
+            graph: None,
+            message: 300,
+            author: 86,
+            date: 116,
+            sha: 64,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
@@ -323,6 +351,7 @@ pub struct AppSettings {
     pub file_view_mode: FileViewMode,
     pub diff_view_mode: DiffViewMode,
     pub graph_columns: GraphColumnSettings,
+    pub graph_column_widths: GraphColumnWidths,
     pub keybinds: KeybindSettings,
     pub active_theme_id: String,
     pub themes: Vec<AppTheme>,
@@ -342,6 +371,7 @@ impl Default for AppSettings {
             file_view_mode: FileViewMode::default(),
             diff_view_mode: DiffViewMode::default(),
             graph_columns: GraphColumnSettings::default(),
+            graph_column_widths: GraphColumnWidths::default(),
             keybinds: KeybindSettings::default(),
             active_theme_id: "gitcat-midnight".into(),
             themes: default_themes(),

@@ -7,9 +7,20 @@ import type {
   MouseEvent as ReactMouseEvent,
 } from "react";
 
-import { ALL_GRAPH_COLUMNS, graphColumnOffset } from "../lib/columns";
+import {
+  ALL_GRAPH_COLUMNS,
+  DEFAULT_GRAPH_COLUMN_WIDTHS,
+  effectiveGraphColumnWidth,
+  isRefColumnIconOnly,
+  MIN_GRAPH_LANE_EXTENT,
+} from "../lib/columns";
 import { GRAPH_LANE_SLOTS } from "../lib/styles";
-import type { CommitSummary, GraphColumnSettings, RefLabel } from "../lib/types";
+import type {
+  CommitSummary,
+  GraphColumnSettings,
+  GraphColumnWidths,
+  RefLabel,
+} from "../lib/types";
 import {
   buildBranchColors as buildPresentationBranchColors,
   getGraphEdgeColor,
@@ -20,10 +31,13 @@ const ROW_GAP = 3;
 const ROW_STRIDE = ROW_HEIGHT + ROW_GAP;
 const LANE_WIDTH = 18;
 const GRAPH_PADDING = 24;
-const MIN_GRAPH_WIDTH = 96;
 const FIRST_COLOR_SLOT = 0;
 const EDGE_CORNER = 12;
 const AVATAR_RADIUS = 11;
+// Air between the rightmost node and the end of the graph column. It is what
+// the collapsed column shows between the node and the next column, so it is
+// deliberately a little wider than a hairline.
+const NODE_END_GAP = 6;
 const MERGE_NODE_RADIUS = 4.5;
 const STASH_NODE_RADIUS = 3;
 const WIP_NODE_RADIUS = 10;
@@ -57,6 +71,7 @@ export interface WipConnector {
 export interface CommitGraphProps {
   commits: readonly CommitSummary[];
   columns?: GraphColumnSettings;
+  columnWidths?: GraphColumnWidths;
   selectedOid: string | null;
   wip?: WipConnector;
   beforeFirstSelected?: boolean;
@@ -104,6 +119,7 @@ interface CommitRowProps {
   commit: CommitSummary;
   color: number;
   columns: GraphColumnSettings;
+  compactRefs: boolean;
   id: string;
   index: number;
   selected: boolean;
@@ -113,7 +129,6 @@ interface CommitRowProps {
   hasMultipleBranches: boolean;
   detachedHeadOid?: string | null;
   remoteIconUrls?: ReadonlyMap<string, string>;
-  graphWidth: number;
   onSelect: (commit: CommitSummary) => void;
   onCommitContextMenu?: (request: CommitContextMenuRequest) => void;
   onCopySha?: (oid: string) => void;
@@ -121,8 +136,32 @@ interface CommitRowProps {
   formatTimestamp?: (seconds: number, offsetMinutes: number) => string;
 }
 
-function laneX(lane: number): number {
-  return GRAPH_PADDING + lane * LANE_WIDTH;
+// A graph column narrower than the lane extent parks the lanes that no longer
+// fit against `maxX`, so the routes overlap there and flow back out as the
+// column is dragged. The limit is a pixel value, not a lane index: the parked
+// nodes have to follow the drag continuously instead of snapping lane to lane.
+function laneX(lane: number, maxX = Number.POSITIVE_INFINITY): number {
+  return Math.min(GRAPH_PADDING + lane * LANE_WIDTH, maxX);
+}
+
+// Rightmost pixel a node can sit on inside a column of this width. At the full
+// lane extent this is past the last lane, so nothing parks.
+export function getCommitGraphMaxX(width: number): number {
+  return Math.max(GRAPH_PADDING, width - AVATAR_RADIUS - NODE_END_GAP);
+}
+
+// True once the limit has reached lane 0: every route is stacked on one column
+// of nodes, so the lane lines would be a single vertical stripe behind them and
+// are dropped entirely.
+export function isCommitGraphCollapsed(width: number): boolean {
+  return getCommitGraphMaxX(width) <= GRAPH_PADDING;
+}
+
+// Rows read the parking limit and the graph column offset off the header
+// element, so dragging the column moves every node without React re-rendering
+// a single row.
+function clampedLaneXCss(lane: number): string {
+  return `min(${GRAPH_PADDING + lane * LANE_WIDTH}px, var(--gc-graph-max-x, 100000px))`;
 }
 
 // A merge draws as a plain junction dot rather than an avatar: its author
@@ -131,17 +170,25 @@ function isMergeNode(commit: CommitSummary): boolean {
   return !commit.stash && commit.parent_oids.length > 1;
 }
 
-export function getCommitLaneX(lane: number): number {
-  return laneX(lane);
+export function getCommitLaneX(lane: number, maxX?: number): number {
+  return laneX(lane, maxX);
 }
 
+export function getCommitLaneXCss(lane: number): string {
+  return clampedLaneXCss(lane);
+}
+
+// Where the row's branch stripe starts: the graph column offset plus the node
+// position, both left to CSS so a drag never invalidates the row.
 export function getCommitRowBranchOrigin(
   lane: number,
   columns: GraphColumnSettings,
   nodeRadius = AVATAR_RADIUS,
-): number {
-  const offset = graphColumnOffset(columns);
-  return columns.graph ? offset + laneX(lane) - nodeRadius : offset;
+): string {
+  const offset = "var(--gc-graph-offset, 0px)";
+  return columns.graph
+    ? `calc(${offset} + ${clampedLaneXCss(lane)} - ${nodeRadius}px)`
+    : offset;
 }
 
 export function getWipLaneColorVariable(): string {
@@ -217,6 +264,9 @@ function remoteNameFromBranchName(name: string): string | null {
   return slashIndex > 0 ? name.slice(0, slashIndex) : null;
 }
 
+// The width at which every lane in this history gets its own column position.
+// It is the upper bound of the graph column: past it the column would only add
+// blank space to the right of the last lane.
 export function getCommitGraphWidth(commits: readonly CommitSummary[]): number {
   let maxLane = 0;
 
@@ -227,7 +277,53 @@ export function getCommitGraphWidth(commits: readonly CommitSummary[]): number {
     }
   }
 
-  return Math.max(MIN_GRAPH_WIDTH, GRAPH_PADDING * 2 + maxLane * LANE_WIDTH + LANE_WIDTH);
+  return Math.max(MIN_GRAPH_LANE_EXTENT, GRAPH_PADDING * 2 + maxLane * LANE_WIDTH + LANE_WIDTH);
+}
+
+// Where the rightmost lane sits when nothing is parked. Compared against the
+// drag limit this is what tells the column whether it is currently hiding
+// anything -- the lane extent alone cannot, because it has a floor.
+export function getCommitGraphLastLaneX(commits: readonly CommitSummary[]): number {
+  let maxLane = 0;
+
+  for (const commit of commits) {
+    maxLane = Math.max(maxLane, commit.graph.lane);
+    for (const edge of commit.graph.edges) {
+      maxLane = Math.max(maxLane, edge.from_lane, edge.to_lane);
+    }
+  }
+
+  return GRAPH_PADDING + maxLane * LANE_WIDTH;
+}
+
+export interface GraphOverflowEdge {
+  // Both measured from the graph column's left edge.
+  left: number;
+  width: number;
+  opacity: number;
+}
+
+// The band that marks parked routes. It stops one node radius short of where
+// the parked nodes sit, so those and the lane-coloured column border stay crisp.
+// It fades out at both ends of the drag: to the right as the last hidden lane
+// comes back into view, and to the left as the column approaches the floor,
+// where the routes merge into one column of nodes and there is no overlap left
+// to mark.
+export function getCommitGraphOverflowEdge(
+  lastLaneX: number,
+  graphWidth: number,
+): GraphOverflowEdge | null {
+  const maxX = getCommitGraphMaxX(graphWidth);
+  const hidden = lastLaneX - maxX;
+  const room = maxX - GRAPH_PADDING;
+  if (hidden <= 0 || room <= 0) return null;
+
+  const full = AVATAR_RADIUS * 2;
+  const right = maxX - AVATAR_RADIUS;
+  // Near the floor the band also runs out of room, so it narrows as it fades.
+  const width = Math.min(full, hidden, right);
+  const opacity = Math.min(1, hidden / full) * Math.min(1, room / full);
+  return { left: right - width, width, opacity };
 }
 
 export function getWipLane(commits: readonly CommitSummary[], headOid: string | null): number {
@@ -278,9 +374,15 @@ function edgeCorner(startX: number, startY: number, endX: number, endY: number):
 export function buildGraphGeometry(
   commits: readonly CommitSummary[],
   hasWip: boolean,
+  // Omitted while the column is wide enough for every lane; otherwise it is the
+  // pixel the parked lanes sit on. Colors are handed in during a column drag,
+  // where they cannot have changed and the allocation pass is the expensive
+  // half of this function.
+  view?: { maxX?: number; width?: number; colors?: Map<string, number> },
 ): GraphGeometry {
+  const maxX = view?.maxX ?? Number.POSITIVE_INFINITY;
   const commitIndex = new Map<string, number>();
-  const colors = buildPresentationBranchColors(commits, hasWip);
+  const colors = view?.colors ?? buildPresentationBranchColors(commits, hasWip);
 
   for (let index = 0; index < commits.length; index += 1) {
     const commit = commits[index];
@@ -298,9 +400,9 @@ export function buildGraphGeometry(
       const parentVisible = parentIndex > index;
       const targetIndex = parentVisible ? parentIndex : commits.length;
       const endLane = parentVisible ? commits[parentIndex].graph.lane : edge.to_lane;
-      const startX = laneX(edge.from_lane);
+      const startX = laneX(edge.from_lane, maxX);
       const startY = rowY(index);
-      const endX = laneX(endLane);
+      const endX = laneX(endLane, maxX);
       const endY = Math.min(rowY(targetIndex), commits.length * ROW_STRIDE - ROW_GAP);
       const data = buildEdgePath(startX, startY, endX, endY, parentVisible, edge.merge);
       const color = getGraphEdgeColor(commit, edgeIndex, colors);
@@ -326,7 +428,7 @@ export function buildGraphGeometry(
   return {
     paths,
     colors,
-    width: getCommitGraphWidth(commits),
+    width: view?.width ?? getCommitGraphWidth(commits),
     height: commits.length * ROW_STRIDE - ROW_GAP,
   };
 }
@@ -396,6 +498,7 @@ function buildTimeMarkers(commits: readonly CommitSummary[], nowSeconds: number)
 }
 
 function RefLabelPill({
+  compact,
   decoration,
   inactive,
   linkedRemote,
@@ -404,6 +507,7 @@ function RefLabelPill({
   onContextMenu,
   onDoubleClick,
 }: {
+  compact: boolean;
   decoration: GraphRefLabel;
   inactive: boolean;
   linkedRemote?: GraphRefLabel;
@@ -424,6 +528,7 @@ function RefLabelPill({
     `gc-ref-label--${decoration.kind}`,
     decoration.is_head ? "gc-ref-label--head" : "",
     inactive ? "gc-ref-label--inactive" : "",
+    compact ? "gc-ref-label--compact" : "",
   ].filter(Boolean).join(" ");
   const displayName = decoration.kind === "remote_branch"
     ? remoteBranchNameWithoutRemote(decoration.name)
@@ -445,8 +550,8 @@ function RefLabelPill({
       title={linkedRemote ? `${decoration.full_name}\n${linkedRemote.full_name}` : decoration.full_name}
     >
       {decoration.is_head ? <Check aria-hidden="true" size={12} strokeWidth={3} /> : null}
-      <span className="gc-ref-label__name">{displayName}</span>
-      {remoteIconUrl && !remoteImageFailed ? (
+      {compact ? null : <span className="gc-ref-label__name">{displayName}</span>}
+      {compact && decoration.is_head ? null : remoteIconUrl && !remoteImageFailed ? (
         <img
           alt=""
           aria-hidden="true"
@@ -457,7 +562,7 @@ function RefLabelPill({
       ) : (
         <Icon aria-hidden="true" size={decoration.is_head ? 12 : 10} strokeWidth={2.4} />
       )}
-      {linkedRemote ? (
+      {linkedRemote && !compact ? (
         linkedRemoteIconUrl && !linkedRemoteImageFailed ? (
           <img
             alt=""
@@ -475,12 +580,14 @@ function RefLabelPill({
 }
 
 function CommitRefStack({
+  compact,
   decorations,
   hasMultipleBranches,
   remoteIconUrls,
   onRefContextMenu,
   onRefDoubleClick,
 }: {
+  compact: boolean;
   decorations: readonly GraphRefLabel[];
   hasMultipleBranches: boolean;
   remoteIconUrls?: ReadonlyMap<string, string>;
@@ -519,8 +626,9 @@ function CommitRefStack({
   };
 
   return (
-    <span className={`gc-ref-stack${shouldStack ? " gc-ref-stack--stacked" : ""}${primaryInactive ? " gc-ref-stack--inactive" : ""}`}>
+    <span className={`gc-ref-stack${shouldStack ? " gc-ref-stack--stacked" : ""}${primaryInactive ? " gc-ref-stack--inactive" : ""}${compact ? " gc-ref-stack--compact" : ""}`}>
       <RefLabelPill
+        compact={compact}
         decoration={primary}
         inactive={primaryInactive}
         linkedRemote={linkedRemotes.get(primary.full_name)}
@@ -531,10 +639,13 @@ function CommitRefStack({
       />
       {shouldStack ? (
         <>
-          <span aria-hidden="true" className="gc-ref-stack__count">{`+${rest.length}`}</span>
+          {compact ? null : (
+            <span aria-hidden="true" className="gc-ref-stack__count">{`+${rest.length}`}</span>
+          )}
           <span className="gc-ref-stack__overflow">
             {rest.map((decoration) => (
               <RefLabelPill
+                compact={false}
                 decoration={decoration}
                 inactive={isInactive(decoration)}
                 key={decoration.full_name}
@@ -601,6 +712,7 @@ const CommitRow = memo(function CommitRow({
   commit,
   color,
   columns,
+  compactRefs,
   id,
   index,
   selected,
@@ -610,7 +722,6 @@ const CommitRow = memo(function CommitRow({
   hasMultipleBranches,
   detachedHeadOid,
   remoteIconUrls,
-  graphWidth,
   onSelect,
   onCommitContextMenu,
   onCopySha,
@@ -655,17 +766,15 @@ const CommitRow = memo(function CommitRow({
     timestamp,
     searchMatch ? "search result" : "",
   ].filter(Boolean).join(", ");
-  const branchOrigin = laneX(commit.graph.lane);
-  const branchInteractiveOrigin = branchOrigin + AVATAR_RADIUS;
+  const branchOrigin = clampedLaneXCss(commit.graph.lane);
   const nodeRadius = isMergeNode(commit) ? MERGE_NODE_RADIUS : AVATAR_RADIUS;
   const rowStyle = {
-    "--gc-branch-row-origin": `${getCommitRowBranchOrigin(commit.graph.lane, columns, nodeRadius)}px`,
+    "--gc-branch-row-origin": getCommitRowBranchOrigin(commit.graph.lane, columns, nodeRadius),
     "--gc-row-branch-color": colorVariable(color),
   } as CSSProperties;
   const graphSlotStyle = {
-    width: graphWidth,
-    "--gc-branch-origin": `${branchOrigin}px`,
-    "--gc-branch-interactive-origin": `${branchInteractiveOrigin}px`,
+    "--gc-branch-origin": branchOrigin,
+    "--gc-branch-interactive-origin": `calc(${branchOrigin} + ${AVATAR_RADIUS}px)`,
   } as CSSProperties;
   const decorations = visibleDecorations(commit, hideHeadDecoration, detachedHeadOid);
 
@@ -689,6 +798,7 @@ const CommitRow = memo(function CommitRow({
       {columns.refs ? (
         <span aria-label="References" className="gc-commit-row__decorations" role="cell">
           <CommitRefStack
+            compact={compactRefs}
             decorations={decorations}
             hasMultipleBranches={hasMultipleBranches}
             onRefContextMenu={onCommitContextMenu
@@ -710,7 +820,7 @@ const CommitRow = memo(function CommitRow({
             <span
               aria-hidden="true"
               className="gc-commit-row__merge-node"
-              style={{ left: laneX(commit.graph.lane) }}
+              style={{ left: branchOrigin }}
             />
           ) : (
             <span
@@ -720,7 +830,7 @@ const CommitRow = memo(function CommitRow({
                 selected ? "gc-commit-row__avatar--selected" : "",
                 commit.stash ? "gc-commit-row__avatar--stash" : "",
               ].filter(Boolean).join(" ")}
-              style={{ left: laneX(commit.graph.lane) }}
+              style={{ left: branchOrigin }}
             >
               {commit.stash ? <Inbox size={11} strokeWidth={2.4} /> : initials.slice(0, 1) || "?"}
             </span>
@@ -757,6 +867,7 @@ const CommitRow = memo(function CommitRow({
 export function CommitGraph({
   commits,
   columns = ALL_GRAPH_COLUMNS,
+  columnWidths = DEFAULT_GRAPH_COLUMN_WIDTHS,
   selectedOid,
   wip,
   beforeFirstSelected = false,
@@ -776,7 +887,17 @@ export function CommitGraph({
   const listRef = useRef<HTMLDivElement>(null);
   const nodeMaskId = `gc-node-mask-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const hasWip = Boolean(wip);
-  const geometry = useMemo(() => buildGraphGeometry(commits, hasWip), [commits, hasWip]);
+  const laneExtentWidth = useMemo(() => getCommitGraphWidth(commits), [commits]);
+  const graphWidth = effectiveGraphColumnWidth(columnWidths, laneExtentWidth);
+  const maxX = getCommitGraphMaxX(graphWidth);
+  // Lane colors depend only on the history, so a column drag reuses them.
+  const colors = useMemo(() => buildPresentationBranchColors(commits, hasWip), [commits, hasWip]);
+  const geometry = useMemo(
+    () => buildGraphGeometry(commits, hasWip, { colors, maxX, width: laneExtentWidth }),
+    [colors, commits, hasWip, laneExtentWidth, maxX],
+  );
+  const compactRefs = isRefColumnIconOnly(columns, columnWidths);
+  const lanesCollapsed = isCommitGraphCollapsed(graphWidth);
   const wipPath = useMemo(() => {
     if (!wip?.headOid) return null;
 
@@ -785,11 +906,18 @@ export function CommitGraph({
 
     const headLane = commits[headIndex].graph.lane;
     return {
-      data: buildEdgePath(laneX(wip.lane), WIP_ROW_Y + WIP_NODE_EDGE, laneX(headLane), rowY(headIndex), true, false),
+      data: buildEdgePath(
+        laneX(wip.lane, maxX),
+        WIP_ROW_Y + WIP_NODE_EDGE,
+        laneX(headLane, maxX),
+        rowY(headIndex),
+        true,
+        false,
+      ),
       lane: Math.max(wip.lane, headLane),
       color: FIRST_COLOR_SLOT,
     };
-  }, [commits, wip?.headOid, wip?.lane]);
+  }, [commits, maxX, wip?.headOid, wip?.lane]);
   const maskTop = wipPath ? WIP_ROW_Y + WIP_NODE_EDGE : 0;
   const timeMarkers = useMemo(() => buildTimeMarkers(commits, Math.floor(Date.now() / 1_000)), [commits]);
   const hasMultipleBranches = useMemo(() => {
@@ -808,6 +936,55 @@ export function CommitGraph({
   const searchActive = (searchMatchOids?.size ?? 0) > 0;
   const activeCommit = selectedIndex >= 0 ? commits[selectedIndex] : beforeFirstSelected ? undefined : commits[0];
   const activeDescendant = activeCommit ? `commit-row-${activeCommit.oid}` : undefined;
+
+  // Nothing in a row depends on the graph column width -- the node position and
+  // the branch stripe are CSS expressions over --gc-graph-max-x. Memoizing the
+  // list therefore lets a column drag skip the whole row subtree, provided the
+  // callers keep their handler identities stable.
+  const rows = useMemo(() => commits.map((commit, index) => (
+    <CommitRow
+      color={geometry.colors.get(commit.oid) ?? FIRST_COLOR_SLOT}
+      columns={columns}
+      compactRefs={compactRefs}
+      commit={commit}
+      detachedHeadOid={detachedHeadOid}
+      formatTimestamp={formatTimestamp}
+      hasMultipleBranches={hasMultipleBranches}
+      hideHeadDecoration={hideHeadDecoration}
+      id={`commit-row-${commit.oid}`}
+      index={index}
+      key={commit.oid}
+      onCommitContextMenu={onCommitContextMenu}
+      onCopySha={onCopySha}
+      onRefDoubleClick={onRefDoubleClick}
+      onSelect={onSelect}
+      remoteIconUrls={remoteIconUrls}
+      searchDimmed={
+        searchActive
+        && commit.oid !== selectedOid
+        && !searchMatchOids?.has(commit.oid)
+      }
+      searchMatch={searchMatchOids?.has(commit.oid) ?? false}
+      selected={commit.oid === selectedOid}
+    />
+  )), [
+    columns,
+    commits,
+    compactRefs,
+    detachedHeadOid,
+    formatTimestamp,
+    geometry.colors,
+    hasMultipleBranches,
+    hideHeadDecoration,
+    onCommitContextMenu,
+    onCopySha,
+    onRefDoubleClick,
+    onSelect,
+    remoteIconUrls,
+    searchActive,
+    searchMatchOids,
+    selectedOid,
+  ]);
 
   const selectIndex = (index: number) => {
     const commit = commits[index];
@@ -891,13 +1068,13 @@ export function CommitGraph({
           <span className="gc-commit-time-marker" key={marker.key} style={{ top: marker.top }} />
         ))}
       </div>
-      {columns.graph ? (
+      {columns.graph && !lanesCollapsed ? (
         <svg
           aria-hidden="true"
           className="gc-commit-graph__lanes"
           focusable="false"
           height={geometry.height}
-          style={{ left: graphColumnOffset(columns) }}
+          style={{ left: "var(--gc-graph-offset, 0px)" }}
           viewBox={`0 0 ${geometry.width} ${geometry.height}`}
           width={geometry.width}
         >
@@ -918,12 +1095,12 @@ export function CommitGraph({
                   key={commit.oid}
                   rx={STASH_NODE_RADIUS}
                   width={AVATAR_RADIUS * 2}
-                  x={laneX(commit.graph.lane) - AVATAR_RADIUS}
+                  x={laneX(commit.graph.lane, maxX) - AVATAR_RADIUS}
                   y={rowY(index) - AVATAR_RADIUS}
                 />
               ) : (
                 <circle
-                  cx={laneX(commit.graph.lane)}
+                  cx={laneX(commit.graph.lane, maxX)}
                   cy={rowY(index)}
                   fill="black"
                   key={commit.oid}
@@ -953,35 +1130,7 @@ export function CommitGraph({
           </g>
         </svg>
       ) : null}
-      <div className="gc-commit-graph__rows">
-        {commits.map((commit, index) => (
-          <CommitRow
-            color={geometry.colors.get(commit.oid) ?? FIRST_COLOR_SLOT}
-            columns={columns}
-            commit={commit}
-            detachedHeadOid={detachedHeadOid}
-            formatTimestamp={formatTimestamp}
-            graphWidth={geometry.width}
-            hasMultipleBranches={hasMultipleBranches}
-            hideHeadDecoration={hideHeadDecoration}
-            id={`commit-row-${commit.oid}`}
-            index={index}
-            key={commit.oid}
-            onCommitContextMenu={onCommitContextMenu}
-            onCopySha={onCopySha}
-            onRefDoubleClick={onRefDoubleClick}
-            onSelect={onSelect}
-            remoteIconUrls={remoteIconUrls}
-            searchDimmed={
-              searchActive
-              && commit.oid !== selectedOid
-              && !searchMatchOids?.has(commit.oid)
-            }
-            searchMatch={searchMatchOids?.has(commit.oid) ?? false}
-            selected={commit.oid === selectedOid}
-          />
-        ))}
-      </div>
+      <div className="gc-commit-graph__rows">{rows}</div>
       <div aria-hidden="true" className="gc-commit-time-markers gc-commit-time-markers--labels">
         {timeMarkers.map((marker) => (
           <span className="gc-commit-time-marker__label" key={marker.key} style={{ top: marker.top }}>

@@ -243,7 +243,47 @@
 }
 
 .gc-graph-columns > span {
-  @apply min-w-0 overflow-hidden text-ellipsis whitespace-nowrap px-[7px];
+  @apply relative flex min-w-0 items-center px-[7px];
+}
+
+.gc-graph-columns__label {
+  @apply min-w-0 overflow-hidden text-ellipsis whitespace-nowrap;
+}
+
+/* Column divider doubling as the drag handle; the last column has none because
+   it stretches into whatever the others leave. */
+.gc-graph-columns__handle {
+  @apply absolute inset-y-0 right-0 z-2 w-[7px] translate-x-1/2 cursor-col-resize touch-none outline-none;
+}
+
+.gc-graph-columns__handle::before {
+  @apply pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border;
+  content: "";
+}
+
+.gc-graph-columns__handle--fixed {
+  @apply pointer-events-none cursor-default;
+}
+
+.gc-graph-columns__handle:hover::before,
+.gc-graph-columns__handle:focus-visible::before {
+  @apply w-[2px] bg-accent;
+}
+
+/* While lanes are parked on the limit the graph column fades into a shadow at
+   its right edge, so a squeezed column reads as "the routes continue past here"
+   instead of as routes that genuinely converged. */
+.gc-graph-overflow-edge {
+  @apply pointer-events-none absolute inset-y-0 z-4;
+  /* Translucent black rather than a wash of the page background: a shadow has
+     to darken whatever it falls on -- the lane routes and the row's own branch
+     tint alike -- instead of painting a flat panel over the tinted half. */
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgb(0 0 0 / 9%) 58%,
+    rgb(0 0 0 / 24%)
+  );
 }
 
 .gc-commit-graph {
@@ -296,6 +336,15 @@
 .gc-commit-graph__rows {
   @apply relative z-[2] grid;
   gap: var(--gc-row-gap);
+}
+
+/* Dragging a column relayouts every row in the list. Letting the browser skip
+   the rows that are off screen keeps a drag proportional to what is visible
+   instead of to the length of the history. The paint containment this implies
+   would clip the hover ref stack, so it lasts only as long as the drag. */
+.gc-graph-resizing .gc-commit-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 26px;
 }
 
 .gc-commit-time-markers {
@@ -606,6 +655,11 @@
 }
 
 .gc-ref-label__name { @apply min-w-0 overflow-hidden text-ellipsis; }
+
+/* Squeezed ref column: the chip keeps only the head check or the ref icon. */
+.gc-ref-label--compact {
+  @apply w-[20px] shrink-0 justify-center gap-0 px-0;
+}
 .gc-ref-label--inactive { opacity: var(--gc-ref-inactive-opacity); }
 .gc-ref-label--inactive:hover { @apply opacity-100; }
 

@@ -457,6 +457,16 @@ export interface GraphColumnSettings {
   sha: boolean;
 }
 
+export interface GraphColumnWidths {
+  refs: number;
+  // Null while the graph column follows the lane extent it computes itself.
+  graph: number | null;
+  message: number;
+  author: number;
+  date: number;
+  sha: number;
+}
+
 export interface AppSettings {
   default_pull_mode: PullMode;
   auto_fetch_interval_minutes: number;
@@ -467,6 +477,7 @@ export interface AppSettings {
   file_view_mode: FileViewMode;
   diff_view_mode: DiffViewMode;
   graph_columns: GraphColumnSettings;
+  graph_column_widths: GraphColumnWidths;
   keybinds: KeybindSettings;
   active_theme_id: string;
   themes: AppTheme[];

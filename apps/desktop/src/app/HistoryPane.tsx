@@ -1,14 +1,33 @@
 import { AlertTriangle } from "lucide-react";
-import { useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
-import { CommitGraph, type CommitContextMenuRequest } from "../components/CommitGraph";
+import {
+    CommitGraph,
+    getCommitGraphLastLaneX,
+    getCommitGraphMaxX,
+    getCommitGraphOverflowEdge,
+    type CommitContextMenuRequest,
+} from "../components/CommitGraph";
+import { GraphColumnResizer } from "../components/GraphColumnResizer";
 import { DiffViewer, type DiffViewMode } from "../components/diff";
 import { ChangeCountSummary, type FileChangeCounts } from "../components/file-tree";
 import { GraphColumnMenu } from "../components/GraphColumnMenu";
 import { SearchBar } from "../components/SearchBar";
 import { Button, Spinner } from "../components/ui";
 import { gitcatApi } from "../lib/api";
-import { GRAPH_COLUMNS, graphColumnsMinWidth, graphColumnsTemplate } from "../lib/columns";
+import {
+    effectiveGraphColumnWidth,
+    graphColumnOffset,
+    type GraphColumnKey,
+    GRAPH_COLUMN_MIN_WIDTH,
+    GRAPH_COLUMNS,
+    graphColumnsMinWidth,
+    graphColumnsTemplate,
+    graphColumnWidth as resolveColumnWidth,
+    MAX_GRAPH_COLUMN_WIDTH,
+    MIN_GRAPH_COLUMN_WIDTH,
+    visibleGraphColumns,
+} from "../lib/columns";
 import type {
     AppSettings,
     BranchInfo,
@@ -16,7 +35,9 @@ import type {
     CommitSummary,
     FileDiff,
     GraphColumnSettings,
+    GraphColumnWidths,
     HistoryPage,
+    RefLabel,
     RepositorySnapshot,
 } from "../lib/types";
 import type { CommitMenuState, RunMutation } from "./state";
@@ -28,12 +49,13 @@ export interface HistoryPaneProps {
     checkoutRemoteBranch: (branch: BranchInfo) => void;
     closeDiff: () => void;
     columns: GraphColumnSettings;
+    columnWidths: GraphColumnWidths;
     copySha: (oid: string) => Promise<void>;
     currentHeadOid: string | null;
     diff: FileDiff | null;
     diffLoading: boolean;
     diffMode: DiffViewMode;
-    graphColumnWidth: number;
+    graphLaneExtent: number;
     graphMatches: Set<string>;
     history: HistoryPage | null;
     historyLoading: boolean;
@@ -54,6 +76,7 @@ export interface HistoryPaneProps {
     selectWipFromGraph: () => void;
     selectedOid: string | null;
     setColumns: (columns: GraphColumnSettings) => void;
+    setColumnWidths: (widths: GraphColumnWidths) => void;
     setCommitMenu: (menu: CommitMenuState | null) => void;
     setDiffMode: (mode: DiffViewMode) => void;
     setSearchOpen: (open: boolean) => void;
@@ -78,12 +101,13 @@ export function HistoryPane({
     checkoutRemoteBranch,
     closeDiff,
     columns,
+    columnWidths,
     copySha,
     currentHeadOid,
     diff,
     diffLoading,
     diffMode,
-    graphColumnWidth,
+    graphLaneExtent,
     graphMatches,
     history,
     historyLoading,
@@ -104,6 +128,7 @@ export function HistoryPane({
     selectWipFromGraph,
     selectedOid,
     setColumns,
+    setColumnWidths,
     setCommitMenu,
     setDiffMode,
     setSearchOpen,
@@ -121,6 +146,63 @@ export function HistoryPane({
     worktreeReachable,
 }: HistoryPaneProps) {
     const graphHeaderRef = useRef<HTMLDivElement | null>(null);
+    // A drag stays local to this pane: writing every frame into the persisted
+    // settings would re-render the whole app and restart the state save.
+    const [draftWidths, setDraftWidths] = useState<GraphColumnWidths | null>(null);
+    const draftWidthsRef = useRef<GraphColumnWidths | null>(null);
+    const activeWidths = draftWidths ?? columnWidths;
+    const graphColumnWidth = effectiveGraphColumnWidth(activeWidths, graphLaneExtent);
+    const visibleColumns = visibleGraphColumns(columns);
+    const graphOffset = graphColumnOffset(columns, activeWidths, graphLaneExtent);
+
+    // With the column squeezed the lanes that no longer fit sit on the limit;
+    // the fade at that edge is what says the routes are stacked rather than
+    // genuinely converged.
+    const lastLaneX = useMemo(
+        () => getCommitGraphLastLaneX(history?.commits ?? []),
+        [history],
+    );
+    const overflowEdge = columns.graph
+        ? getCommitGraphOverflowEdge(lastLaneX, graphColumnWidth)
+        : null;
+
+    const resizeColumn = (key: GraphColumnKey, width: number) => {
+        const next = { ...(draftWidthsRef.current ?? columnWidths), [key]: width };
+        draftWidthsRef.current = next;
+        setDraftWidths(next);
+    };
+
+    // Stable identities: the commit rows are memoized on their props, and an
+    // inline arrow here would defeat that on every render -- including every
+    // frame of a column drag.
+    const openCommitMenu = useCallback((request: CommitContextMenuRequest) => {
+        setCommitMenu({
+            x: request.clientX,
+            y: request.clientY,
+            commit: request.commit,
+            decoration: request.decoration ?? null,
+        });
+    }, [setCommitMenu]);
+
+    const copyShaFromRow = useCallback((oid: string) => { void copySha(oid); }, [copySha]);
+
+    const checkoutFromRefLabel = useCallback((decoration: RefLabel) => {
+        if (decoration.kind === "local_branch" && !decoration.is_head) {
+            void runMutation(`Checked out ${decoration.name}`, (repository) => gitcatApi.checkoutBranch(repository.repository_id, decoration.name));
+            return;
+        }
+        if (decoration.kind === "remote_branch") {
+            const branch = snapshot?.remote_branches.find((candidate) => candidate.full_name === decoration.full_name);
+            if (branch) checkoutRemoteBranch(branch);
+        }
+    }, [checkoutRemoteBranch, runMutation, snapshot]);
+
+    const commitResize = () => {
+        const next = draftWidthsRef.current;
+        draftWidthsRef.current = null;
+        setDraftWidths(null);
+        if (next) setColumnWidths(next);
+    };
     const conflictBadge = activeConflictCount ? (
         <span className="gc-wip-row__conflicts"><AlertTriangle size={12} /> {activeConflictCount}</span>
     ) : null;
@@ -151,22 +233,40 @@ export function HistoryPane({
                 />
             ) : (
                 <div
-                    className="gc-no-select flex min-h-0 min-w-0 flex-1 flex-col"
+                    className={`gc-no-select flex min-h-0 min-w-0 flex-1 flex-col${draftWidths ? " gc-graph-resizing" : ""}`}
                     style={{
                         "--gc-graph-column-width": `${graphColumnWidth}px`,
-                        "--gc-graph-columns-template": graphColumnsTemplate(columns),
-                        "--gc-graph-columns-min-width": `${graphColumnsMinWidth(columns, graphColumnWidth)}px`,
+                        // Rows read these two instead of taking the width as a
+                        // prop, so dragging a column never re-renders them.
+                        "--gc-graph-offset": `${graphOffset}px`,
+                        "--gc-graph-max-x": `${getCommitGraphMaxX(graphColumnWidth)}px`,
+                        "--gc-graph-columns-template": graphColumnsTemplate(columns, activeWidths, graphLaneExtent),
+                        "--gc-graph-columns-min-width": `${graphColumnsMinWidth(columns, activeWidths, graphLaneExtent)}px`,
                     } as React.CSSProperties}
                 >
                     <div className="gc-graph-header">
-                        <div aria-hidden="true" className="gc-graph-header__labels" ref={graphHeaderRef}>
+                        <div className="gc-graph-header__labels" ref={graphHeaderRef}>
                             <div className="gc-graph-columns">
                                 {GRAPH_COLUMNS.filter((column) => columns[column.key]).map((column) => (
-                                    <span key={column.key}>{column.label}</span>
+                                    <span key={column.key}>
+                                        <span aria-hidden="true" className="gc-graph-columns__label">{column.label}</span>
+                                        {column.key === visibleColumns[visibleColumns.length - 1] ? null : (
+                                            <GraphColumnResizer
+                                                label={column.label}
+                                                // The graph stops where every lane has its own
+                                                // position; wider would only add empty space.
+                                                maxWidth={column.key === "graph" ? graphLaneExtent : MAX_GRAPH_COLUMN_WIDTH}
+                                                minWidth={column.key === "graph" ? MIN_GRAPH_COLUMN_WIDTH : GRAPH_COLUMN_MIN_WIDTH[column.key]}
+                                                onResize={(width) => resizeColumn(column.key, width)}
+                                                onResizeEnd={commitResize}
+                                                width={resolveColumnWidth(column.key, activeWidths, graphLaneExtent)}
+                                            />
+                                        )}
+                                    </span>
                                 ))}
                             </div>
                         </div>
-                        <GraphColumnMenu columns={columns} onChange={setColumns} />
+                        <GraphColumnMenu columns={columns} onChange={setColumns} onWidthsChange={setColumnWidths} />
                     </div>
                     <div
                         className="min-h-0 min-w-0 flex-1 overflow-auto scrollbar-gutter-stable"
@@ -174,6 +274,9 @@ export function HistoryPane({
                             if (graphHeaderRef.current) graphHeaderRef.current.scrollLeft = event.currentTarget.scrollLeft;
                         }}
                     >
+                    {/* Spans the scrolled content so the overflow edge can run
+                        the full height of the list rather than the viewport. */}
+                    <div className="relative">
                     {worktreeReachable ? (
                         <div
                             aria-label="Working copy changes"
@@ -227,23 +330,15 @@ export function HistoryPane({
                     {history ? (
                         <CommitGraph
                             beforeFirstSelected={wipSelected}
+                            columnWidths={activeWidths}
                             columns={columns}
                             commits={history.commits}
                             detachedHeadOid={snapshot?.head.kind === "detached" ? snapshot.head.oid : null}
                             hideHeadDecoration={false}
                             onNavigateBeforeFirst={worktreeReachable ? selectWipFromGraph : undefined}
-                            onCommitContextMenu={(request: CommitContextMenuRequest) => setCommitMenu({ x: request.clientX, y: request.clientY, commit: request.commit, decoration: request.decoration ?? null })}
-                            onCopySha={(oid) => void copySha(oid)}
-                            onRefDoubleClick={(decoration) => {
-                                if (decoration.kind === "local_branch" && !decoration.is_head) {
-                                    void runMutation(`Checked out ${decoration.name}`, (repository) => gitcatApi.checkoutBranch(repository.repository_id, decoration.name));
-                                    return;
-                                }
-                                if (decoration.kind === "remote_branch") {
-                                    const branch = snapshot?.remote_branches.find((candidate) => candidate.full_name === decoration.full_name);
-                                    if (branch) checkoutRemoteBranch(branch);
-                                }
-                            }}
+                            onCommitContextMenu={openCommitMenu}
+                            onCopySha={copyShaFromRow}
+                            onRefDoubleClick={checkoutFromRefLabel}
                             onSelect={selectCommit}
                             remoteIconUrls={remoteIconUrls}
                             searchMatchOids={graphMatches}
@@ -264,6 +359,18 @@ export function HistoryPane({
                             onClick={loadMoreHistory}
                         >{historyLoading ? "Loading older commits…" : "Load older commits"}</Button>
                     ) : null}
+                    {overflowEdge ? (
+                        <span
+                            aria-hidden="true"
+                            className="gc-graph-overflow-edge"
+                            style={{
+                                left: graphOffset + overflowEdge.left,
+                                opacity: overflowEdge.opacity,
+                                width: overflowEdge.width,
+                            }}
+                        />
+                    ) : null}
+                    </div>
                     </div>
                 </div>
             )}

@@ -1,9 +1,18 @@
-import { ALL_GRAPH_COLUMNS, GRAPH_COLUMNS, visibleGraphColumns } from "../lib/columns";
+import {
+    ALL_GRAPH_COLUMNS,
+    DEFAULT_GRAPH_COLUMN_WIDTHS,
+    GRAPH_COLUMN_MIN_WIDTH,
+    GRAPH_COLUMNS,
+    MAX_GRAPH_COLUMN_WIDTH,
+    MIN_GRAPH_COLUMN_WIDTH,
+    visibleGraphColumns,
+} from "../lib/columns";
 import { DEFAULT_KEYBINDS, duplicateKeybinds, keybindValidationError } from "../lib/keybinds";
 import type {
     AppSettings,
     AppTheme,
     GraphColumnSettings,
+    GraphColumnWidths,
     KeybindSettings,
     PersistedState,
     RepositoryTab,
@@ -49,6 +58,31 @@ function normalizeGraphColumns(columns: Partial<GraphColumnSettings> | undefined
         if (typeof value === "boolean") normalized[key] = value;
     }
     return visibleGraphColumns(normalized).length ? normalized : { ...ALL_GRAPH_COLUMNS };
+}
+
+function normalizeGraphColumnWidths(
+    widths: Partial<GraphColumnWidths> | undefined,
+): GraphColumnWidths {
+    const normalized = { ...DEFAULT_GRAPH_COLUMN_WIDTHS };
+    for (const { key } of GRAPH_COLUMNS) {
+        const value = widths?.[key];
+        if (key === "graph") {
+            // Null keeps the graph column following its own lane extent.
+            normalized.graph = typeof value === "number" && Number.isFinite(value)
+                ? boundedNumber(value, MIN_GRAPH_COLUMN_WIDTH, MIN_GRAPH_COLUMN_WIDTH, MAX_GRAPH_COLUMN_WIDTH)
+                : null;
+            continue;
+        }
+        if (typeof value === "number" && Number.isFinite(value)) {
+            normalized[key] = boundedNumber(
+                value,
+                DEFAULT_GRAPH_COLUMN_WIDTHS[key],
+                GRAPH_COLUMN_MIN_WIDTH[key],
+                MAX_GRAPH_COLUMN_WIDTH,
+            );
+        }
+    }
+    return normalized;
 }
 
 const HEX_COLOR = /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i;
@@ -149,6 +183,7 @@ export function normalizeAppSettings(value: unknown): AppSettings {
             ? source.diff_view_mode!
             : DEFAULT_SETTINGS.diff_view_mode,
         graph_columns: normalizeGraphColumns(source.graph_columns),
+        graph_column_widths: normalizeGraphColumnWidths(source.graph_column_widths),
         keybinds: normalizePersistedKeybinds(source.keybinds),
         active_theme_id: activeThemeId,
         themes,
