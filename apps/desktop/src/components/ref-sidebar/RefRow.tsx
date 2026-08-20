@@ -61,7 +61,7 @@ export function RemoteIcon({ iconUrl }: { iconUrl?: string }) {
     <img
       alt=""
       aria-hidden="true"
-      className="size-3.5 shrink-0 rounded-[3px] object-cover shadow-[0_0_0_1px_color-mix(in_srgb,var(--gc-text)_18%,transparent)]"
+      className="size-3.5 shrink-0 rounded-[3px] object-cover"
       onError={() => setFailed(true)}
       src={iconUrl}
     />

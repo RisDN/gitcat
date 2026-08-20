@@ -603,7 +603,6 @@
 
 .gc-ref-label__remote-avatar {
   @apply h-[14px] w-[14px] shrink-0 rounded-[2px] object-cover;
-  box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 30%, transparent);
 }
 
 .gc-ref-label__name { @apply min-w-0 overflow-hidden text-ellipsis; }
