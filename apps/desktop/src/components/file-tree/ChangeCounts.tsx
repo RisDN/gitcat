@@ -34,20 +34,16 @@ export function ChangeCount({ icon: Icon, size = "sm", tone, children }: {
   );
 }
 
-// The status-only kinds (modified, renamed) stay hidden on file rows, where the
-// row icon already carries the same information.
-export function ChangeCountSummary({ counts, labels = false, size = "sm", statusKinds = true }: {
+export function ChangeCountSummary({ counts, labels = false, size = "sm" }: {
   counts: FileChangeCounts;
   labels?: boolean;
   size?: keyof typeof SIZES;
-  statusKinds?: boolean;
 }) {
   return (
     <>
       {CHANGE_COUNT_PARTS.map(({ kind, icon, tone, label }) => {
         const value = counts[kind];
         if (!value) return null;
-        if (!statusKinds && (kind === "modified" || kind === "renamed")) return null;
         return (
           <ChangeCount icon={icon} key={kind} size={size} tone={tone}>
             {value}

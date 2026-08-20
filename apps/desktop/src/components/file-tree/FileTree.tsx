@@ -11,7 +11,6 @@ import {
   buildTree,
   collectFolderItems,
   collectFolderPaths,
-  fileChangeCounts,
   normalizePath,
   pathCollator,
   treeIndent,
@@ -181,7 +180,6 @@ export function FileTree<T>({
             <StatusIcon aria-hidden="true" size={12} strokeWidth={2.6} />
           </b>
           <EntryName>{label}</EntryName>
-          <ChangeCountSummary counts={fileChangeCounts(item.status)} statusKinds={false} />
           {item.binary ? <small className="text-[9px] text-warning">binary</small> : null}
         </TreeEntry>
         {renderAction ? <RowAction pinned={unmerged}>{renderAction(item.data)}</RowAction> : null}
