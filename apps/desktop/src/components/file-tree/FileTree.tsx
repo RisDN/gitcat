@@ -172,7 +172,7 @@ export function FileTree<T>({
       >
         <TreeEntry
           aria-current={selected ? "true" : undefined}
-          className={cx("flex-1", renderAction && "pr-25.5")}
+          className={cx("flex-1", renderAction && unmerged && "pr-25.5")}
           depth={depth}
           onClick={() => onSelect(item.data)}
           title={item.path}
