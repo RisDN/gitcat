@@ -1,5 +1,6 @@
 import { branchNameWithoutRemote, remoteNameOf, type BranchScope } from "../components/ref-sidebar";
-import type { BranchInfo, RemoteInfo, RepositorySnapshot } from "../lib/types";
+import { forgeBranchUrl, forgeCommitUrl, forgeOwnerIconUrl } from "../lib/forge";
+import type { BranchInfo, ForgeKind, RemoteInfo, RepositorySnapshot } from "../lib/types";
 
 // `git pull` always integrates into HEAD, so a branch row only offers it when
 // pulling that branch is the same thing as pulling the checked-out branch.
@@ -41,48 +42,25 @@ export function currentBranch(snapshot: RepositorySnapshot | null): string {
     return snapshot.head.intended_branch;
 }
 
-export function githubOwnerFromRemoteUrl(url: string): string | null {
-    const trimmed = url.trim();
-    const httpsMatch = /^https?:\/\/github\.com\/([^/\s]+)\/([^/\s]+?)(?:\.git)?(?:[/?#].*)?$/i.exec(trimmed);
-    if (httpsMatch) return httpsMatch[1];
-
-    const sshMatch = /^(?:ssh:\/\/)?git@github\.com[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?$/i.exec(trimmed);
-    if (sshMatch) return sshMatch[1];
-
-    return null;
-}
-
-export function githubRemoteIconUrls(remotes: readonly RemoteInfo[]): Map<string, string> {
+export function remoteIconUrls(remotes: readonly RemoteInfo[]): Map<string, string> {
     const iconUrls = new Map<string, string>();
     for (const remote of remotes) {
-        const owner = githubOwnerFromRemoteUrl(remote.fetch_url) ?? githubOwnerFromRemoteUrl(remote.push_url);
-        if (owner) iconUrls.set(remote.name, `https://github.com/${encodeURIComponent(owner)}.png?size=32`);
+        const iconUrl = forgeOwnerIconUrl(remote, remote.forge);
+        if (iconUrl) iconUrls.set(remote.name, iconUrl);
     }
     return iconUrls;
 }
 
-// Turns a fetch/push URL into the repository's https web address so the UI can
-// build links to commits and branches. Returns null for URLs that are not a
-// host/path pair (local paths, unknown schemes).
-export function remoteWebBaseUrl(url: string): string | null {
-    const trimmed = url.trim().replace(/\/+$/, "");
-    if (!trimmed) return null;
-    const httpMatch = /^https?:\/\/(?:[^@/\s]*@)?([^/\s:]+)(?::\d+)?\/(.+?)(?:\.git)?$/i.exec(trimmed);
-    if (httpMatch) return `https://${httpMatch[1]}/${httpMatch[2]}`;
-    const sshMatch = /^(?:ssh:\/\/)?(?:[^@/\s]+@)?([^/\s:]+)(?::\d+)?[:/](.+?)(?:\.git)?$/i.exec(trimmed);
-    if (sshMatch && sshMatch[2].includes("/")) return `https://${sshMatch[1]}/${sshMatch[2]}`;
-    return null;
-}
-
-// Web links follow the GitHub path layout, which GitLab and Bitbucket also
-// redirect for commits; there is no per-host mapping yet.
+// Web links follow the layout of the remote's own forge. The backend already
+// resolved both the home page and the forge from the remote URL, so a link is
+// only missing when the remote is a local path or an unresolved SSH alias.
 export function remoteCommitUrl(
     snapshot: RepositorySnapshot | null,
     remoteName: string,
     oid: string,
 ): string | null {
-    const base = remoteBaseFor(snapshot, remoteName);
-    return base ? `${base}/commit/${oid}` : null;
+    const target = remoteWebTarget(snapshot, remoteName);
+    return target ? forgeCommitUrl(target.webUrl, target.forge, oid) : null;
 }
 
 export function remoteBranchUrl(
@@ -90,14 +68,16 @@ export function remoteBranchUrl(
     remoteName: string,
     branch: string,
 ): string | null {
-    const base = remoteBaseFor(snapshot, remoteName);
-    return base ? `${base}/tree/${branch.split("/").map(encodeURIComponent).join("/")}` : null;
+    const target = remoteWebTarget(snapshot, remoteName);
+    return target ? forgeBranchUrl(target.webUrl, target.forge, branch) : null;
 }
 
-function remoteBaseFor(snapshot: RepositorySnapshot | null, remoteName: string): string | null {
+function remoteWebTarget(
+    snapshot: RepositorySnapshot | null,
+    remoteName: string,
+): { webUrl: string; forge: ForgeKind } | null {
     const remote = snapshot?.remotes.find((candidate) => candidate.name === remoteName);
-    if (!remote) return null;
-    return remoteWebBaseUrl(remote.fetch_url) ?? remoteWebBaseUrl(remote.push_url);
+    return remote?.web_url ? { webUrl: remote.web_url, forge: remote.forge } : null;
 }
 
 // The remote a commit row links to: the branch's own remote when the click

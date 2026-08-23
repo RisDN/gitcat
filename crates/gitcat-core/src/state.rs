@@ -12,6 +12,9 @@ const MAX_HISTORY_PAGE_SIZE: usize = 500;
 const MAX_DIFF_CONTEXT_LINES: u16 = 100;
 const MAX_DIFF_BYTES: usize = 128 * 1024 * 1024;
 const MAX_GRAPH_PALETTE_COLORS: usize = 64;
+const MAX_FORGE_OVERRIDES: usize = 128;
+// Longest a DNS name can be.
+const MAX_HOST_LENGTH: usize = 253;
 const MAX_SETTINGS_IMPORT_BYTES: usize = 4 * 1024 * 1024;
 // Column widths are dragged in the UI, which clamps them per column; these are
 // the outer bounds a hand-edited state file must still respect.
@@ -207,6 +210,25 @@ pub fn validate_settings(settings: &AppSettings) -> ApiResult<()> {
     if !(1..=MAX_DIFF_BYTES).contains(&settings.diff_max_bytes) {
         return Err(invalid_settings(
             "diff byte limit must be between 1 and 134217728",
+        ));
+    }
+
+    if settings.forge_overrides.len() > MAX_FORGE_OVERRIDES {
+        return Err(invalid_settings(
+            "at most 128 hosting service overrides can be stored",
+        ));
+    }
+    // Overrides are matched against the host the backend parsed, which is
+    // always lower-cased and carries neither scheme nor path.
+    if settings.forge_overrides.keys().any(|host| {
+        host.is_empty()
+            || host.len() > MAX_HOST_LENGTH
+            || host != &host.to_ascii_lowercase()
+            || host.contains(['/', ':', '@', ' '])
+            || host.chars().any(char::is_control)
+    }) {
+        return Err(invalid_settings(
+            "hosting service overrides must be keyed by a bare lower-case host",
         ));
     }
 
@@ -434,7 +456,7 @@ mod tests {
     use std::sync::{Arc, Barrier};
 
     use gitcat_contracts::{
-        ErrorCode, GraphColumnSettings, GraphColumnWidths, PersistedState, PullMode,
+        ErrorCode, ForgeKind, GraphColumnSettings, GraphColumnWidths, PersistedState, PullMode,
     };
     use tempfile::tempdir;
 
@@ -516,6 +538,33 @@ mod tests {
             validate_settings(&settings).unwrap_err().code,
             ErrorCode::InvalidSettings
         );
+    }
+
+    #[test]
+    fn forge_overrides_must_be_keyed_by_a_bare_host() {
+        let mut settings = AppSettings::default();
+        settings
+            .forge_overrides
+            .insert("git.example.test".into(), ForgeKind::GitLab);
+        assert!(validate_settings(&settings).is_ok());
+
+        for key in [
+            "",
+            "Git.Example.Test",
+            "https://git.example.test",
+            "git.example.test/team",
+            "git.example.test:8443",
+        ] {
+            let mut rejected = AppSettings::default();
+            rejected
+                .forge_overrides
+                .insert(key.into(), ForgeKind::GitLab);
+            assert_eq!(
+                validate_settings(&rejected).unwrap_err().code,
+                ErrorCode::InvalidSettings,
+                "{key} should be rejected"
+            );
+        }
     }
 
     #[test]

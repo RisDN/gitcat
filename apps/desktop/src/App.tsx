@@ -35,7 +35,9 @@ import type {
     RepositoryTab,
     StashEntry,
 } from "./lib/types";
-import { currentBranch, githubRemoteIconUrls } from "./app/branches";
+import { currentBranch, remoteIconUrls } from "./app/branches";
+import { withForgeOverrides } from "./lib/forge";
+import { useAvatars } from "./app/useAvatars";
 import { EMPTY_COMMIT_DRAFT, EMPTY_STATE } from "./app/defaults";
 import { continuableOperation } from "./app/snapshot";
 import type { BranchMenuState, CommitMenuState, ConfirmState, PromptState, RuntimeRepository, TabMenuState } from "./app/state";
@@ -69,7 +71,14 @@ function App() {
     const [runtime, setRuntime] = useState<Record<string, RuntimeRepository>>({});
     const [tabErrors, setTabErrors] = useState<Record<string, string>>({});
     const [openingTabIds, setOpeningTabIds] = useState<string[]>([]);
-    const [snapshot, setSnapshot] = useState<RepositorySnapshot | null>(null);
+    const [rawSnapshot, setSnapshot] = useState<RepositorySnapshot | null>(null);
+    // Settings name the forge for hosts the backend cannot recognise, so
+    // every consumer below reads an already-corrected snapshot.
+    const forgeOverrides = persisted.settings.forge_overrides;
+    const snapshot = useMemo(
+        () => withForgeOverrides(rawSnapshot, forgeOverrides),
+        [forgeOverrides, rawSnapshot],
+    );
     const [history, setHistory] = useState<HistoryPage | null>(null);
     const [stashes, setStashes] = useState<StashEntry[]>([]);
     const [selectedOid, setSelectedOid] = useState<string | null>(null);
@@ -619,10 +628,11 @@ function App() {
     })), [persisted.workspace.groups, toTabView]);
 
     const graphMatches = useMemo(() => new Set(searchOids), [searchOids]);
-    const remoteIconUrls = useMemo(
-        () => githubRemoteIconUrls(snapshot?.remotes ?? []),
+    const iconUrlsByRemote = useMemo(
+        () => remoteIconUrls(snapshot?.remotes ?? []),
         [snapshot?.remotes],
     );
+    const avatarImages = useAvatars(snapshot, history?.commits ?? [], persisted.settings.avatars);
     const currentHeadOid = snapshot?.head.kind === "unborn" ? null : snapshot?.head.oid ?? null;
     const wipLane = useMemo(
         () => getWipLane(history?.commits ?? [], currentHeadOid),
@@ -795,7 +805,7 @@ function App() {
                                 onCheckoutRemote={checkoutRemoteBranch}
                                 onCreateBranch={() => currentHeadOid ? setPrompt({ kind: "create_branch", startOid: currentHeadOid }) : undefined}
                                 remoteBranches={snapshot?.remote_branches ?? []}
-                                remoteIconUrls={remoteIconUrls}
+                                remoteIconUrls={iconUrlsByRemote}
                                 tags={snapshot?.tags ?? []}
                                 toggleKeybind={persisted.settings.keybinds.toggle_left_panel}
                             />
@@ -822,7 +832,8 @@ function App() {
                             loadMoreHistory={loadMoreHistory}
                             navigateSearch={navigateSearch}
                             overviewLoading={overviewLoading}
-                            remoteIconUrls={remoteIconUrls}
+                            remoteIconUrls={iconUrlsByRemote}
+                            avatarImages={avatarImages}
                             runMutation={runMutation}
                             searchBusy={searchBusy}
                             searchFocusToken={searchFocusToken}

@@ -7,10 +7,13 @@ import {
     MIN_GRAPH_COLUMN_WIDTH,
     visibleGraphColumns,
 } from "../lib/columns";
+import { isForgeKind } from "../lib/forge";
 import { DEFAULT_KEYBINDS, duplicateKeybinds, keybindValidationError } from "../lib/keybinds";
 import type {
     AppSettings,
     AppTheme,
+    AvatarSettings,
+    ForgeKind,
     GraphColumnSettings,
     GraphColumnWidths,
     KeybindSettings,
@@ -51,6 +54,33 @@ export function normalizePersistedKeybinds(
     return normalized;
 }
 
+// The backend rejects a settings save whose override keys are not bare
+// lower-case hosts, so stored junk is dropped rather than carried forward.
+function normalizeAvatarSettings(avatars: Partial<AvatarSettings> | undefined): AvatarSettings {
+    const defaults = DEFAULT_SETTINGS.avatars;
+    return {
+        enabled: typeof avatars?.enabled === "boolean" ? avatars.enabled : defaults.enabled,
+        gravatar_fallback: typeof avatars?.gravatar_fallback === "boolean"
+            ? avatars.gravatar_fallback
+            : defaults.gravatar_fallback,
+    };
+}
+
+function normalizeForgeOverrides(
+    overrides: Record<string, string> | undefined,
+): Record<string, ForgeKind> {
+    const normalized: Record<string, ForgeKind> = {};
+    if (!overrides || typeof overrides !== "object") return normalized;
+    for (const [rawHost, kind] of Object.entries(overrides)) {
+        const host = rawHost.trim().toLowerCase();
+        if (!host || host.length > MAX_HOST_LENGTH || /[/:@\s]/.test(host)) continue;
+        if (typeof kind === "string" && isForgeKind(kind) && kind !== "unknown") {
+            normalized[host] = kind;
+        }
+    }
+    return normalized;
+}
+
 function normalizeGraphColumns(columns: Partial<GraphColumnSettings> | undefined): GraphColumnSettings {
     const normalized = { ...ALL_GRAPH_COLUMNS };
     for (const { key } of GRAPH_COLUMNS) {
@@ -85,6 +115,8 @@ function normalizeGraphColumnWidths(
     return normalized;
 }
 
+// Longest a DNS name can be; the backend enforces the same cap.
+const MAX_HOST_LENGTH = 253;
 const HEX_COLOR = /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i;
 const THEME_ID = /^[a-zA-Z0-9_-]{1,96}$/;
 const THEME_COLOR_KEYS: Array<Exclude<keyof ThemeColors, "graph_palette">> = [
@@ -184,6 +216,8 @@ export function normalizeAppSettings(value: unknown): AppSettings {
             : DEFAULT_SETTINGS.diff_view_mode,
         graph_columns: normalizeGraphColumns(source.graph_columns),
         graph_column_widths: normalizeGraphColumnWidths(source.graph_column_widths),
+        forge_overrides: normalizeForgeOverrides(source.forge_overrides),
+        avatars: normalizeAvatarSettings(source.avatars),
         keybinds: normalizePersistedKeybinds(source.keybinds),
         active_theme_id: activeThemeId,
         themes,

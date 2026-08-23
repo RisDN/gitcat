@@ -9,7 +9,10 @@ use std::{
 
 use async_trait::async_trait;
 use gitcat_contracts::*;
-use gitcat_core::{GitBackend, GraphLayoutContext, layout_commits_with_context};
+use gitcat_core::{
+    GitBackend, GraphLayoutContext, detect_forge, forge_web_url, layout_commits_with_context,
+    parse_remote_url,
+};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -657,10 +660,20 @@ impl GitCliBackend {
                 fetch_url.clone()
             };
             validate_remote_url(&push_url)?;
+            let fetch_url = redact_sensitive(&fetch_url);
+            let push_url = redact_sensitive(&push_url);
+            // Fetch names where the repository lives; push may point at a fork
+            // remote that shares no host, so it is only the fallback.
+            let url = parse_remote_url(&fetch_url).or_else(|| parse_remote_url(&push_url));
+            let forge = url.as_ref().map(detect_forge).unwrap_or_default();
+            let web_url = url.as_ref().and_then(|parts| forge_web_url(parts, forge));
             remotes.push(RemoteInfo {
                 name: name.to_owned(),
-                fetch_url: redact_sensitive(&fetch_url),
-                push_url: redact_sensitive(&push_url),
+                fetch_url,
+                push_url,
+                url,
+                forge,
+                web_url,
             });
         }
         Ok(remotes)

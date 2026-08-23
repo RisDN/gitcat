@@ -16,6 +16,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     graph_columns: ALL_GRAPH_COLUMNS,
     graph_column_widths: DEFAULT_GRAPH_COLUMN_WIDTHS,
     keybinds: DEFAULT_KEYBINDS,
+    forge_overrides: {},
+    avatars: { enabled: true, gravatar_fallback: false },
     active_theme_id: DEFAULT_THEME_ID,
     themes: cloneDefaultThemes(),
 };

@@ -107,10 +107,57 @@ export interface BranchInfo {
   behind?: number;
 }
 
+export type RemoteUrlScheme = "https" | "http" | "ssh" | "scp_like" | "git" | "unknown";
+
+export type ForgeKind = "unknown" | "github" | "gitlab" | "bitbucket" | "gitea" | "azure_devops";
+
+export interface AvatarSettings {
+  /** Resolve commit authors against the repository's hosting service. */
+  enabled: boolean;
+  /** Ask Gravatar for authors the hosting service does not know. Off by
+   *  default: it sends a hash of the address to a third party. */
+  gravatar_fallback: boolean;
+}
+
+export interface AvatarLookup {
+  host: string;
+  owner: string;
+  repo: string;
+  forge: ForgeKind;
+  tip_oid?: string;
+  emails: string[];
+}
+
+export interface AvatarEntry {
+  email: string;
+  /** A `data:` URI; the image was fetched and cached by the backend. */
+  image: string;
+}
+
+export interface ForgeCredential {
+  host: string;
+  /** Last few characters of the token, never the token itself. */
+  hint: string;
+}
+
+export interface RemoteUrlParts {
+  scheme: RemoteUrlScheme;
+  host: string;
+  port?: number;
+  path: string;
+  owner?: string;
+  repo?: string;
+}
+
 export interface RemoteInfo {
   name: string;
   fetch_url: string;
   push_url: string;
+  /** Absent for local paths and URL shapes without a host/path pair. */
+  url?: RemoteUrlParts;
+  /** Recognised from the URL host; settings may override it per host. */
+  forge: ForgeKind;
+  web_url?: string;
 }
 
 export interface OperationProgress {
@@ -479,6 +526,9 @@ export interface AppSettings {
   graph_columns: GraphColumnSettings;
   graph_column_widths: GraphColumnWidths;
   keybinds: KeybindSettings;
+  /** Hosting service per URL host, for installs the backend cannot name. */
+  forge_overrides: Record<string, ForgeKind>;
+  avatars: AvatarSettings;
   active_theme_id: string;
   themes: AppTheme[];
 }

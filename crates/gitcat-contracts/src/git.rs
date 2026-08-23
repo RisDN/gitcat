@@ -209,6 +209,69 @@ pub struct RemoteInfo {
     pub name: String,
     pub fetch_url: String,
     pub push_url: String,
+    /// Structured view of the fetch URL, falling back to the push URL. `None`
+    /// for local paths and URL shapes without a host/path pair.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<RemoteUrlParts>,
+    /// Hosting service recognised from the URL host alone. The UI may still
+    /// override this for self-hosted installations.
+    #[serde(default)]
+    pub forge: ForgeKind,
+    /// Repository home page, built from the parsed URL and the forge layout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub web_url: Option<String>,
+}
+
+/// Transport a remote URL names. Git accepts several spellings for the same
+/// endpoint, and the differences matter: only the explicit `ssh://` form
+/// carries a port, while `git@host:path` treats everything after the colon as
+/// the path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteUrlScheme {
+    Https,
+    Http,
+    /// Explicit `ssh://user@host:port/path`.
+    Ssh,
+    /// Abbreviated `user@host:path`, which has no port.
+    ScpLike,
+    Git,
+    #[default]
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemoteUrlParts {
+    pub scheme: RemoteUrlScheme,
+    /// Lower-cased host without credentials or port.
+    pub host: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    /// Repository path without a leading slash or a trailing `.git`.
+    pub path: String,
+    /// Everything in `path` above the repository itself: the user for GitHub,
+    /// the full group chain for GitLab subgroups, `org/project` for Azure.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ForgeKind {
+    #[default]
+    #[serde(rename = "unknown")]
+    Unknown,
+    #[serde(rename = "github")]
+    GitHub,
+    #[serde(rename = "gitlab")]
+    GitLab,
+    #[serde(rename = "bitbucket")]
+    Bitbucket,
+    #[serde(rename = "gitea")]
+    Gitea,
+    #[serde(rename = "azure_devops")]
+    AzureDevOps,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -63,6 +63,7 @@ export interface HistoryPaneProps {
     navigateSearch: (direction: 1 | -1) => void;
     overviewLoading: boolean;
     remoteIconUrls: Map<string, string>;
+    avatarImages: ReadonlyMap<string, string>;
     runMutation: RunMutation;
     searchBusy: boolean;
     searchFocusToken: number;
@@ -115,6 +116,7 @@ export function HistoryPane({
     navigateSearch,
     overviewLoading,
     remoteIconUrls,
+    avatarImages,
     runMutation,
     searchBusy,
     searchFocusToken,
@@ -341,6 +343,7 @@ export function HistoryPane({
                             onRefDoubleClick={checkoutFromRefLabel}
                             onSelect={selectCommit}
                             remoteIconUrls={remoteIconUrls}
+                            avatarImages={avatarImages}
                             searchMatchOids={graphMatches}
                             selectedOid={selectedOid}
                             wip={snapshot && !snapshot.status.clean

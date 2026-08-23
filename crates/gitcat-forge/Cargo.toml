@@ -1,0 +1,20 @@
+[package]
+name = "gitcat-forge"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+base64.workspace = true
+gitcat-contracts = { path = "../gitcat-contracts" }
+gitcat-core = { path = "../gitcat-core" }
+keyring.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

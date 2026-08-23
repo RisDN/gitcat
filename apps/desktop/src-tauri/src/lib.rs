@@ -4,14 +4,16 @@ mod window_state;
 use std::sync::Arc;
 
 use gitcat_contracts::{
-    ApiError, ApiResult, AppMetadata, AppSettings, CloneOptions, CommitActionAvailability,
-    CommitDetails, CommitOptions, CommitSearchQuery, CommitSearchResult, ConflictExpectedState,
-    ConflictFileDetails, ConflictLineEndingPolicy, ConflictPreflightResult, ConflictResolution,
-    ContinueOperation, DiffRequest, ErrorCode, ExpectedState, FetchOptions, FileDiff, GitVersion,
-    HistoryPage, HistoryQuery, MutationResult, PersistedState, PullOptions, PushOptions,
-    RepositoryId, RepositoryInfo, RepositorySnapshot, ResetMode, StashEntry,
+    ApiError, ApiResult, AppMetadata, AppSettings, AvatarEntry, AvatarLookup, AvatarSettings,
+    CloneOptions, CommitActionAvailability, CommitDetails, CommitOptions, CommitSearchQuery,
+    CommitSearchResult, ConflictExpectedState, ConflictFileDetails, ConflictLineEndingPolicy,
+    ConflictPreflightResult, ConflictResolution, ContinueOperation, DiffRequest, ErrorCode,
+    ExpectedState, FetchOptions, FileDiff, ForgeCredential, GitVersion, HistoryPage, HistoryQuery,
+    MutationResult, PersistedState, PullOptions, PushOptions, RepositoryId, RepositoryInfo,
+    RepositorySnapshot, ResetMode, StashEntry,
 };
 use gitcat_core::{CoreApi, JsonStateStore, export_settings, import_settings};
+use gitcat_forge::{AvatarService, TokenStore};
 use gitcat_git_cli::GitCliBackend;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State, WindowEvent};
@@ -606,6 +608,34 @@ async fn persisted_state_save(
         .map_err(task_join_error)?
 }
 
+/// Resolves commit author avatars for one repository page. Authors that stay
+/// unresolved are absent from the result and keep their drawn initial.
+#[tauri::command]
+async fn avatars_resolve(
+    avatars: State<'_, AvatarService>,
+    lookup: AvatarLookup,
+    settings: AvatarSettings,
+) -> ApiResult<Vec<AvatarEntry>> {
+    avatars.resolve(&lookup, settings).await
+}
+
+/// Stores or clears the token for one host. Passing `None` removes it.
+#[tauri::command]
+async fn forge_token_set(
+    tokens: State<'_, Arc<TokenStore>>,
+    host: String,
+    token: Option<String>,
+) -> ApiResult<()> {
+    tokens.set(&host, token.as_deref())
+}
+
+/// Which hosts hold a token, with a hint too short to be the credential. The
+/// token itself never travels back to the webview.
+#[tauri::command]
+async fn forge_credentials(tokens: State<'_, Arc<TokenStore>>) -> ApiResult<Vec<ForgeCredential>> {
+    tokens.credentials()
+}
+
 #[tauri::command]
 async fn settings_export(settings: AppSettings, destination: String) -> ApiResult<()> {
     tauri::async_runtime::spawn_blocking(move || export_settings(&settings, destination))
@@ -639,6 +669,11 @@ pub fn run() {
             let backend = Arc::new(GitCliBackend::default());
             app.manage(Arc::new(CoreApi::new(backend)));
             app.manage(JsonStateStore::new(data_dir.join("state.json")));
+            // The token itself goes to the operating system credential store,
+            // so a settings export cannot carry one off the machine.
+            let tokens = Arc::new(TokenStore::new(&data_dir));
+            app.manage(AvatarService::new(data_dir.join("avatars"), tokens.clone()));
+            app.manage(tokens);
             app.manage(RepositoryWatchState::default());
             app.manage(WindowModeStore::new(data_dir.join("window.json")));
 
@@ -708,6 +743,9 @@ pub fn run() {
             persisted_state_save,
             settings_export,
             settings_import,
+            avatars_resolve,
+            forge_token_set,
+            forge_credentials,
         ])
         .run(tauri::generate_context!())
         .expect("error while running GitCat");

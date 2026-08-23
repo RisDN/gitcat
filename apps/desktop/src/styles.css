@@ -555,6 +555,11 @@
   font-family: "Segoe UI", sans-serif;
 }
 
+.gc-commit-row__avatar-image {
+  /* Fills the node ring exactly; the border keeps showing the lane colour. */
+  @apply h-full w-full rounded-full object-cover;
+}
+
 .gc-commit-row__merge-node {
   @apply absolute top-1/2 z-[3] h-[9px] w-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full;
   background: var(--gc-graph-slot-color, var(--gc-accent));

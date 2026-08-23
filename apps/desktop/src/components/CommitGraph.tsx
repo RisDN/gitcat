@@ -79,6 +79,8 @@ export interface CommitGraphProps {
   hideHeadDecoration?: boolean;
   detachedHeadOid?: string | null;
   remoteIconUrls?: ReadonlyMap<string, string>;
+  /** Author avatars keyed by lower-cased email, inlined as `data:` URIs. */
+  avatarImages?: ReadonlyMap<string, string>;
   onSelect: (commit: CommitSummary) => void;
   onNavigateBeforeFirst?: () => void;
   onCommitContextMenu?: (request: CommitContextMenuRequest) => void;
@@ -129,11 +131,28 @@ interface CommitRowProps {
   hasMultipleBranches: boolean;
   detachedHeadOid?: string | null;
   remoteIconUrls?: ReadonlyMap<string, string>;
+  avatarImages?: ReadonlyMap<string, string>;
   onSelect: (commit: CommitSummary) => void;
   onCommitContextMenu?: (request: CommitContextMenuRequest) => void;
   onCopySha?: (oid: string) => void;
   onRefDoubleClick?: (decoration: RefLabel) => void;
   formatTimestamp?: (seconds: number, offsetMinutes: number) => string;
+}
+
+// The node carries the author's picture once the hosting service has named
+// them, and their initial until then. An image that fails to decode falls back
+// as well, so a stale cache entry never leaves an empty node.
+function CommitNodeFace({ image, initial }: { image?: string; initial: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!image || failed) return initial;
+  return (
+    <img
+      alt=""
+      className="gc-commit-row__avatar-image"
+      onError={() => setFailed(true)}
+      src={image}
+    />
+  );
 }
 
 // A graph column narrower than the lane extent parks the lanes that no longer
@@ -722,6 +741,7 @@ const CommitRow = memo(function CommitRow({
   hasMultipleBranches,
   detachedHeadOid,
   remoteIconUrls,
+  avatarImages,
   onSelect,
   onCommitContextMenu,
   onCopySha,
@@ -832,7 +852,14 @@ const CommitRow = memo(function CommitRow({
               ].filter(Boolean).join(" ")}
               style={{ left: branchOrigin }}
             >
-              {commit.stash ? <Inbox size={11} strokeWidth={2.4} /> : initials.slice(0, 1) || "?"}
+              {commit.stash ? (
+                <Inbox size={11} strokeWidth={2.4} />
+              ) : (
+                <CommitNodeFace
+                  image={avatarImages?.get(commit.author.email.trim().toLowerCase())}
+                  initial={initials.slice(0, 1) || "?"}
+                />
+              )}
             </span>
           )}
         </span>
@@ -875,6 +902,7 @@ export function CommitGraph({
   hideHeadDecoration = false,
   detachedHeadOid = null,
   remoteIconUrls,
+  avatarImages,
   onSelect,
   onNavigateBeforeFirst,
   onCommitContextMenu,
@@ -959,6 +987,7 @@ export function CommitGraph({
       onRefDoubleClick={onRefDoubleClick}
       onSelect={onSelect}
       remoteIconUrls={remoteIconUrls}
+      avatarImages={avatarImages}
       searchDimmed={
         searchActive
         && commit.oid !== selectedOid
@@ -981,6 +1010,7 @@ export function CommitGraph({
     onRefDoubleClick,
     onSelect,
     remoteIconUrls,
+    avatarImages,
     searchActive,
     searchMatchOids,
     selectedOid,

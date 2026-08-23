@@ -17,6 +17,8 @@ import { duplicateKeybinds } from "../../lib/keybinds";
 import { isTauriEnvironment } from "../../lib/platform";
 import type { AppSettings, AppTheme, PullMode, ThemeColors } from "../../lib/types";
 import { Button, Input, Modal, ModalSpacer } from "../ui";
+import { ForgeOverrideEditor } from "./ForgeOverrideEditor";
+import { ForgeTokenEditor } from "./ForgeTokenEditor";
 import { KeybindEditor } from "./KeybindEditor";
 import { CheckField, FIELD_INPUT, Field, SectionHeading } from "./SettingsField";
 import { ThemeEditor } from "./ThemeEditor";
@@ -228,6 +230,40 @@ export function SettingsDialog({ settings, defaults, onSave, onClose }: Settings
                     value={draft.diff_context_lines}
                   />
                 </Field>
+              </section>
+              <section className="col-span-full">
+                <SectionHeading>Author pictures</SectionHeading>
+                <CheckField
+                  checked={draft.avatars.enabled}
+                  onChange={(enabled) => setDraft((current) => ({
+                    ...current,
+                    avatars: { ...current.avatars, enabled },
+                  }))}
+                >
+                  Show author pictures from the repository's hosting service
+                </CheckField>
+                <CheckField
+                  checked={draft.avatars.gravatar_fallback}
+                  onChange={(gravatar_fallback) => setDraft((current) => ({
+                    ...current,
+                    avatars: { ...current.avatars, gravatar_fallback },
+                  }))}
+                >
+                  Also ask Gravatar for authors the hosting service does not know
+                </CheckField>
+                <p className="mt-1.5 text-[10px] leading-[1.45] text-muted/72">
+                  Gravatar is a third party that is not hosting the repository, and the lookup sends
+                  it a hash of the author's email address.
+                </p>
+              </section>
+              <section className="col-span-full">
+                <SectionHeading>Hosting services</SectionHeading>
+                <ForgeOverrideEditor
+                  onChange={(forge_overrides) => setDraft((current) => ({ ...current, forge_overrides }))}
+                  overrides={draft.forge_overrides}
+                />
+                <SectionHeading>Access tokens</SectionHeading>
+                <ForgeTokenEditor />
               </section>
             </div>
           ) : null}

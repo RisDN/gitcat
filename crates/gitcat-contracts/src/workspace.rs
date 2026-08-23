@@ -1,6 +1,8 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
-use crate::PullMode;
+use crate::{AvatarSettings, ForgeKind, PullMode};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -353,6 +355,11 @@ pub struct AppSettings {
     pub graph_columns: GraphColumnSettings,
     pub graph_column_widths: GraphColumnWidths,
     pub keybinds: KeybindSettings,
+    /// Hosting service for URL hosts the backend cannot recognise on its
+    /// own, keyed by lower-cased host. A self-hosted GitHub Enterprise or
+    /// GitLab install looks like any other domain until it is named here.
+    pub forge_overrides: BTreeMap<String, ForgeKind>,
+    pub avatars: AvatarSettings,
     pub active_theme_id: String,
     pub themes: Vec<AppTheme>,
     #[serde(default, rename = "theme", skip_serializing)]
@@ -373,6 +380,8 @@ impl Default for AppSettings {
             graph_columns: GraphColumnSettings::default(),
             graph_column_widths: GraphColumnWidths::default(),
             keybinds: KeybindSettings::default(),
+            forge_overrides: BTreeMap::new(),
+            avatars: AvatarSettings::default(),
             active_theme_id: "gitcat-midnight".into(),
             themes: default_themes(),
             legacy_theme: None,
