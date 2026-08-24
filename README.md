@@ -4,6 +4,36 @@ Lightweight, Windows-first desktop Git client. Tauri v2 + React UI, Rust core, a
 
 > **Status:** functional MVP. `tauri dev` works with real repositories; the standalone Vite development page uses a built-in demo data source.
 
+## Screenshots
+
+<p align="center">
+  <a href="docs/gallery/workspace/repository-overview.png">
+    <img src="docs/gallery/workspace/repository-overview.png" alt="GitCat repository overview with branch graph and working tree" width="100%">
+  </a>
+</p>
+
+<p align="center">
+  <a href="docs/gallery/diffs/split-diff.png">
+    <img src="docs/gallery/diffs/split-diff.png" alt="GitCat split diff viewer" width="49%">
+  </a>
+  <a href="docs/gallery/workspace/commit-details.png">
+    <img src="docs/gallery/workspace/commit-details.png" alt="GitCat commit details" width="49%">
+  </a>
+</p>
+
+<p align="center">
+  <a href="docs/gallery/working-tree/tree-layout.png">
+    <img src="docs/gallery/working-tree/tree-layout.png" alt="GitCat working tree" width="49%">
+  </a>
+  <a href="docs/gallery/preferences/theme-library.png">
+    <img src="docs/gallery/preferences/theme-library.png" alt="GitCat theme library" width="49%">
+  </a>
+</p>
+
+<p align="center">
+  <a href="docs/gallery/README.md"><strong>Browse the full feature gallery →</strong></a>
+</p>
+
 ## Key features
 
 - Start page when no repository is open: searchable recent repositories with per-entry removal, plus Open, Clone, and Create actions. Create supports a target path, default branch name, and a `.gitignore` template; hosted providers are listed but not yet available.
