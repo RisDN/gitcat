@@ -7,7 +7,7 @@ import { SettingsDialog } from "../components/settings";
 import { CloneDialog, CreateDialog } from "../components/start-page";
 import { ToastRegion, type ToastMessage } from "../components/ToastRegion";
 import { gitcatApi } from "../lib/api";
-import type { AppSettings, CloneOptions, ConflictFileDetails, PersistedState, RepositorySnapshot, RepositoryTab } from "../lib/types";
+import type { AppSettings, CloneOptions, ConflictFileDetails, NewRepository, PersistedState, RepositorySnapshot, RepositoryTab } from "../lib/types";
 import { currentBranch } from "./branches";
 import { DEFAULT_SETTINGS } from "./defaults";
 import type { BranchMenuState, CommitMenuState, PromptState, RunMutation, TabMenuState } from "./state";
@@ -21,7 +21,7 @@ export interface AppDialogsProps {
     commitMenu: CommitMenuState | null;
     conflictEditor: ConflictFileDetails | null;
     contextActions: ContextAction[];
-    createRepository: (path: string, defaultBranch: string, ignorePatterns: string[], targetTabId: string | null) => Promise<void>;
+    createRepository: (path: string, defaultBranch: string, ignorePatterns: string[], remote: NewRepository | null, targetTabId: string | null) => Promise<void>;
     dismissToast: (id: string) => void;
     executeBranchAction: (action: string) => void;
     executeCommitAction: (action: string) => void;
@@ -116,15 +116,17 @@ export function AppDialogs({
                 <CreateDialog
                     busy={busy}
                     onClose={() => { if (!busy) setStartDialog(null); }}
-                    onSubmit={(path, defaultBranch, ignorePatterns) => {
+                    onSubmit={(path, defaultBranch, ignorePatterns, remote) => {
                         setStartDialog(null);
                         void createRepository(
                             path,
                             defaultBranch,
                             ignorePatterns,
+                            remote,
                             activeTab?.kind === "start" ? activeTab.id : null,
                         );
                     }}
+                    overrides={settings.forge_overrides}
                 />
             ) : null}
             {conflictEditor && snapshot ? (

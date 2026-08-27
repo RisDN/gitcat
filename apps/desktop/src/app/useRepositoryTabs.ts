@@ -3,9 +3,11 @@ import { useCallback, type Dispatch, type RefObject, type SetStateAction } from 
 import type { ToastMessage } from "../components/ToastRegion";
 import type { CommitDraft } from "../components/worktree";
 import { gitcatApi } from "../lib/api";
+import { createForgeRepository } from "../lib/forgeAuth";
 import { chooseDirectory } from "../lib/platform";
 import type {
     CloneOptions,
+    NewRepository,
     OpenedRepository,
     PersistedState,
     RecentRepository,
@@ -173,17 +175,30 @@ export function useRepositoryTabs({
         path: string,
         defaultBranch: string,
         ignorePatterns: string[],
+        remote: NewRepository | null,
         targetTabId: string | null,
     ) => {
         if (busy) return;
         setBusy(true);
         try {
+            // The service goes first. A local repository that exists nowhere
+            // else is easy to keep or throw away, while a name already taken
+            // on the service is an answer the user has to give before
+            // anything is written to disk.
+            const created = remote ? await createForgeRepository(remote) : null;
             const opened = await gitcatApi.initRepository(path, defaultBranch);
             if (ignorePatterns.length) {
                 await gitcatApi.appendGitignore(opened.repository_id, ignorePatterns);
             }
+            if (created) {
+                await gitcatApi.addRemote(opened.repository_id, "origin", created.clone_url);
+            }
             adoptRepository(opened, targetTabId);
-            addToast({ tone: "success", title: "Repository created", detail: opened.info.root });
+            addToast({
+                tone: "success",
+                title: created ? `Repository created on ${remote?.host}` : "Repository created",
+                detail: opened.info.root,
+            });
         } catch (error) {
             showError("Create repository failed", error);
         } finally {
