@@ -116,6 +116,13 @@ pub trait GitBackend: Send + Sync {
     ) -> ApiResult<MutationResult>;
     async fn merge_branch(&self, path: &Path, branch: &str) -> ApiResult<MutationResult>;
 
+    /// Points a new remote name at a URL.
+    ///
+    /// Nothing is fetched: this exists for a repository that has just been
+    /// created on a hosting service, where there is nothing on the other end
+    /// to fetch yet.
+    async fn add_remote(&self, path: &Path, name: &str, url: &str) -> ApiResult<MutationResult>;
+
     async fn fetch(
         &self,
         path: &Path,

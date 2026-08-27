@@ -445,6 +445,18 @@ impl CoreApi {
         .await
     }
 
+    pub async fn add_remote(
+        &self,
+        repository_id: &RepositoryId,
+        name: &str,
+        url: &str,
+    ) -> ApiResult<MutationResult> {
+        self.mutate(repository_id, |backend, path| async move {
+            backend.add_remote(&path, name, url).await
+        })
+        .await
+    }
+
     pub async fn fetch(
         &self,
         repository_id: &RepositoryId,
@@ -1214,6 +1226,15 @@ mod tests {
 
         async fn merge_branch(&self, path: &Path, _branch: &str) -> ApiResult<MutationResult> {
             self.mutation("merge_branch", path).await
+        }
+
+        async fn add_remote(
+            &self,
+            path: &Path,
+            _name: &str,
+            _url: &str,
+        ) -> ApiResult<MutationResult> {
+            self.mutation("add_remote", path).await
         }
 
         async fn fetch(

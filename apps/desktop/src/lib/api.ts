@@ -128,6 +128,7 @@ export interface GitCatCommands {
     upstream: string,
   ): Promise<MutationResult>;
   mergeBranch(repositoryId: RepositoryId, branch: string): Promise<MutationResult>;
+  addRemote(repositoryId: RepositoryId, name: string, url: string): Promise<MutationResult>;
   fetch(repositoryId: RepositoryId, options: FetchOptions): Promise<MutationResult>;
   pull(repositoryId: RepositoryId, options: PullOptions): Promise<MutationResult>;
   push(repositoryId: RepositoryId, options: PushOptions): Promise<MutationResult>;
@@ -304,6 +305,8 @@ export function createTauriGitCatApi(): GitCatApi {
       invokeTauri("branch_set_upstream", { repositoryId, branch, upstream }),
     mergeBranch: (repositoryId, branch) =>
       invokeTauri("branch_merge", { repositoryId, branch }),
+    addRemote: (repositoryId, name, url) =>
+      invokeTauri("remote_add", { repositoryId, name, url }),
     fetch: (repositoryId, options) =>
       invokeTauri("remote_fetch", { repositoryId, options }),
     pull: (repositoryId, options) =>

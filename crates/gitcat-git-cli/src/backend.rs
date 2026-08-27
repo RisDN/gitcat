@@ -2322,6 +2322,19 @@ impl GitBackend for GitCliBackend {
         .await
     }
 
+    async fn add_remote(&self, path: &Path, name: &str, url: &str) -> ApiResult<MutationResult> {
+        validate_remote_name(name)?;
+        validate_remote_url(url)?;
+        self.mutate(
+            path,
+            vec!["remote".into(), "add".into(), name.into(), url.into()],
+            None,
+            CancellationToken::new(),
+            false,
+        )
+        .await
+    }
+
     async fn fetch(
         &self,
         path: &Path,

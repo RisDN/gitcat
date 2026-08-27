@@ -427,6 +427,17 @@ async fn branch_merge(
     core.merge_branch(&repository_id, &branch).await
 }
 
+/// Points a new remote name at a URL, without fetching it.
+#[tauri::command]
+async fn remote_add(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    name: String,
+    url: String,
+) -> ApiResult<MutationResult> {
+    core.add_remote(&repository_id, &name, &url).await
+}
+
 #[tauri::command]
 async fn remote_fetch(
     core: State<'_, Arc<CoreApi>>,
@@ -824,6 +835,7 @@ pub fn run() {
             branch_delete,
             branch_set_upstream,
             branch_merge,
+            remote_add,
             remote_fetch,
             remote_pull,
             remote_push,

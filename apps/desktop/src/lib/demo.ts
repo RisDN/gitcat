@@ -956,6 +956,20 @@ class DemoGitCatApi implements GitCatApi {
     return this.mutation();
   }
 
+  async addRemote(
+    repositoryId: RepositoryId,
+    name: string,
+    url: string,
+  ): Promise<MutationResult> {
+    await delay();
+    this.ensureRepository(repositoryId);
+    this.snapshotValue.remotes = [
+      ...this.snapshotValue.remotes,
+      { name, fetch_url: url, push_url: url, forge: "unknown" },
+    ];
+    return this.mutation();
+  }
+
   async fetch(repositoryId: RepositoryId, _options: FetchOptions): Promise<MutationResult> {
     await delay(90);
     this.ensureRepository(repositoryId);
