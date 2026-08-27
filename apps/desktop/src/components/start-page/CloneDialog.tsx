@@ -36,8 +36,6 @@ export function CloneDialog({
 }) {
   const [url, setUrl] = useState("");
   const [parent, setParent] = useState("");
-  const [folder, setFolder] = useState("");
-  const [branch, setBranch] = useState("");
   const [shallow, setShallow] = useState(false);
   const [depth, setDepth] = useState(DEFAULT_DEPTH);
   const [sparse, setSparse] = useState(false);
@@ -57,10 +55,18 @@ export function CloneDialog({
   // on the page.
   const ready = !integration || Boolean(selectedHost && credentialFor(connections, selectedHost));
 
-  const derivedFolder = folder.trim() || repositoryNameFromUrl(url);
+  // The clone is named after the repository, the way Git names it on the
+  // command line, so the page asks where it goes and nothing else.
+  const derivedFolder = repositoryNameFromUrl(url);
   const destination = parent.trim() && derivedFolder ? joinPath(parent, derivedFolder) : "";
   // A depth of zero is not a shallower clone, it is Git refusing the command,
   // so the button waits for a usable number rather than reporting it after.
+  // With no folder field left, an URL that names no repository has nowhere to
+  // land, and the button would otherwise sit disabled without saying why.
+  const destinationHint = destination
+    || (url.trim() && !derivedFolder
+      ? "This URL does not name a repository to clone into."
+      : "Pick a folder to see where the clone lands.");
   const parsedDepth = Number.parseInt(depth.trim(), 10);
   const depthValid = !shallow || (Number.isFinite(parsedDepth) && parsedDepth > 0);
   const submittable = Boolean(url.trim() && destination) && depthValid && !busy;
@@ -75,7 +81,7 @@ export function CloneDialog({
     onSubmit({
       url: url.trim(),
       destination,
-      branch: branch.trim() || null,
+      branch: null,
       depth: shallow ? parsedDepth : null,
       filter_blob_none: false,
       sparse_paths: sparse ? sparseLines(sparsePaths) : null,
@@ -152,7 +158,8 @@ export function CloneDialog({
           {ready ? (
             <>
               <PathField
-                label="Destination folder"
+                hint={destinationHint}
+                label="Where to clone to"
                 onBrowse={() => {
                   void chooseDirectory("Choose destination folder").then((selected) => {
                     if (selected) setParent(selected);
@@ -161,20 +168,6 @@ export function CloneDialog({
                 onChange={setParent}
                 placeholder="Parent folder for the clone"
                 value={parent}
-              />
-              <TextInputField
-                hint={destination || "Pick a destination folder to see the clone path."}
-                label="Folder name"
-                onChange={setFolder}
-                placeholder={repositoryNameFromUrl(url) || "repository"}
-                value={folder}
-              />
-              <TextInputField
-                hint="Leave empty to clone the remote default branch."
-                label="Branch"
-                onChange={setBranch}
-                placeholder="main"
-                value={branch}
               />
               <CheckboxField checked={shallow} label="Shallow clone" onChange={setShallow} />
               {shallow ? (
