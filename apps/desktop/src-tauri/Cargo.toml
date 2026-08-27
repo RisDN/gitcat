@@ -16,6 +16,7 @@ crate-type = ["rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+async-trait.workspace = true
 gitcat-contracts = { path = "../../../crates/gitcat-contracts" }
 gitcat-core = { path = "../../../crates/gitcat-core" }
 gitcat-forge = { path = "../../../crates/gitcat-forge" }

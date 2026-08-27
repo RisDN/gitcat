@@ -7,6 +7,8 @@ use std::{
 };
 
 use gitcat_contracts::{ApiError, ApiResult, ErrorCode};
+
+use crate::credentials::{HostCredential, helper_args, helper_env};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
     process::{Child, Command},
@@ -135,6 +137,9 @@ pub(crate) struct GitRunOptions {
     /// Extra process environment applied after the sanitized baseline. Used to
     /// preserve authorship (`GIT_AUTHOR_*`) when rebuilding commit objects.
     pub extra_env: Vec<(OsString, OsString)>,
+    /// Token to offer Git for this one command. Set only for network commands,
+    /// and only when the host it belongs to is the host being contacted.
+    pub credential: Option<HostCredential>,
 }
 
 impl GitRunOptions {
@@ -146,6 +151,7 @@ impl GitRunOptions {
             allow_failure: false,
             allow_stdout_truncation: false,
             extra_env: Vec::new(),
+            credential: None,
         }
     }
 
@@ -157,6 +163,7 @@ impl GitRunOptions {
             allow_failure: false,
             allow_stdout_truncation: false,
             extra_env: Vec::new(),
+            credential: None,
         }
     }
 
@@ -168,6 +175,7 @@ impl GitRunOptions {
             allow_failure: false,
             allow_stdout_truncation: false,
             extra_env: Vec::new(),
+            credential: None,
         }
     }
 }
@@ -227,6 +235,14 @@ impl GitRunner {
             options.timeout = self.default_timeout;
         }
 
+        // Installed before the subcommand, because Git reads `-c` overrides
+        // only ahead of it.
+        let credential_args = options
+            .credential
+            .as_ref()
+            .map(|_| helper_args())
+            .unwrap_or_default();
+
         let mut command = Command::new(&self.executable);
         command
             .arg("--no-pager")
@@ -234,6 +250,7 @@ impl GitRunner {
             .arg("color.ui=false")
             .arg("-c")
             .arg("core.quotepath=false")
+            .args(credential_args)
             .args(args)
             .stdin(if stdin.is_some() {
                 Stdio::piped()
@@ -276,6 +293,14 @@ impl GitRunner {
         // GIT_AUTHOR_* / GIT_COMMITTER_* which the sanitizer never touches.
         for (key, value) in &options.extra_env {
             command.env(key, value);
+        }
+
+        // The token reaches the credential helper this way rather than through
+        // an argument, which every process on the machine can read.
+        if let Some(credential) = &options.credential {
+            for (key, value) in helper_env(credential) {
+                command.env(key, value);
+            }
         }
 
         #[cfg(windows)]

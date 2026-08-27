@@ -1,9 +1,10 @@
 use std::{
-    collections::{HashMap, hash_map::DefaultHasher},
+    collections::{BTreeSet, HashMap, hash_map::DefaultHasher},
     ffi::OsString,
-    fs,
+    fmt, fs,
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
+    sync::Arc,
     time::Duration,
 };
 
@@ -20,6 +21,7 @@ use crate::{
         conflict_expected_state, entry_at_stage, merge_tree_preflight_unavailable,
         parse_merge_tree_paths, summarize_paths, supports_merge_tree_preflight,
     },
+    credentials::{GitCredentialSource, HostCredential},
     limits::*,
     operation::ensure_operation,
     parse::{
@@ -66,16 +68,39 @@ impl CommitAuthor {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct GitCliBackend {
     pub(crate) runner: GitRunner,
+    /// Where a token for a hosting service comes from. Absent by default, which
+    /// leaves every network command to the user's own credential helpers.
+    credentials: Option<Arc<dyn GitCredentialSource>>,
+}
+
+// The credential source is deliberately opaque: nothing about it belongs in a
+// debug rendering of the backend.
+impl fmt::Debug for GitCliBackend {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("GitCliBackend")
+            .field("runner", &self.runner)
+            .field("credentials", &self.credentials.is_some())
+            .finish()
+    }
 }
 
 impl GitCliBackend {
     pub fn new(executable: impl Into<PathBuf>) -> Self {
         Self {
             runner: GitRunner::new(executable),
+            credentials: None,
         }
+    }
+
+    /// Lets network commands authenticate with a token GitCat holds, instead of
+    /// relying on the user having signed in to a system credential manager.
+    pub fn with_credentials(mut self, credentials: Arc<dyn GitCredentialSource>) -> Self {
+        self.credentials = Some(credentials);
+        self
     }
 
     pub(crate) async fn read(
@@ -679,7 +704,13 @@ impl GitCliBackend {
         Ok(remotes)
     }
 
-    async fn validate_remote_selection(&self, path: &Path, remote: Option<&str>) -> ApiResult<()> {
+    /// Checks the selection and hands back the remotes it was checked against,
+    /// so a caller that also needs their URLs does not ask Git twice.
+    async fn validate_remote_selection(
+        &self,
+        path: &Path,
+        remote: Option<&str>,
+    ) -> ApiResult<Vec<RemoteInfo>> {
         let remotes = self.remotes(path).await?;
         if let Some(remote) = remote {
             validate_remote_name(remote)?;
@@ -695,7 +726,59 @@ impl GitCliBackend {
                 "Repository has no configured remote",
             ));
         }
-        Ok(())
+        Ok(remotes)
+    }
+
+    /// Options for a network command, carrying a token when it is unambiguous
+    /// which host the command will contact.
+    ///
+    /// A command that reaches several hosts -- `fetch --all` across remotes on
+    /// different services -- is left to the credential helpers Git already has:
+    /// installing one clears them for the whole command, and a token for one
+    /// host is no use to another.
+    async fn network_options(&self, remotes: &[RemoteInfo], remote: Option<&str>) -> GitRunOptions {
+        let mut options = GitRunOptions::network(NETWORK_OUTPUT_CAP);
+        let Some(source) = self.credentials.as_ref() else {
+            return options;
+        };
+        let hosts: BTreeSet<&str> = remotes
+            .iter()
+            .filter(|entry| remote.is_none_or(|name| entry.name == name))
+            .filter_map(|entry| password_host(entry.url.as_ref()))
+            .collect();
+        let mut hosts = hosts.into_iter();
+        let (Some(host), None) = (hosts.next(), hosts.next()) else {
+            return options;
+        };
+
+        if let Some(token) = source.token_for(host).await {
+            options.credential = Some(HostCredential {
+                host: host.to_owned(),
+                token,
+            });
+        }
+        options
+    }
+
+    /// Options for a clone, whose host comes from the URL rather than from a
+    /// configured remote.
+    async fn clone_options(&self, url: &str) -> GitRunOptions {
+        let mut options = GitRunOptions::network(NETWORK_OUTPUT_CAP);
+        let Some(source) = self.credentials.as_ref() else {
+            return options;
+        };
+        let parsed = parse_remote_url(url);
+        let Some(host) = password_host(parsed.as_ref()) else {
+            return options;
+        };
+
+        if let Some(token) = source.token_for(host).await {
+            options.credential = Some(HostCredential {
+                host: host.to_owned(),
+                token,
+            });
+        }
+        options
     }
 
     async fn mutation_result(
@@ -731,12 +814,24 @@ impl GitCliBackend {
         cancellation: CancellationToken,
         network: bool,
     ) -> ApiResult<MutationResult> {
-        let before_oid = self.head_oid(path).await?;
-        let mut options = if network {
+        let options = if network {
             GitRunOptions::network(NETWORK_OUTPUT_CAP)
         } else {
             GitRunOptions::mutation(READ_OUTPUT_CAP)
         };
+        self.mutate_with(path, args, stdin, cancellation, options)
+            .await
+    }
+
+    pub(crate) async fn mutate_with(
+        &self,
+        path: &Path,
+        args: Vec<OsString>,
+        stdin: Option<&[u8]>,
+        cancellation: CancellationToken,
+        mut options: GitRunOptions,
+    ) -> ApiResult<MutationResult> {
+        let before_oid = self.head_oid(path).await?;
         options.allow_failure = true;
         let output = self
             .runner
@@ -1028,14 +1123,9 @@ impl GitBackend for GitCliBackend {
         args.push("--".into());
         args.push(options.url.as_str().into());
         args.push(destination.as_os_str().to_owned());
+        let run = self.clone_options(&options.url).await;
         self.runner
-            .run(
-                None,
-                &args,
-                None,
-                cancellation,
-                GitRunOptions::network(NETWORK_OUTPUT_CAP),
-            )
+            .run(None, &args, None, cancellation, run)
             .await?;
         self.inspect_repository(&destination).await
     }
@@ -2238,7 +2328,8 @@ impl GitBackend for GitCliBackend {
         options: &FetchOptions,
         cancellation: CancellationToken,
     ) -> ApiResult<MutationResult> {
-        self.validate_remote_selection(path, options.remote.as_deref())
+        let remotes = self
+            .validate_remote_selection(path, options.remote.as_deref())
             .await?;
         let mut args = os_args(&["fetch", "--progress"]);
         if options.prune {
@@ -2253,7 +2344,10 @@ impl GitBackend for GitCliBackend {
         } else {
             args.push("--all".into());
         }
-        self.mutate(path, args, None, cancellation, true).await
+        let run = self
+            .network_options(&remotes, options.remote.as_deref())
+            .await;
+        self.mutate_with(path, args, None, cancellation, run).await
     }
 
     async fn pull(
@@ -2262,7 +2356,8 @@ impl GitBackend for GitCliBackend {
         options: &PullOptions,
         cancellation: CancellationToken,
     ) -> ApiResult<MutationResult> {
-        self.validate_remote_selection(path, options.remote.as_deref())
+        let remotes = self
+            .validate_remote_selection(path, options.remote.as_deref())
             .await?;
         if options.branch.is_some() && options.remote.is_none() {
             return Err(ApiError::new(
@@ -2296,7 +2391,10 @@ impl GitBackend for GitCliBackend {
                 args.push(branch.into());
             }
         }
-        self.mutate(path, args, None, cancellation, true).await
+        let run = self
+            .network_options(&remotes, options.remote.as_deref())
+            .await;
+        self.mutate_with(path, args, None, cancellation, run).await
     }
 
     async fn push(
@@ -2311,7 +2409,8 @@ impl GitBackend for GitCliBackend {
                 "Pushing an explicit branch requires an explicit remote",
             ));
         }
-        self.validate_remote_selection(path, options.remote.as_deref())
+        let remotes = self
+            .validate_remote_selection(path, options.remote.as_deref())
             .await?;
         if options.set_upstream && (options.remote.is_none() || options.branch.is_none()) {
             return Err(ApiError::new(
@@ -2331,7 +2430,10 @@ impl GitBackend for GitCliBackend {
                 args.push(branch.into());
             }
         }
-        self.mutate(path, args, None, cancellation, true).await
+        let run = self
+            .network_options(&remotes, options.remote.as_deref())
+            .await;
+        self.mutate_with(path, args, None, cancellation, run).await
     }
 
     async fn checkout_commit(&self, path: &Path, oid: &str) -> ApiResult<MutationResult> {
@@ -2768,3 +2870,13 @@ fn resolve_stash_index(stashes: Vec<StashEntry>, oid: &str) -> ApiResult<usize> 
 #[cfg(test)]
 #[path = "backend/tests.rs"]
 mod tests;
+
+/// The host a password would be sent to, which only exists for the transports
+/// that use one. An SSH remote authenticates with a key, so a token is not what
+/// it is missing.
+fn password_host(url: Option<&RemoteUrlParts>) -> Option<&str> {
+    let url = url?;
+    matches!(url.scheme, RemoteUrlScheme::Https | RemoteUrlScheme::Http)
+        .then(|| url.host.as_str())
+        .filter(|host| !host.is_empty())
+}

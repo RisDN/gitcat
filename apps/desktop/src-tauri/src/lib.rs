@@ -15,7 +15,7 @@ use gitcat_contracts::{
 };
 use gitcat_core::{CoreApi, JsonStateStore, export_settings, import_settings};
 use gitcat_forge::{AvatarService, ForgeAuth, ForgeService, TokenStore};
-use gitcat_git_cli::GitCliBackend;
+use gitcat_git_cli::{GitCliBackend, GitCredentialSource};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State, WindowEvent};
 use tokio_util::sync::CancellationToken;
@@ -720,6 +720,20 @@ async fn settings_import(source: String) -> ApiResult<AppSettings> {
         .map_err(task_join_error)?
 }
 
+/// Lets Git authenticate as whoever GitCat is signed in as.
+///
+/// Without this a clone or a push would still depend on the user having a
+/// system credential manager set up as well, which is the one thing signing in
+/// inside the application was supposed to replace.
+struct ForgeCredentials(Arc<ForgeAuth>);
+
+#[async_trait::async_trait]
+impl GitCredentialSource for ForgeCredentials {
+    async fn token_for(&self, host: &str) -> Option<String> {
+        self.0.access_token(host).await
+    }
+}
+
 fn task_join_error(error: impl std::fmt::Display) -> ApiError {
     ApiError::new(
         gitcat_contracts::ErrorCode::Internal,
@@ -736,13 +750,16 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
-            let backend = Arc::new(GitCliBackend::default());
-            app.manage(Arc::new(CoreApi::new(backend)));
-            app.manage(JsonStateStore::new(data_dir.join("state.json")));
             // The token itself goes to the operating system credential store,
             // so a settings export cannot carry one off the machine.
             let tokens = Arc::new(TokenStore::new(&data_dir));
             let auth = Arc::new(ForgeAuth::new(tokens.clone()));
+
+            let backend = Arc::new(
+                GitCliBackend::default().with_credentials(Arc::new(ForgeCredentials(auth.clone()))),
+            );
+            app.manage(Arc::new(CoreApi::new(backend)));
+            app.manage(JsonStateStore::new(data_dir.join("state.json")));
             app.manage(AvatarService::new(data_dir.join("avatars"), auth.clone()));
             app.manage(ForgeService::new(auth.clone()));
             app.manage(auth);
