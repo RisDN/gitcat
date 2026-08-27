@@ -17,13 +17,11 @@ const URL_SOURCE = "url";
 export function CloneDialog({
   busy,
   onClose,
-  onNameHost,
   onSubmit,
   overrides,
 }: {
   busy: boolean;
   onClose: () => void;
-  onNameHost: (host: string, forge: ForgeKind) => void;
   onSubmit: (options: CloneOptions) => void;
   overrides: Readonly<Record<string, ForgeKind>>;
 }) {
@@ -120,7 +118,6 @@ export function CloneDialog({
               hosts={hosts}
               integration={integration}
               onHostChange={setHost}
-              onNameHost={onNameHost}
               onSelect={selectRepository}
               selected={picked}
               selectedHost={selectedHost}
@@ -170,16 +167,14 @@ export function CloneDialog({
 }
 
 /**
- * The repository list of one service, or whatever stands between the user and
- * it: a self-hosted install still to be named, or a connection still to be
- * made. Both are offered here rather than in preferences, because this is
- * where the user asked for the repositories.
+ * The repository list of one service, or the connection that has to come
+ * first. The connection is offered here rather than in preferences, because
+ * this is where the user asked for the repositories.
  */
 function RepositorySource({
   hosts,
   integration,
   onHostChange,
-  onNameHost,
   onSelect,
   selected,
   selectedHost,
@@ -187,7 +182,6 @@ function RepositorySource({
   hosts: readonly string[];
   integration: Integration;
   onHostChange: (host: string) => void;
-  onNameHost: (host: string, forge: ForgeKind) => void;
   onSelect: (repository: ForgeRepository) => void;
   selected: string | null;
   selectedHost: string | null;
@@ -195,13 +189,7 @@ function RepositorySource({
   const connections = useForgeConnections();
 
   if (!selectedHost) {
-    return (
-      <ForgeConnectPanel
-        host={null}
-        integration={integration}
-        onHostNamed={(named) => onNameHost(named, integration.forge)}
-      />
-    );
+    return <ForgeConnectPanel host={null} integration={integration} />;
   }
 
   return (

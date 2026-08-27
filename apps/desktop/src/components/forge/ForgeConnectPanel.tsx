@@ -24,16 +24,21 @@ const FIELD =
  *
  * The same block serves preferences and the start dialogs, so a service that
  * is not connected offers the connection where the user ran into it rather
- * than sending them to another window. A self-hosted service with no host
- * named yet is the same case: `onHostNamed` lets the panel take the address
- * along with the token, so naming the install is part of connecting it.
+ * than sending them to another window. Handing over a token is the exception:
+ * that belongs on the preferences page (`allowToken`), where the host list it
+ * goes with lives. Everywhere else the service says it is not connected and
+ * the button stays inert, which is the honest state of a service GitCat has
+ * no registered application for.
  */
 export function ForgeConnectPanel({
+  allowToken = false,
   className = "",
   host,
   integration,
   onHostNamed,
 }: {
+  /** Offer an access token, and an address for a self-hosted install. */
+  allowToken?: boolean;
   className?: string;
   /** The install to connect, or `null` for a self-hosted one not named yet. */
   host: string | null;
@@ -60,21 +65,11 @@ export function ForgeConnectPanel({
     );
   }
 
-  // A self-hosted install with no address yet, and nowhere in this dialog to
-  // put one: preferences is where the host list lives.
-  if (!host && !onHostNamed) {
-    return (
-      <p className={cx("rounded-[7px] border border-border bg-background/45 px-3.5 py-3 text-[11px] leading-[1.5] text-muted", className)}>
-        No {integration.label} host is named yet. Add one under Integrations in the preferences,
-        then come back here.
-      </p>
-    );
-  }
-
   const candidate = draftHost.trim().toLowerCase();
   const candidateError = hostNameError(candidate);
   const target = host ?? candidate;
   const tokenReady = Boolean(target) && !candidateError && Boolean(token.trim());
+  const takesToken = allowToken && integration.support === "token";
 
   const connectWithToken = () => {
     if (!tokenReady) return;
@@ -142,18 +137,7 @@ export function ForgeConnectPanel({
             <Button compact onClick={() => cancelForgeSignIn()}>Cancel</Button>
           </div>
         </div>
-      ) : integration.support === "sign_in" ? (
-        <div className="flex flex-col items-center gap-2.5 rounded-[7px] border border-border bg-background/45 px-4 py-6 text-center">
-          <p className="text-[12px] text-muted">{integration.label} is not connected</p>
-          <Button
-            disabled={connections.pending !== null || !host}
-            onClick={() => { if (host) void connectForge(host); }}
-            tone="accent"
-          >
-            Connect to {integration.label}
-          </Button>
-        </div>
-      ) : integration.support === "token" ? (
+      ) : takesToken ? (
         <div className="flex flex-col gap-2 rounded-[7px] border border-border bg-background/45 px-3.5 py-3">
           <p className="text-[12px] text-muted">
             {host ? `${host} is not connected` : `${integration.label} is not connected`}
@@ -190,12 +174,33 @@ export function ForgeConnectPanel({
             <small className="text-[10px] text-danger">{candidateError}</small>
           ) : null}
         </div>
-      ) : (
+      ) : integration.support === "links_only" ? (
         <p className="rounded-[7px] border border-border bg-background/45 px-3.5 py-3 text-[11px] leading-[1.5] text-muted">
           GitCat recognises {integration.label} hosts and builds their commit and branch links, but
           it has no client for them: no pull requests, check state, author pictures or repository
           list. Cloning and pushing work through Git itself, with your own credentials.
         </p>
+      ) : (
+        <div className="flex flex-col items-center gap-2.5 rounded-[7px] border border-border bg-background/45 px-4 py-6 text-center">
+          <p className="text-[12px] text-muted">
+            {host && integration.host === null
+              ? `${host} is not connected`
+              : `${integration.label} is not connected`}
+          </p>
+          <Button
+            disabled={integration.support !== "sign_in" || !host || connections.pending !== null}
+            onClick={() => { if (host) void connectForge(host); }}
+            tone="accent"
+          >
+            Connect to {integration.label}
+          </Button>
+          {integration.support === "token" ? (
+            <small className="max-w-[420px] text-[10px] leading-[1.5] text-muted/72">
+              Signing in needs an OAuth application registered on the instance itself, which GitCat
+              cannot ship. Connect it with an access token under Integrations in the preferences.
+            </small>
+          ) : null}
+        </div>
       )}
 
       {notice ? (

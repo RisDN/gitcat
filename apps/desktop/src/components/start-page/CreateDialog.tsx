@@ -28,13 +28,11 @@ function Row({ children, label }: { children: (id: string) => React.ReactNode; l
 export function CreateDialog({
   busy,
   onClose,
-  onNameHost,
   onSubmit,
   overrides,
 }: {
   busy: boolean;
   onClose: () => void;
-  onNameHost: (host: string, forge: ForgeKind) => void;
   onSubmit: (
     path: string,
     defaultBranch: string,
@@ -141,11 +139,7 @@ export function CreateDialog({
                   ))}
                 </div>
               ) : null}
-              <ForgeConnectPanel
-                host={selectedHost}
-                integration={integration}
-                onHostNamed={(named) => onNameHost(named, integration.forge)}
-              />
+              <ForgeConnectPanel host={selectedHost} integration={integration} />
             </div>
           ) : (
             <>

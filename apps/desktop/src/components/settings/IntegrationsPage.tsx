@@ -81,7 +81,7 @@ export function IntegrationsPage({
         </p>
 
         {selected.host !== null ? (
-          <ForgeConnectPanel host={selected.host} integration={selected} />
+          <ForgeConnectPanel allowToken host={selected.host} integration={selected} />
         ) : (
           <SelfHostedHosts
             integration={selected}
@@ -142,7 +142,7 @@ function SelfHostedHosts({
               <X size={13} />
             </IconButton>
           </div>
-          <ForgeConnectPanel host={host} integration={integration} />
+          <ForgeConnectPanel allowToken host={host} integration={integration} />
         </div>
       ))}
 

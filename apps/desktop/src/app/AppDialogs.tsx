@@ -7,7 +7,7 @@ import { SettingsDialog } from "../components/settings";
 import { CloneDialog, CreateDialog } from "../components/start-page";
 import { ToastRegion, type ToastMessage } from "../components/ToastRegion";
 import { gitcatApi } from "../lib/api";
-import type { AppSettings, CloneOptions, ConflictFileDetails, ForgeKind, NewRepository, PersistedState, RepositorySnapshot, RepositoryTab } from "../lib/types";
+import type { AppSettings, CloneOptions, ConflictFileDetails, NewRepository, PersistedState, RepositorySnapshot, RepositoryTab } from "../lib/types";
 import { currentBranch } from "./branches";
 import { DEFAULT_SETTINGS } from "./defaults";
 import type { BranchMenuState, CommitMenuState, PromptState, RunMutation, TabMenuState } from "./state";
@@ -90,19 +90,6 @@ export function AppDialogs({
     tabMenu,
     toasts,
 }: AppDialogsProps) {
-    // Naming a self-hosted install is what tells the rest of GitCat which
-    // service answers there, so a host named while cloning or initializing is
-    // saved straight away rather than only inside the preferences draft.
-    const nameHost = (host: string, forge: ForgeKind) => {
-        setPersisted((current) => ({
-            ...current,
-            settings: {
-                ...current.settings,
-                forge_overrides: { ...current.settings.forge_overrides, [host]: forge },
-            },
-        }));
-    };
-
     return (
         <>
             {settingsOpen ? (
@@ -118,7 +105,6 @@ export function AppDialogs({
                 <CloneDialog
                     busy={busy}
                     onClose={() => { if (!busy) setStartDialog(null); }}
-                    onNameHost={nameHost}
                     overrides={settings.forge_overrides}
                     onSubmit={(options) => {
                         setStartDialog(null);
@@ -130,7 +116,6 @@ export function AppDialogs({
                 <CreateDialog
                     busy={busy}
                     onClose={() => { if (!busy) setStartDialog(null); }}
-                    onNameHost={nameHost}
                     onSubmit={(path, defaultBranch, ignorePatterns, remote) => {
                         setStartDialog(null);
                         void createRepository(
