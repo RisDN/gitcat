@@ -227,6 +227,20 @@ pub struct LoginPoll {
     pub account: Option<ForgeAccount>,
 }
 
+/// What a repository created on a hosting service is created with.
+///
+/// It is always created under the connected account: creating one inside an
+/// organisation would mean listing the account's organisations first, which
+/// GitCat does not ask for yet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NewRepository {
+    pub host: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub private: bool,
+}
+
 /// One repository the signed-in account can reach.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ForgeRepository {

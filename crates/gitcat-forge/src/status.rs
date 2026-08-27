@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use gitcat_contracts::{
     ApiError, ApiResult, CheckState, CheckSummary, ErrorCode, ForgeKind, ForgeRepo,
-    ForgeRepository, PullRequestInfo,
+    ForgeRepository, NewRepository, PullRequestInfo,
 };
 
 use crate::github::{GitHubClient, REPOS_PER_REQUEST};
@@ -203,6 +203,36 @@ impl ForgeService {
         if let Ok(mut checks) = self.checks.lock() {
             checks.retain(|key, _| !key.starts_with(&prefix));
         }
+    }
+
+    /// Creates a repository on one host, as the connected account.
+    ///
+    /// Only a connection can create one, so an unconnected host is an error
+    /// rather than an empty answer: the user asked for something to happen.
+    pub async fn create_repository(&self, request: &NewRepository) -> ApiResult<ForgeRepository> {
+        let host = request.host.trim().to_ascii_lowercase();
+        let Some(token) = self.auth.access_token(&host).await else {
+            return Err(ApiError::new(
+                ErrorCode::AuthenticationRequired,
+                "connect to the hosting service before creating a repository there",
+            ));
+        };
+
+        let client = GitHubClient::new(self.http.clone(), &host, Some(token));
+        let description = request
+            .description
+            .as_deref()
+            .map(str::trim)
+            .filter(|text| !text.is_empty());
+        let created = client
+            .create_repository(request.name.trim(), description, request.private)
+            .await?;
+
+        // What the picker searches is now one repository out of date.
+        if let Ok(mut repos) = self.repos.lock() {
+            repos.remove(&host);
+        }
+        Ok(created)
     }
 
     /// Drops everything cached for one host.

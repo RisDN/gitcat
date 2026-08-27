@@ -4,6 +4,7 @@ import type {
     ForgeAccount,
     ForgeRepository,
     LoginPoll,
+    NewRepository,
 } from "./types";
 
 /**
@@ -33,6 +34,20 @@ export async function forgeSignOut(host: string): Promise<void> {
 export async function forgeAccount(host: string): Promise<ForgeAccount | null> {
     if (!isTauriEnvironment()) return null;
     return (await invokeTauri<ForgeAccount | null>("forge_account", { host })) ?? null;
+}
+
+/**
+ * Creates a repository on the service and answers with the remote side of it.
+ *
+ * The repository is created empty. The local one is initialised separately and
+ * pointed at what comes back, which is what keeps the two histories the same
+ * history.
+ */
+export async function createForgeRepository(request: NewRepository): Promise<ForgeRepository> {
+    if (!isTauriEnvironment()) {
+        throw new Error("Creating a repository on a hosting service needs the desktop application.");
+    }
+    return invokeTauri<ForgeRepository>("forge_create_repository", { request });
 }
 
 /**

@@ -212,6 +212,17 @@ export interface LoginPoll {
   account?: ForgeAccount;
 }
 
+/**
+ * What a repository created on a hosting service is created with. It is always
+ * created under the connected account.
+ */
+export interface NewRepository {
+  host: string;
+  name: string;
+  description?: string;
+  private: boolean;
+}
+
 /** One repository the signed-in account can reach. */
 export interface ForgeRepository {
   full_name: string;

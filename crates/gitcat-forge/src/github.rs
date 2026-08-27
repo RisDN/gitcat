@@ -10,8 +10,8 @@ use gitcat_contracts::{
     ApiError, ApiResult, CheckState, CheckSummary, ErrorCode, ForgeRepository, PullRequestInfo,
     PullRequestState,
 };
-use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 /// One request covers a whole history page and then some.
 const COMMITS_PER_REQUEST: u16 = 100;
@@ -135,6 +135,32 @@ impl GitHubClient {
         Ok(repos.into_iter().filter_map(repository).collect())
     }
 
+    /// Creates a repository owned by the connected account.
+    ///
+    /// It is left empty on purpose: GitCat initialises the local repository,
+    /// and a service that wrote a first commit of its own would leave the two
+    /// sides with unrelated histories.
+    pub async fn create_repository(
+        &self,
+        name: &str,
+        description: Option<&str>,
+        private: bool,
+    ) -> ApiResult<ForgeRepository> {
+        let body = NewRepoBody {
+            name,
+            description,
+            private,
+            auto_init: false,
+        };
+        let created: RepoListItem = self.post_json("/user/repos", &body).await?;
+        repository(created).ok_or_else(|| {
+            ApiError::new(
+                ErrorCode::NetworkFailed,
+                "the hosting service did not describe the repository it created",
+            )
+        })
+    }
+
     async fn get_json<T: DeserializeOwned>(&self, path: &str) -> ApiResult<T> {
         let mut request = self
             .http
@@ -159,6 +185,51 @@ impl GitHubClient {
             .with_details(error.to_string())
         })
     }
+
+    /// A request that changes something. A refusal carries the service's own
+    /// wording as details, because "name already exists" is the whole answer
+    /// and the status code alone does not say it.
+    async fn post_json<B: Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> ApiResult<T> {
+        let mut request = self
+            .http
+            .post(format!("{}{path}", self.api_base))
+            .header("accept", "application/vnd.github+json")
+            .header("x-github-api-version", API_VERSION)
+            .json(body);
+        if let Some(token) = &self.token {
+            request = request.header("authorization", format!("Bearer {token}"));
+        }
+
+        let response = request.send().await.map_err(network_error)?;
+        let status = response.status();
+        if !status.is_success() {
+            let limited = rate_limited(&response);
+            let said = response.text().await.ok().and_then(|body| refusal(&body));
+            let error = status_error(status, limited);
+            return Err(match said {
+                Some(details) => error.with_details(details),
+                None => error,
+            });
+        }
+
+        response.json().await.map_err(|error| {
+            ApiError::new(
+                ErrorCode::NetworkFailed,
+                "the hosting service returned an unexpected response",
+            )
+            .with_details(error.to_string())
+        })
+    }
+}
+
+/// What the service said about a request it refused.
+fn refusal(body: &str) -> Option<String> {
+    let parsed: ErrorBody = serde_json::from_str(body).ok()?;
+    parsed.message.filter(|message| !message.is_empty())
 }
 
 fn commit_author(item: CommitListItem) -> Option<CommitAuthor> {
@@ -358,6 +429,22 @@ struct RepoListItem {
     owner: Option<UserMeta>,
 }
 
+/// The body a repository is created with. `auto_init` stays off; see
+/// `create_repository`.
+#[derive(Serialize)]
+struct NewRepoBody<'a> {
+    name: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<&'a str>,
+    private: bool,
+    auto_init: bool,
+}
+
+#[derive(Deserialize)]
+struct ErrorBody {
+    message: Option<String>,
+}
+
 #[derive(Default, Deserialize)]
 struct CombinedStatus {
     #[serde(default)]
@@ -405,6 +492,10 @@ fn status_error(status: reqwest::StatusCode, rate_limited: bool) -> ApiError {
         404 => ApiError::new(
             ErrorCode::InvalidRequest,
             "the hosting service does not expose this repository",
+        ),
+        422 => ApiError::new(
+            ErrorCode::InvalidRequest,
+            "the hosting service refused the request",
         ),
         _ => ApiError::new(
             ErrorCode::NetworkFailed,
@@ -631,5 +722,35 @@ mod tests {
         assert_eq!(repos[0].owner, "RisDN");
         // The last commit sorts a working list better than a settings change.
         assert_eq!(repos[0].updated_at.as_deref(), Some("2026-08-27T10:00:00Z"));
+    }
+
+    #[test]
+    fn a_new_repository_is_asked_for_empty() {
+        let body = NewRepoBody {
+            name: "gitcat",
+            description: None,
+            private: true,
+            auto_init: false,
+        };
+        let json = serde_json::to_value(&body).expect("serialises");
+
+        assert_eq!(json["name"], "gitcat");
+        assert_eq!(json["private"], true);
+        // An initialised remote would leave the two sides unrelated.
+        assert_eq!(json["auto_init"], false);
+        assert!(
+            json.get("description").is_none(),
+            "a description that was not given is left out rather than sent empty"
+        );
+    }
+
+    #[test]
+    fn a_refusal_keeps_the_wording_the_service_used() {
+        assert_eq!(
+            refusal(r#"{"message":"Repository creation failed."}"#).as_deref(),
+            Some("Repository creation failed."),
+        );
+        assert_eq!(refusal(r#"{"message":""}"#), None);
+        assert_eq!(refusal("<html>gateway timeout</html>"), None);
     }
 }

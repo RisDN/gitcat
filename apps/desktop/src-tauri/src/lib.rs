@@ -10,8 +10,9 @@ use gitcat_contracts::{
     ConflictLineEndingPolicy, ConflictPreflightResult, ConflictResolution, ContinueOperation,
     DeviceAuthorization, DiffRequest, ErrorCode, ExpectedState, FetchOptions, FileDiff,
     ForgeAccount, ForgeCredential, ForgeRepo, ForgeRepository, GitVersion, HistoryPage,
-    HistoryQuery, LoginPoll, MutationResult, PersistedState, PullOptions, PullRequestInfo,
-    PushOptions, RepositoryId, RepositoryInfo, RepositorySnapshot, ResetMode, StashEntry,
+    HistoryQuery, LoginPoll, MutationResult, NewRepository, PersistedState, PullOptions,
+    PullRequestInfo, PushOptions, RepositoryId, RepositoryInfo, RepositorySnapshot, ResetMode,
+    StashEntry,
 };
 use gitcat_core::{CoreApi, JsonStateStore, export_settings, import_settings};
 use gitcat_forge::{AvatarService, ForgeAuth, ForgeService, TokenStore};
@@ -715,6 +716,16 @@ async fn forge_repositories(
     forge.repositories(&host, refresh).await
 }
 
+/// Creates a repository on a connected hosting service. The local repository
+/// is initialised separately: what comes back is only the remote side.
+#[tauri::command]
+async fn forge_create_repository(
+    forge: State<'_, ForgeService>,
+    request: NewRepository,
+) -> ApiResult<ForgeRepository> {
+    forge.create_repository(&request).await
+}
+
 /// Rolled-up check state for a handful of commits, normally the branch tips
 /// currently painted. The service caps how many it will ask about.
 #[tauri::command]
@@ -866,6 +877,7 @@ pub fn run() {
             forge_sign_out,
             forge_account,
             forge_repositories,
+            forge_create_repository,
         ])
         .run(tauri::generate_context!())
         .expect("error while running GitCat");
