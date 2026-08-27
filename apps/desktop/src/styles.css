@@ -634,15 +634,13 @@
 
 .gc-ref-label {
   --gc-ref-color: var(--gc-row-branch-color, var(--gc-accent));
-  @apply relative z-[2] inline-flex h-[21px] min-w-0 max-w-[125px] select-none items-center gap-1 overflow-hidden whitespace-nowrap rounded-[3px] border px-[6px] py-px text-[11px] font-[620];
-  border-color: color-mix(in srgb, var(--gc-ref-color) 44%, var(--gc-border));
+  @apply relative z-[2] inline-flex h-[21px] min-w-0 max-w-[125px] select-none items-center gap-1 overflow-hidden whitespace-nowrap rounded-[3px] px-[7px] py-px text-[11px] font-[620];
   background: color-mix(in srgb, var(--gc-ref-color) 14%, var(--gc-panel));
   color: color-mix(in srgb, var(--gc-text) 84%, var(--gc-ref-color));
-  transition: background-color 90ms ease-out, border-color 90ms ease-out, color 90ms ease-out;
+  transition: background-color 90ms ease-out, color 90ms ease-out;
 }
 
 .gc-ref-label:hover {
-  border-color: color-mix(in srgb, var(--gc-ref-color) 82%, var(--gc-border));
   background: color-mix(in srgb, var(--gc-ref-color) 34%, var(--gc-panel));
   color: color-mix(in srgb, var(--gc-text) 94%, var(--gc-ref-color));
 }
@@ -670,8 +668,7 @@
 
 .gc-ref-stack__count {
   --gc-ref-color: var(--gc-row-branch-color, var(--gc-accent));
-  @apply relative z-[2] inline-flex h-[21px] shrink-0 select-none items-center rounded-[3px] border px-[4px] text-[10px] font-bold leading-none;
-  border-color: color-mix(in srgb, var(--gc-ref-color) 50%, var(--gc-border));
+  @apply relative z-[2] inline-flex h-[21px] shrink-0 select-none items-center rounded-[3px] px-[5px] text-[10px] font-bold leading-none;
   background: color-mix(in srgb, var(--gc-ref-color) 18%, var(--gc-panel));
   color: color-mix(in srgb, var(--gc-text) 74%, var(--gc-ref-color));
 }
@@ -683,14 +680,12 @@
 
 .gc-ref-label--head {
   @apply max-w-[125px] opacity-100 filter-none;
-  border-color: color-mix(in srgb, var(--gc-ref-color) 88%, var(--gc-border));
   background: color-mix(in srgb, var(--gc-ref-color) 46%, var(--gc-panel));
   color: color-mix(in srgb, var(--gc-text) 96%, var(--gc-ref-color));
   box-shadow: none;
 }
 
 .gc-ref-label--head:hover {
-  border-color: var(--gc-ref-color);
   background: color-mix(in srgb, var(--gc-ref-color) 62%, var(--gc-panel));
 }
 
