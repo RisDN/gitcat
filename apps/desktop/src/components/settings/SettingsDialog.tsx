@@ -2,6 +2,7 @@ import {
   Download,
   Keyboard,
   Palette,
+  Plug,
   RotateCcw,
   Settings2,
   Upload,
@@ -17,17 +18,16 @@ import { duplicateKeybinds } from "../../lib/keybinds";
 import { isTauriEnvironment } from "../../lib/platform";
 import type { AppSettings, AppTheme, PullMode, ThemeColors } from "../../lib/types";
 import { Button, Input, Modal, ModalSpacer } from "../ui";
-import { ForgeOverrideEditor } from "./ForgeOverrideEditor";
-import { ForgeAccountEditor } from "./ForgeAccountEditor";
-import { ForgeTokenEditor } from "./ForgeTokenEditor";
+import { IntegrationsPage } from "./IntegrationsPage";
 import { KeybindEditor } from "./KeybindEditor";
 import { CheckField, FIELD_INPUT, Field, SectionHeading } from "./SettingsField";
 import { ThemeEditor } from "./ThemeEditor";
 
-type SettingsPage = "general" | "themes" | "keybinds" | "backup";
+type SettingsPage = "general" | "integrations" | "themes" | "keybinds" | "backup";
 
 const PAGES: Array<{ id: SettingsPage; label: string; icon: typeof Settings2 }> = [
   { id: "general", label: "General", icon: Settings2 },
+  { id: "integrations", label: "Integrations", icon: Plug },
   { id: "themes", label: "Themes", icon: Palette },
   { id: "keybinds", label: "Keybinds", icon: Keyboard },
   { id: "backup", label: "Import & export", icon: Download },
@@ -139,7 +139,7 @@ export function SettingsDialog({ settings, defaults, onSave, onClose }: Settings
 
   return (
     <Modal
-      description="Git behavior, reusable themes, keyboard shortcuts, and portable backups."
+      description="Git behavior, hosting services, reusable themes, keyboard shortcuts, and portable backups."
       footer={
         <>
           <Button icon={<RotateCcw size={15} />} onClick={() => setDraft(structuredClone(defaults))}>Reset defaults</Button>
@@ -283,18 +283,14 @@ export function SettingsDialog({ settings, defaults, onSave, onClose }: Settings
                   for branches with a pull request and for the checked-out branch.
                 </p>
               </section>
-              <section className="col-span-full">
-                <SectionHeading>Hosting services</SectionHeading>
-                <ForgeOverrideEditor
-                  onChange={(forge_overrides) => setDraft((current) => ({ ...current, forge_overrides }))}
-                  overrides={draft.forge_overrides}
-                />
-                <SectionHeading>Accounts</SectionHeading>
-                <ForgeAccountEditor />
-                <SectionHeading>Access tokens</SectionHeading>
-                <ForgeTokenEditor />
-              </section>
             </div>
+          ) : null}
+
+          {page === "integrations" ? (
+            <IntegrationsPage
+              onOverridesChange={(forge_overrides) => setDraft((current) => ({ ...current, forge_overrides }))}
+              overrides={draft.forge_overrides}
+            />
           ) : null}
 
           {page === "themes" ? (
