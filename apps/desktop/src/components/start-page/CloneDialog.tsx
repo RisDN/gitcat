@@ -39,6 +39,10 @@ export function CloneDialog({
   const integration = INTEGRATIONS.find((entry) => entry.id === source);
   const hosts = integration ? selfHostedHosts(integration, overrides) : [];
   const selectedHost = host && hosts.includes(host) ? host : hosts[0] ?? null;
+  // Where to put the clone is a question about a repository that has been
+  // chosen. Until the service can offer one, the connection is the only thing
+  // on the page.
+  const ready = !integration || Boolean(selectedHost && credentialFor(connections, selectedHost));
 
   const derivedFolder = folder.trim() || repositoryNameFromUrl(url);
   const destination = parent.trim() && derivedFolder ? joinPath(parent, derivedFolder) : "";
@@ -127,31 +131,35 @@ export function CloneDialog({
             />
           )}
 
-          <PathField
-            label="Destination folder"
-            onBrowse={() => {
-              void chooseDirectory("Choose destination folder").then((selected) => {
-                if (selected) setParent(selected);
-              });
-            }}
-            onChange={setParent}
-            placeholder="Parent folder for the clone"
-            value={parent}
-          />
-          <TextInputField
-            hint={destination || "Pick a destination folder to see the clone path."}
-            label="Folder name"
-            onChange={setFolder}
-            placeholder={repositoryNameFromUrl(url) || "repository"}
-            value={folder}
-          />
-          <TextInputField
-            hint="Leave empty to clone the remote default branch."
-            label="Branch"
-            onChange={setBranch}
-            placeholder="main"
-            value={branch}
-          />
+          {ready ? (
+            <>
+              <PathField
+                label="Destination folder"
+                onBrowse={() => {
+                  void chooseDirectory("Choose destination folder").then((selected) => {
+                    if (selected) setParent(selected);
+                  });
+                }}
+                onChange={setParent}
+                placeholder="Parent folder for the clone"
+                value={parent}
+              />
+              <TextInputField
+                hint={destination || "Pick a destination folder to see the clone path."}
+                label="Folder name"
+                onChange={setFolder}
+                placeholder={repositoryNameFromUrl(url) || "repository"}
+                value={folder}
+              />
+              <TextInputField
+                hint="Leave empty to clone the remote default branch."
+                label="Branch"
+                onChange={setBranch}
+                placeholder="main"
+                value={branch}
+              />
+            </>
+          ) : null}
         </div>
       </div>
     </Modal>
