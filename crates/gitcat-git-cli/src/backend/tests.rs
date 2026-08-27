@@ -1872,6 +1872,50 @@ fn mainline_parent_is_required_only_for_merge_commits() {
     );
 }
 
+#[tokio::test]
+async fn clones_shallow_and_sparse_from_the_dialog_options() {
+    let (source, backend, _) = committed_repository().await;
+    fs::create_dir_all(source.path().join("apps/desktop")).expect("fixture directory");
+    fs::create_dir_all(source.path().join("crates/core")).expect("fixture directory");
+    fs::write(source.path().join("apps/desktop/app.txt"), "app\n").expect("write fixture");
+    fs::write(source.path().join("crates/core/core.txt"), "core\n").expect("write fixture");
+    git(source.path(), &["add", "-A"]);
+    git(source.path(), &["commit", "-m", "second"]);
+
+    let parent = tempdir().expect("clone parent");
+    let destination = parent.path().join("clone");
+    backend
+        .clone_repository(
+            &CloneOptions {
+                // A local path clone silently ignores --depth; the file
+                // transport is what a shallow clone really goes through.
+                url: format!(
+                    "file:///{}",
+                    source.path().to_string_lossy().replace('\\', "/")
+                ),
+                destination: destination.to_string_lossy().into_owned(),
+                branch: None,
+                depth: Some(1),
+                filter_blob_none: false,
+                sparse_paths: Some(vec!["apps/desktop".into()]),
+            },
+            CancellationToken::new(),
+        )
+        .await
+        .expect("clone with dialog options");
+
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&destination)
+        .args(["rev-list", "--count", "HEAD"])
+        .output()
+        .expect("count cloned commits");
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "1");
+    assert!(destination.join("apps/desktop/app.txt").is_file());
+    assert!(!destination.join("crates").exists());
+    assert!(destination.join("hello.txt").is_file());
+}
+
 #[test]
 fn sparse_paths_become_repository_rooted_cone_patterns() {
     assert_eq!(
