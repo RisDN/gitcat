@@ -624,10 +624,13 @@ async fn avatars_resolve(
 #[tauri::command]
 async fn forge_token_set(
     tokens: State<'_, Arc<TokenStore>>,
+    forge: State<'_, ForgeService>,
     host: String,
     token: Option<String>,
 ) -> ApiResult<()> {
-    tokens.set(&host, token.as_deref())
+    tokens.set(&host, token.as_deref())?;
+    forge.forget_host(&host);
+    Ok(())
 }
 
 /// Which hosts hold a token, with a hint too short to be the credential. The
@@ -667,10 +670,17 @@ async fn forge_login_poll(auth: State<'_, Arc<ForgeAuth>>, host: String) -> ApiR
     auth.poll(&host).await
 }
 
-/// Forgets the credential for one host, along with any sign-in in flight.
+/// Forgets the credential for one host, along with any sign-in in flight and
+/// everything the service answered while it was held.
 #[tauri::command]
-async fn forge_sign_out(auth: State<'_, Arc<ForgeAuth>>, host: String) -> ApiResult<()> {
-    auth.sign_out(&host)
+async fn forge_sign_out(
+    auth: State<'_, Arc<ForgeAuth>>,
+    forge: State<'_, ForgeService>,
+    host: String,
+) -> ApiResult<()> {
+    auth.sign_out(&host)?;
+    forge.forget_host(&host);
+    Ok(())
 }
 
 /// The account a stored credential belongs to, or `None` when the host holds

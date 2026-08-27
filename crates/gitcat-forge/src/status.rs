@@ -205,6 +205,26 @@ impl ForgeService {
         }
     }
 
+    /// Drops everything cached for one host.
+    ///
+    /// What a service is willing to answer changes with the credential, so its
+    /// answers must not outlive one: after signing out, a private repository's
+    /// pull requests would otherwise stay on screen until the entry expired on
+    /// its own.
+    pub fn forget_host(&self, host: &str) {
+        let host = host.trim().to_ascii_lowercase();
+        let prefix = format!("{host}/");
+        if let Ok(mut pulls) = self.pulls.lock() {
+            pulls.retain(|key, _| !key.starts_with(&prefix));
+        }
+        if let Ok(mut checks) = self.checks.lock() {
+            checks.retain(|key, _| !key.starts_with(&prefix));
+        }
+        if let Ok(mut repos) = self.repos.lock() {
+            repos.remove(&host);
+        }
+    }
+
     async fn client(&self, repo: &ForgeRepo) -> Option<GitHubClient> {
         if repo.forge != ForgeKind::GitHub || repo.owner.is_empty() || repo.repo.is_empty() {
             return None;
@@ -359,6 +379,56 @@ mod tests {
         let guard = cache.lock().expect("lock");
         assert!(guard.len() <= 3);
         assert!(guard.contains_key("key3"), "the newest entry survives");
+    }
+
+    #[test]
+    fn forgetting_a_host_leaves_another_host_alone() {
+        let service = service();
+        write_cache(
+            &service.pulls,
+            "github.com/ikoli/gitcat".into(),
+            Vec::new(),
+            usize::MAX,
+            PULLS_TTL,
+        );
+        write_cache(
+            &service.checks,
+            "github.com/ikoli/gitcat@abc".into(),
+            summary("abc"),
+            MAX_CACHED_CHECKS,
+            CHECKS_TTL,
+        );
+        write_cache(
+            &service.checks,
+            "example.com/ikoli/gitcat@abc".into(),
+            summary("abc"),
+            MAX_CACHED_CHECKS,
+            CHECKS_TTL,
+        );
+        write_cache(
+            &service.repos,
+            "github.com".into(),
+            Vec::new(),
+            usize::MAX,
+            REPOS_TTL,
+        );
+        write_cache(
+            &service.repos,
+            "example.com".into(),
+            Vec::new(),
+            usize::MAX,
+            REPOS_TTL,
+        );
+
+        service.forget_host("GitHub.com");
+
+        assert!(service.pulls.lock().expect("lock").is_empty());
+        let checks = service.checks.lock().expect("lock");
+        assert!(!checks.contains_key("github.com/ikoli/gitcat@abc"));
+        assert!(checks.contains_key("example.com/ikoli/gitcat@abc"));
+        let repos = service.repos.lock().expect("lock");
+        assert!(!repos.contains_key("github.com"));
+        assert!(repos.contains_key("example.com"));
     }
 
     #[test]
