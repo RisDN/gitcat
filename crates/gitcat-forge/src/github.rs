@@ -7,7 +7,8 @@
 //! resolves, because GitHub holds the address-to-account link itself.
 
 use gitcat_contracts::{
-    ApiError, ApiResult, CheckState, CheckSummary, ErrorCode, PullRequestInfo, PullRequestState,
+    ApiError, ApiResult, CheckState, CheckSummary, ErrorCode, ForgeRepository, PullRequestInfo,
+    PullRequestState,
 };
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -16,6 +17,8 @@ use serde::de::DeserializeOwned;
 const COMMITS_PER_REQUEST: u16 = 100;
 /// More open pull requests than a branch sidebar can meaningfully decorate.
 const PULLS_PER_REQUEST: u16 = 100;
+/// The largest page the repository list serves.
+pub(crate) const REPOS_PER_REQUEST: u16 = 100;
 const API_VERSION: &str = "2022-11-28";
 
 pub struct GitHubClient {
@@ -119,6 +122,19 @@ impl GitHubClient {
         Ok(roll_up(oid, &statuses.statuses, &runs.check_runs))
     }
 
+    /// One page of the repositories the signed-in account can reach.
+    ///
+    /// `affiliation` is what makes this the list a person expects: their own
+    /// repositories, the ones they collaborate on, and the ones an
+    /// organisation shares with them -- rather than only what they own.
+    pub async fn repositories(&self, page: u32) -> ApiResult<Vec<ForgeRepository>> {
+        let path = format!(
+            "/user/repos?per_page={REPOS_PER_REQUEST}&page={page}&sort=updated&affiliation=owner,collaborator,organization_member",
+        );
+        let repos: Vec<RepoListItem> = self.get_json(&path).await?;
+        Ok(repos.into_iter().filter_map(repository).collect())
+    }
+
     async fn get_json<T: DeserializeOwned>(&self, path: &str) -> ApiResult<T> {
         let mut request = self
             .http
@@ -215,6 +231,26 @@ fn pull_request(item: PullListItem) -> PullRequestInfo {
     }
 }
 
+/// A repository with no clone URL or no owner is dropped: it could not be the
+/// target of a clone, which is the only reason this list exists.
+fn repository(item: RepoListItem) -> Option<ForgeRepository> {
+    let owner = item.owner.and_then(|owner| owner.login)?;
+    let clone_url = item.clone_url.filter(|url| !url.is_empty())?;
+    let name = item.name?;
+    Some(ForgeRepository {
+        full_name: item.full_name.unwrap_or(format!("{owner}/{name}")),
+        owner,
+        name,
+        private: item.private.unwrap_or(false),
+        fork: item.fork.unwrap_or(false),
+        description: item.description.filter(|text| !text.is_empty()),
+        default_branch: item.default_branch.filter(|branch| !branch.is_empty()),
+        clone_url,
+        ssh_url: item.ssh_url.filter(|url| !url.is_empty()),
+        updated_at: item.pushed_at.or(item.updated_at),
+    })
+}
+
 /// Collapses both report kinds into one badge.
 ///
 /// A single failure outranks anything still running, because a run that has
@@ -303,6 +339,23 @@ struct RepoMeta {
 #[derive(Deserialize)]
 struct UserMeta {
     login: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RepoListItem {
+    name: Option<String>,
+    full_name: Option<String>,
+    private: Option<bool>,
+    fork: Option<bool>,
+    description: Option<String>,
+    default_branch: Option<String>,
+    clone_url: Option<String>,
+    ssh_url: Option<String>,
+    updated_at: Option<String>,
+    /// When the repository last received a commit, which sorts a list of
+    /// working repositories more usefully than a settings change does.
+    pushed_at: Option<String>,
+    owner: Option<UserMeta>,
 }
 
 #[derive(Default, Deserialize)]
@@ -560,5 +613,23 @@ mod tests {
         let summary = roll_up("abc", &[], &runs.check_runs);
         assert_eq!(summary.state, CheckState::Success);
         assert_eq!(summary.total, 1);
+    }
+
+    #[test]
+    fn a_repository_without_a_clone_url_is_dropped() {
+        let payload = r#"[
+            {"name":"gitcat","full_name":"RisDN/gitcat","private":false,"fork":false,
+             "clone_url":"https://github.com/RisDN/gitcat.git","ssh_url":"git@github.com:RisDN/gitcat.git",
+             "default_branch":"main","pushed_at":"2026-08-27T10:00:00Z","owner":{"login":"RisDN"}},
+            {"name":"broken","owner":{"login":"RisDN"}}
+        ]"#;
+        let items: Vec<RepoListItem> = serde_json::from_str(payload).unwrap();
+        let repos: Vec<ForgeRepository> = items.into_iter().filter_map(repository).collect();
+
+        assert_eq!(repos.len(), 1);
+        assert_eq!(repos[0].full_name, "RisDN/gitcat");
+        assert_eq!(repos[0].owner, "RisDN");
+        // The last commit sorts a working list better than a settings change.
+        assert_eq!(repos[0].updated_at.as_deref(), Some("2026-08-27T10:00:00Z"));
     }
 }

@@ -8,13 +8,13 @@ use gitcat_contracts::{
     CheckSummary, CloneOptions, CommitActionAvailability, CommitDetails, CommitOptions,
     CommitSearchQuery, CommitSearchResult, ConflictExpectedState, ConflictFileDetails,
     ConflictLineEndingPolicy, ConflictPreflightResult, ConflictResolution, ContinueOperation,
-    DiffRequest, ErrorCode, ExpectedState, FetchOptions, FileDiff, ForgeCredential, ForgeRepo,
-    GitVersion, HistoryPage, HistoryQuery, MutationResult, PersistedState, PullOptions,
-    PullRequestInfo, PushOptions, RepositoryId, RepositoryInfo, RepositorySnapshot, ResetMode,
-    StashEntry,
+    DeviceAuthorization, DiffRequest, ErrorCode, ExpectedState, FetchOptions, FileDiff,
+    ForgeAccount, ForgeCredential, ForgeRepo, ForgeRepository, GitVersion, HistoryPage,
+    HistoryQuery, LoginPoll, MutationResult, PersistedState, PullOptions, PullRequestInfo,
+    PushOptions, RepositoryId, RepositoryInfo, RepositorySnapshot, ResetMode, StashEntry,
 };
 use gitcat_core::{CoreApi, JsonStateStore, export_settings, import_settings};
-use gitcat_forge::{AvatarService, ForgeService, TokenStore};
+use gitcat_forge::{AvatarService, ForgeAuth, ForgeService, TokenStore};
 use gitcat_git_cli::GitCliBackend;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State, WindowEvent};
@@ -650,6 +650,50 @@ async fn forge_pull_requests(
     forge.pull_requests(&repo, refresh).await
 }
 
+/// Starts a device-flow sign-in and returns what the user has to type where.
+/// The device code itself stays in the backend.
+#[tauri::command]
+async fn forge_login_start(
+    auth: State<'_, Arc<ForgeAuth>>,
+    host: String,
+) -> ApiResult<DeviceAuthorization> {
+    auth.begin(&host).await
+}
+
+/// Asks once whether the sign-in has been authorised. The webview repeats this
+/// at the interval the start reported.
+#[tauri::command]
+async fn forge_login_poll(auth: State<'_, Arc<ForgeAuth>>, host: String) -> ApiResult<LoginPoll> {
+    auth.poll(&host).await
+}
+
+/// Forgets the credential for one host, along with any sign-in in flight.
+#[tauri::command]
+async fn forge_sign_out(auth: State<'_, Arc<ForgeAuth>>, host: String) -> ApiResult<()> {
+    auth.sign_out(&host)
+}
+
+/// The account a stored credential belongs to, or `None` when the host holds
+/// no credential.
+#[tauri::command]
+async fn forge_account(
+    auth: State<'_, Arc<ForgeAuth>>,
+    host: String,
+) -> ApiResult<Option<ForgeAccount>> {
+    auth.account(&host).await
+}
+
+/// Every repository the signed-in account can reach on one host. The list is
+/// searched in the webview, so it is fetched whole and cached.
+#[tauri::command]
+async fn forge_repositories(
+    forge: State<'_, ForgeService>,
+    host: String,
+    refresh: bool,
+) -> ApiResult<Vec<ForgeRepository>> {
+    forge.repositories(&host, refresh).await
+}
+
 /// Rolled-up check state for a handful of commits, normally the branch tips
 /// currently painted. The service caps how many it will ask about.
 #[tauri::command]
@@ -698,8 +742,10 @@ pub fn run() {
             // The token itself goes to the operating system credential store,
             // so a settings export cannot carry one off the machine.
             let tokens = Arc::new(TokenStore::new(&data_dir));
-            app.manage(AvatarService::new(data_dir.join("avatars"), tokens.clone()));
-            app.manage(ForgeService::new(tokens.clone()));
+            let auth = Arc::new(ForgeAuth::new(tokens.clone()));
+            app.manage(AvatarService::new(data_dir.join("avatars"), auth.clone()));
+            app.manage(ForgeService::new(auth.clone()));
+            app.manage(auth);
             app.manage(tokens);
             app.manage(RepositoryWatchState::default());
             app.manage(WindowModeStore::new(data_dir.join("window.json")));
@@ -775,6 +821,11 @@ pub fn run() {
             forge_credentials,
             forge_pull_requests,
             forge_checks,
+            forge_login_start,
+            forge_login_poll,
+            forge_sign_out,
+            forge_account,
+            forge_repositories,
         ])
         .run(tauri::generate_context!())
         .expect("error while running GitCat");

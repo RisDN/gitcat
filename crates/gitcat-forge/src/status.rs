@@ -9,11 +9,12 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use gitcat_contracts::{
-    ApiError, ApiResult, CheckState, CheckSummary, ErrorCode, ForgeKind, ForgeRepo, PullRequestInfo,
+    ApiError, ApiResult, CheckState, CheckSummary, ErrorCode, ForgeKind, ForgeRepo,
+    ForgeRepository, PullRequestInfo,
 };
 
-use crate::github::GitHubClient;
-use crate::token::TokenStore;
+use crate::github::{GitHubClient, REPOS_PER_REQUEST};
+use crate::oauth::ForgeAuth;
 
 /// Long enough that opening a repository, redrawing and switching tabs costs
 /// one request; short enough that a freshly opened pull request shows up
@@ -26,6 +27,12 @@ const CHECKS_TTL: Duration = Duration::from_secs(30);
 const MAX_CHECK_COMMITS: usize = 12;
 /// Bounded so a long session cannot grow the cache without limit.
 const MAX_CACHED_CHECKS: usize = 256;
+/// The repository list changes only when the user creates or is given one, so
+/// it is worth holding for longer than anything about a branch.
+const REPOS_TTL: Duration = Duration::from_secs(300);
+/// Five pages of a hundred. Past that a person searches rather than scrolls,
+/// and the list is only there to be searched.
+const MAX_REPO_PAGES: u32 = 5;
 
 struct Cached<T> {
     stored: Instant,
@@ -34,13 +41,14 @@ struct Cached<T> {
 
 pub struct ForgeService {
     http: reqwest::Client,
-    tokens: Arc<TokenStore>,
+    auth: Arc<ForgeAuth>,
     pulls: Mutex<HashMap<String, Cached<Vec<PullRequestInfo>>>>,
     checks: Mutex<HashMap<String, Cached<CheckSummary>>>,
+    repos: Mutex<HashMap<String, Cached<Vec<ForgeRepository>>>>,
 }
 
 impl ForgeService {
-    pub fn new(tokens: Arc<TokenStore>) -> Self {
+    pub fn new(auth: Arc<ForgeAuth>) -> Self {
         let http = reqwest::Client::builder()
             .user_agent(concat!("GitCat/", env!("CARGO_PKG_VERSION")))
             .timeout(Duration::from_secs(10))
@@ -48,9 +56,10 @@ impl ForgeService {
             .unwrap_or_default();
         Self {
             http,
-            tokens,
+            auth,
             pulls: Mutex::new(HashMap::new()),
             checks: Mutex::new(HashMap::new()),
+            repos: Mutex::new(HashMap::new()),
         }
     }
 
@@ -64,7 +73,7 @@ impl ForgeService {
         repo: &ForgeRepo,
         refresh: bool,
     ) -> ApiResult<Vec<PullRequestInfo>> {
-        let Some(client) = self.client(repo) else {
+        let Some(client) = self.client(repo).await else {
             return Ok(Vec::new());
         };
         let key = repo_key(repo);
@@ -75,7 +84,7 @@ impl ForgeService {
         }
 
         let pulls = client.pull_requests(&repo.owner, &repo.repo).await?;
-        write_cache(&self.pulls, key, pulls.clone(), usize::MAX);
+        write_cache(&self.pulls, key, pulls.clone(), usize::MAX, PULLS_TTL);
         Ok(pulls)
     }
 
@@ -91,7 +100,7 @@ impl ForgeService {
         oids: &[String],
         refresh: bool,
     ) -> ApiResult<Vec<CheckSummary>> {
-        let Some(client) = self.client(repo) else {
+        let Some(client) = self.client(repo).await else {
             return Ok(Vec::new());
         };
 
@@ -122,7 +131,13 @@ impl ForgeService {
                     continue;
                 }
             };
-            write_cache(&self.checks, key, summary.clone(), MAX_CACHED_CHECKS);
+            write_cache(
+                &self.checks,
+                key,
+                summary.clone(),
+                MAX_CACHED_CHECKS,
+                CHECKS_TTL,
+            );
             summaries.push(summary);
         }
 
@@ -134,6 +149,48 @@ impl ForgeService {
             }
         }
         Ok(summaries)
+    }
+
+    /// Every repository the signed-in account can reach on one host.
+    ///
+    /// Pages are walked until the service returns a short one, so the result is
+    /// the whole list rather than the first hundred. Filtering it is the
+    /// caller's job: a list this size is searched locally, not re-requested per
+    /// keystroke.
+    pub async fn repositories(&self, host: &str, refresh: bool) -> ApiResult<Vec<ForgeRepository>> {
+        let host = host.trim().to_ascii_lowercase();
+        if !refresh {
+            if let Some(cached) = read_cache(&self.repos, &host, REPOS_TTL) {
+                return Ok(cached);
+            }
+        }
+
+        let Some(token) = self.auth.access_token(&host).await else {
+            return Err(ApiError::new(
+                ErrorCode::AuthenticationRequired,
+                "sign in to the hosting service to list your repositories",
+            ));
+        };
+        let client = GitHubClient::new(self.http.clone(), &host, Some(token));
+
+        let mut repositories = Vec::new();
+        for page in 1..=MAX_REPO_PAGES {
+            let batch = client.repositories(page).await?;
+            let complete = batch.len() < usize::from(REPOS_PER_REQUEST);
+            repositories.extend(batch);
+            if complete {
+                break;
+            }
+        }
+
+        write_cache(
+            &self.repos,
+            host,
+            repositories.clone(),
+            usize::MAX,
+            REPOS_TTL,
+        );
+        Ok(repositories)
     }
 
     /// Drops everything cached for one repository, so the next lookup asks the
@@ -148,14 +205,14 @@ impl ForgeService {
         }
     }
 
-    fn client(&self, repo: &ForgeRepo) -> Option<GitHubClient> {
+    async fn client(&self, repo: &ForgeRepo) -> Option<GitHubClient> {
         if repo.forge != ForgeKind::GitHub || repo.owner.is_empty() || repo.repo.is_empty() {
             return None;
         }
         Some(GitHubClient::new(
             self.http.clone(),
             &repo.host,
-            self.tokens.get(&repo.host),
+            self.auth.access_token(&repo.host).await,
         ))
     }
 }
@@ -187,11 +244,12 @@ fn write_cache<T>(
     key: String,
     value: T,
     capacity: usize,
+    ttl: Duration,
 ) {
     let Ok(mut guard) = cache.lock() else {
         return;
     };
-    guard.retain(|_, entry| entry.stored.elapsed() < PULLS_TTL.max(CHECKS_TTL));
+    guard.retain(|_, entry| entry.stored.elapsed() < ttl);
     if guard.len() >= capacity {
         guard.clear();
     }
@@ -207,7 +265,7 @@ fn write_cache<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::token::SecretStore;
+    use crate::token::{SecretStore, TokenStore};
 
     /// The credential store is irrelevant here: these tests never reach a
     /// network, and a real keyring would prompt on some platforms.
@@ -229,10 +287,9 @@ mod tests {
 
     fn service() -> ForgeService {
         let dir = tempfile::tempdir().expect("temp dir");
-        ForgeService::new(Arc::new(TokenStore::with_secrets(
-            dir.path(),
-            Box::new(NoSecrets),
-        )))
+        ForgeService::new(Arc::new(ForgeAuth::new(Arc::new(
+            TokenStore::with_secrets(dir.path(), Box::new(NoSecrets)),
+        ))))
     }
 
     fn repo(forge: ForgeKind) -> ForgeRepo {
@@ -273,19 +330,19 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_repository_without_a_path_has_no_client() {
+    #[tokio::test]
+    async fn a_repository_without_a_path_has_no_client() {
         let service = service();
         let mut incomplete = repo(ForgeKind::GitHub);
         incomplete.owner = String::new();
-        assert!(service.client(&incomplete).is_none());
-        assert!(service.client(&repo(ForgeKind::GitHub)).is_some());
+        assert!(service.client(&incomplete).await.is_none());
+        assert!(service.client(&repo(ForgeKind::GitHub)).await.is_some());
     }
 
     #[test]
     fn a_cached_entry_expires_with_its_own_ttl() {
         let cache: Mutex<HashMap<String, Cached<u8>>> = Mutex::new(HashMap::new());
-        write_cache(&cache, "key".into(), 7, MAX_CACHED_CHECKS);
+        write_cache(&cache, "key".into(), 7, MAX_CACHED_CHECKS, CHECKS_TTL);
 
         assert_eq!(read_cache(&cache, "key", Duration::from_secs(60)), Some(7));
         assert_eq!(read_cache(&cache, "key", Duration::ZERO), None);
@@ -296,7 +353,7 @@ mod tests {
     fn a_full_cache_is_cleared_rather_than_grown() {
         let cache: Mutex<HashMap<String, Cached<u8>>> = Mutex::new(HashMap::new());
         for index in 0..4u8 {
-            write_cache(&cache, format!("key{index}"), index, 3);
+            write_cache(&cache, format!("key{index}"), index, 3, CHECKS_TTL);
         }
 
         let guard = cache.lock().expect("lock");
@@ -312,12 +369,14 @@ mod tests {
             "github.com/ikoli/gitcat@abc".into(),
             summary("abc"),
             MAX_CACHED_CHECKS,
+            CHECKS_TTL,
         );
         write_cache(
             &service.checks,
             "github.com/other/repo@abc".into(),
             summary("abc"),
             MAX_CACHED_CHECKS,
+            CHECKS_TTL,
         );
 
         service.forget(&repo(ForgeKind::GitHub));

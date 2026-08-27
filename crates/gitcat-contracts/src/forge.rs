@@ -63,6 +63,23 @@ pub struct ForgeCredential {
     pub host: String,
     /// Non-secret hint for the settings UI, such as the last four characters.
     pub hint: String,
+    /// How the credential was obtained, which decides what the settings screen
+    /// offers: a signed-in account can be signed out, a typed token replaced.
+    #[serde(default)]
+    pub kind: CredentialKind,
+    /// Account the credential belongs to, when the sign-in reported one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CredentialKind {
+    /// Typed in by the user as a personal access token.
+    #[default]
+    Token,
+    /// Obtained by signing in through the device flow.
+    OAuth,
 }
 
 /// The repository a hosting-service request is scoped to.
@@ -159,4 +176,72 @@ pub struct CheckSummary {
     pub total: u32,
     pub failed: u32,
     pub pending: u32,
+}
+
+/// The signed-in account on one host.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ForgeAccount {
+    pub host: String,
+    pub login: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Served by the hosting service; the webview's image policy already
+    /// allows it, so unlike a commit author avatar it is not inlined.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar_url: Option<String>,
+}
+
+/// What the user has to do to finish a device-flow sign-in.
+///
+/// The device code itself stays in the backend: the webview only needs what it
+/// shows the user, and a code that authorises a token has no business in a
+/// page.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceAuthorization {
+    pub host: String,
+    /// Typed into the verification page by the user.
+    pub user_code: String,
+    pub verification_uri: String,
+    /// How often the backend may poll, in seconds.
+    pub interval_seconds: u32,
+    pub expires_in_seconds: u32,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LoginState {
+    /// The user has not finished authorising yet.
+    #[default]
+    Pending,
+    Complete,
+    /// The code timed out; the sign-in has to start again.
+    Expired,
+    /// The user refused, on the verification page.
+    Denied,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LoginPoll {
+    pub state: LoginState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<ForgeAccount>,
+}
+
+/// One repository the signed-in account can reach.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ForgeRepository {
+    pub full_name: String,
+    pub owner: String,
+    pub name: String,
+    pub private: bool,
+    pub fork: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_branch: Option<String>,
+    pub clone_url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssh_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
 }

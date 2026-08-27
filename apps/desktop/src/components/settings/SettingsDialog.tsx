@@ -18,6 +18,7 @@ import { isTauriEnvironment } from "../../lib/platform";
 import type { AppSettings, AppTheme, PullMode, ThemeColors } from "../../lib/types";
 import { Button, Input, Modal, ModalSpacer } from "../ui";
 import { ForgeOverrideEditor } from "./ForgeOverrideEditor";
+import { ForgeAccountEditor } from "./ForgeAccountEditor";
 import { ForgeTokenEditor } from "./ForgeTokenEditor";
 import { KeybindEditor } from "./KeybindEditor";
 import { CheckField, FIELD_INPUT, Field, SectionHeading } from "./SettingsField";
@@ -288,6 +289,8 @@ export function SettingsDialog({ settings, defaults, onSave, onClose }: Settings
                   onChange={(forge_overrides) => setDraft((current) => ({ ...current, forge_overrides }))}
                   overrides={draft.forge_overrides}
                 />
+                <SectionHeading>Accounts</SectionHeading>
+                <ForgeAccountEditor />
                 <SectionHeading>Access tokens</SectionHeading>
                 <ForgeTokenEditor />
               </section>

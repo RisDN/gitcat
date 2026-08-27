@@ -15,7 +15,7 @@ use sha2::{Digest, Sha256};
 
 use crate::cache::{AvatarCache, CachedIdentity};
 use crate::github::GitHubClient;
-use crate::token::TokenStore;
+use crate::oauth::ForgeAuth;
 
 /// Twice the rendered node diameter, so the image stays sharp on a high-DPI
 /// display without paying for a full-size portrait.
@@ -26,11 +26,11 @@ const GITHUB_NOREPLY_SUFFIX: &str = "@users.noreply.github.com";
 pub struct AvatarService {
     http: reqwest::Client,
     cache: AvatarCache,
-    tokens: Arc<TokenStore>,
+    auth: Arc<ForgeAuth>,
 }
 
 impl AvatarService {
-    pub fn new(cache_dir: impl AsRef<Path>, tokens: Arc<TokenStore>) -> Self {
+    pub fn new(cache_dir: impl AsRef<Path>, auth: Arc<ForgeAuth>) -> Self {
         let http = reqwest::Client::builder()
             .user_agent(concat!("GitCat/", env!("CARGO_PKG_VERSION")))
             .timeout(std::time::Duration::from_secs(10))
@@ -39,7 +39,7 @@ impl AvatarService {
         Self {
             http,
             cache: AvatarCache::new(cache_dir),
-            tokens,
+            auth,
         }
     }
 
@@ -121,7 +121,7 @@ impl AvatarService {
         pending: &mut Vec<String>,
         entries: &mut Vec<AvatarEntry>,
     ) {
-        let token = self.tokens.get(&lookup.host);
+        let token = self.auth.access_token(&lookup.host).await;
         let client = GitHubClient::new(self.http.clone(), &lookup.host, token);
         let Ok(authors) = client
             .commit_authors(&lookup.owner, &lookup.repo, lookup.tip_oid.as_deref())

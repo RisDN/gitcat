@@ -177,10 +177,53 @@ export interface CheckSummary {
   pending: number;
 }
 
+export type CredentialKind = "token" | "oauth";
+
 export interface ForgeCredential {
   host: string;
   /** Last few characters of the token, never the token itself. */
   hint: string;
+  kind: CredentialKind;
+  /** Account the credential belongs to, when the sign-in reported one. */
+  account?: string;
+}
+
+export interface ForgeAccount {
+  host: string;
+  login: string;
+  name?: string;
+  /** Served by the hosting service; the image policy already allows it. */
+  avatar_url?: string;
+}
+
+/** What the user has to do to finish a device-flow sign-in. */
+export interface DeviceAuthorization {
+  host: string;
+  user_code: string;
+  verification_uri: string;
+  interval_seconds: number;
+  expires_in_seconds: number;
+}
+
+export type LoginState = "pending" | "complete" | "expired" | "denied";
+
+export interface LoginPoll {
+  state: LoginState;
+  account?: ForgeAccount;
+}
+
+/** One repository the signed-in account can reach. */
+export interface ForgeRepository {
+  full_name: string;
+  owner: string;
+  name: string;
+  private: boolean;
+  fork: boolean;
+  description?: string;
+  default_branch?: string;
+  clone_url: string;
+  ssh_url?: string;
+  updated_at?: string;
 }
 
 export interface RemoteUrlParts {

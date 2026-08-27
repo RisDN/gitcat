@@ -16,15 +16,106 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use gitcat_contracts::{ApiError, ApiResult, ErrorCode, ForgeCredential};
+use gitcat_contracts::{ApiError, ApiResult, CredentialKind, ErrorCode, ForgeCredential};
+use serde::{Deserialize, Serialize};
 
 const MAX_TOKEN_LENGTH: usize = 512;
+/// A signed-in account stores more than a token -- the refresh token, the
+/// expiry, the account name -- so its encoded form gets its own, looser cap.
+const MAX_STORED_LENGTH: usize = 4096;
 const MAX_HOSTS: usize = 64;
 const INDEX_FILE: &str = "token-hosts.json";
 /// An earlier build kept tokens here in plain text. Anything found is moved
 /// into the OS store and the file is deleted.
 const LEGACY_FILE: &str = "tokens.json";
 const KEYRING_SERVICE: &str = "gitcat";
+
+/// A sign-in obtained through the device flow.
+///
+/// The refresh token sits beside the access token in the same operating-system
+/// entry, because losing one without the other would leave a credential that
+/// can neither be used nor renewed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OAuthCredential {
+    pub access_token: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh_token: Option<String>,
+    /// Unix seconds. `None` when the service issues a token that does not
+    /// expire, which is a setting of the registered application.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+    #[serde(default)]
+    pub scopes: String,
+}
+
+/// What one host's entry holds.
+///
+/// A value written by an earlier build, or typed in by the user, is a bare
+/// token. A sign-in is stored as JSON so its refresh token travels with it.
+/// The two are told apart by the leading brace, which a token never has.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StoredCredential {
+    Token(String),
+    OAuth(OAuthCredential),
+}
+
+impl StoredCredential {
+    pub fn access_token(&self) -> &str {
+        match self {
+            Self::Token(token) => token,
+            Self::OAuth(credential) => &credential.access_token,
+        }
+    }
+
+    pub fn kind(&self) -> CredentialKind {
+        match self {
+            Self::Token(_) => CredentialKind::Token,
+            Self::OAuth(_) => CredentialKind::OAuth,
+        }
+    }
+
+    pub fn account(&self) -> Option<&str> {
+        match self {
+            Self::Token(_) => None,
+            Self::OAuth(credential) => credential.account.as_deref(),
+        }
+    }
+}
+
+/// Written with a version so a later shape can be recognised rather than
+/// misread as this one.
+#[derive(Serialize, Deserialize)]
+struct StoredOAuth {
+    version: u8,
+    #[serde(flatten)]
+    credential: OAuthCredential,
+}
+
+const STORED_VERSION: u8 = 1;
+
+fn encode(credential: &OAuthCredential) -> ApiResult<String> {
+    serde_json::to_string(&StoredOAuth {
+        version: STORED_VERSION,
+        credential: credential.clone(),
+    })
+    .map_err(|error| {
+        ApiError::new(ErrorCode::Internal, "could not encode the credential")
+            .with_details(error.to_string())
+    })
+}
+
+/// A stored value that is neither a bare token nor a version this build knows
+/// is treated as absent: the user signs in again, which costs a round trip and
+/// loses nothing.
+fn decode(raw: String) -> Option<StoredCredential> {
+    if !raw.starts_with('{') {
+        return Some(StoredCredential::Token(raw));
+    }
+    let stored: StoredOAuth = serde_json::from_str(&raw).ok()?;
+    (stored.version == STORED_VERSION).then_some(StoredCredential::OAuth(stored.credential))
+}
 
 /// The credential backend, split out so the index, the migration and the
 /// validation rules can be tested without touching the machine's real store.
@@ -94,8 +185,42 @@ impl TokenStore {
         store
     }
 
+    /// The bearer token for one host, whichever way it was obtained.
+    ///
+    /// This does not renew an expired sign-in; [`crate::ForgeAuth`] owns that,
+    /// because renewing needs the network.
     pub fn get(&self, host: &str) -> Option<String> {
-        self.secrets.get(&host.to_ascii_lowercase()).ok().flatten()
+        self.stored(host)
+            .map(|credential| credential.access_token().to_owned())
+    }
+
+    pub fn stored(&self, host: &str) -> Option<StoredCredential> {
+        let raw = self
+            .secrets
+            .get(&host.to_ascii_lowercase())
+            .ok()
+            .flatten()?;
+        decode(raw)
+    }
+
+    /// Stores a sign-in, replacing whatever the host held before.
+    pub fn set_oauth(&self, host: &str, credential: &OAuthCredential) -> ApiResult<()> {
+        let host = normalize_host(host)?;
+        validate_token(&credential.access_token)?;
+        let encoded = encode(credential)?;
+        if encoded.len() > MAX_STORED_LENGTH {
+            return Err(invalid(
+                "the sign-in is larger than the credential store allows",
+            ));
+        }
+
+        let mut hosts = self.lock()?;
+        if !hosts.contains(&host) && hosts.len() >= MAX_HOSTS {
+            return Err(invalid("at most 64 hosting service tokens can be stored"));
+        }
+        self.secrets.set(&host, &encoded)?;
+        hosts.insert(host);
+        write_index(&self.index_path, &hosts)
     }
 
     /// Stores or clears the token for one host. `None` removes it.
@@ -130,10 +255,12 @@ impl TokenStore {
         let mut credentials = Vec::new();
         let mut live = BTreeSet::new();
         for host in hosts.iter() {
-            if let Some(token) = self.secrets.get(host).ok().flatten() {
+            if let Some(credential) = self.stored(host) {
                 credentials.push(ForgeCredential {
                     host: host.clone(),
-                    hint: hint(&token),
+                    hint: hint(credential.access_token()),
+                    kind: credential.kind(),
+                    account: credential.account().map(str::to_owned),
                 });
                 live.insert(host.clone());
             }
