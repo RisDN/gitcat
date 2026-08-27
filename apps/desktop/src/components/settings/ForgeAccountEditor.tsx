@@ -1,9 +1,9 @@
-import { Check, Copy, LogOut } from "lucide-react";
+import { Check, Copy, ExternalLink, LogOut } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { forgeCredentials } from "../../lib/avatars";
 import { forgeSignOut, pollForgeLogin, startForgeLogin } from "../../lib/forgeAuth";
-import { isTauriEnvironment } from "../../lib/platform";
+import { isTauriEnvironment, openExternal } from "../../lib/platform";
 import type { DeviceAuthorization, ForgeCredential } from "../../lib/types";
 import { Button, IconButton, Input } from "../ui";
 import { FIELD_INPUT } from "./SettingsField";
@@ -98,6 +98,10 @@ export function ForgeAccountEditor() {
     try {
       const authorization = await startForgeLogin(host.trim());
       setPending(authorization);
+      // The code is useless without the page it goes into, so the page opens
+      // with it. It stays on screen either way: a browser may refuse, and the
+      // user may want to finish on another device.
+      void openExternal(authorization.verification_uri).catch(() => undefined);
       void awaitAuthorization(authorization);
     } catch (error) {
       setNotice({ tone: "error", message: message(error) });
@@ -151,9 +155,16 @@ export function ForgeAccountEditor() {
 
       {pending ? (
         <div className="flex flex-col gap-1.5 rounded-[5px] border border-border bg-background p-2.25">
-          <p className="text-[11px] leading-[1.45] text-muted">
-            Open <span className="text-foreground">{pending.verification_uri}</span> and enter this
-            code:
+          <p className="flex items-center gap-1 text-[11px] leading-[1.45] text-muted">
+            Open <span className="text-foreground">{pending.verification_uri}</span>
+            <IconButton
+              aria-label="Open the verification page"
+              onClick={() => { void openExternal(pending.verification_uri).catch(() => undefined); }}
+              title="Open in browser"
+            >
+              <ExternalLink size={13} />
+            </IconButton>
+            and enter this code:
           </p>
           <div className="flex items-center gap-1.5">
             <span className="font-mono text-[15px] tracking-[0.18em] text-foreground">

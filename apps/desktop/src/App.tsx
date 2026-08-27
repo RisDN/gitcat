@@ -38,6 +38,7 @@ import type {
 } from "./lib/types";
 import { currentBranch, remoteIconUrls } from "./app/branches";
 import { withForgeOverrides } from "./lib/forge";
+import { openExternal } from "./lib/platform";
 import { useAvatars } from "./app/useAvatars";
 import { useForgeStatus } from "./app/useForgeStatus";
 import { EMPTY_COMMIT_DRAFT, EMPTY_STATE } from "./app/defaults";
@@ -636,12 +637,17 @@ function App() {
     );
     const avatarImages = useAvatars(snapshot, history?.commits ?? [], persisted.settings.avatars);
     const forgeStatus = useForgeStatus(snapshot, persisted.settings.forge);
-    // Following the link out of the application is the user's move, so the row
-    // hands them the address the same way the commit menu does.
-    const copyPullRequestLink = useCallback((pull: PullRequestInfo) => {
-        void navigator.clipboard.writeText(pull.url)
-            .then(() => addToast({ tone: "success", title: `Link to #${pull.number} copied` }))
-            .catch((error) => showError("Could not copy the pull request link", error));
+    // The badge opens the pull request. Where there is no browser to open it in
+    // -- the browser build -- the address goes to the clipboard instead, so the
+    // badge is never a dead control.
+    const openPullRequest = useCallback((pull: PullRequestInfo) => {
+        void openExternal(pull.url)
+            .then((opened) => {
+                if (opened) return;
+                return navigator.clipboard.writeText(pull.url)
+                    .then(() => addToast({ tone: "success", title: `Link to #${pull.number} copied` }));
+            })
+            .catch((error) => showError("Could not open the pull request", error));
     }, [addToast, showError]);
     const currentHeadOid = snapshot?.head.kind === "unborn" ? null : snapshot?.head.oid ?? null;
     const wipLane = useMemo(
@@ -814,7 +820,7 @@ function App() {
                                 }}
                                 onCheckoutRemote={checkoutRemoteBranch}
                                 onCreateBranch={() => currentHeadOid ? setPrompt({ kind: "create_branch", startOid: currentHeadOid }) : undefined}
-                                onOpenPullRequest={copyPullRequestLink}
+                                onOpenPullRequest={openPullRequest}
                                 pullRequests={forgeStatus.pullRequests}
                                 checks={forgeStatus.checks}
                                 remoteBranches={snapshot?.remote_branches ?? []}

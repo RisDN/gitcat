@@ -23,6 +23,24 @@ export async function chooseDirectory(title: string): Promise<string | null> {
   return typeof selected === "string" ? selected : null;
 }
 
+/**
+ * Opens a link in the user's browser.
+ *
+ * Only `https:` is passed on, which is all the window's capability allows: a
+ * link GitCat offers comes from a hosting service, and anything else arriving
+ * in its place is not something to hand to the operating system.
+ *
+ * Answers `false` when the link was not opened -- outside the desktop
+ * application, or for a scheme that is not offered -- so a caller can fall back
+ * to putting the address on the clipboard.
+ */
+export async function openExternal(url: string): Promise<boolean> {
+  if (!isTauriEnvironment() || !/^https:\/\//i.test(url)) return false;
+  const { openUrl } = await import("@tauri-apps/plugin-opener");
+  await openUrl(url);
+  return true;
+}
+
 export async function invokeTauri<T>(
   command: string,
   args: Record<string, unknown> = {},

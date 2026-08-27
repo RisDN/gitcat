@@ -1,4 +1,4 @@
-import { Copy, Download, FolderInput, FolderPlus, FolderX, GitBranchPlus, GitCommitHorizontal, GitMerge, GitPullRequestArrow, Link, PackageCheck, PackageOpen, Pencil, RotateCcw, Tag, Trash2, Upload, X, } from "lucide-react";
+import { Copy, Download, ExternalLink, FolderInput, FolderPlus, FolderX, GitBranchPlus, GitCommitHorizontal, GitMerge, GitPullRequestArrow, Link, PackageCheck, PackageOpen, Pencil, RotateCcw, Tag, Trash2, Upload, X, } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction, } from "react";
 
 import { primaryBranchDecoration } from "../components/CommitGraph";
@@ -7,6 +7,7 @@ import { branchNameWithoutRemote, remoteNameOf, type BranchScope } from "../comp
 import type { ToastMessage } from "../components/ToastRegion";
 import { PULL_LABELS } from "../components/toolbar";
 import { gitcatApi } from "../lib/api";
+import { openExternal } from "../lib/platform";
 import type {
     BranchInfo,
     CommitActionAvailability,
@@ -243,10 +244,16 @@ export function useContextMenuActions({
                 : []),
             { id: "copy", label: "Copy commit sha", icon: <Copy size={15} />, separatorBefore: !branchRef },
             ...(branchRef && remoteName && remoteBranchUrl(snapshot, remoteName, localName ?? "")
-                ? [{ id: "copy_link_branch", label: `Copy link to branch: ${displayName}`, icon: <Link size={15} /> }]
+                ? [
+                    { id: "open_link_branch", label: `Open branch on ${remoteName}`, icon: <ExternalLink size={15} /> },
+                    { id: "copy_link_branch", label: `Copy link to branch: ${displayName}`, icon: <Link size={15} /> },
+                ]
                 : []),
             ...(remoteName && remoteCommitUrl(snapshot, remoteName, commitMenu.commit.oid)
-                ? [{ id: "copy_link_commit", label: `Copy link to this commit on remote: ${remoteName}`, icon: <Link size={15} /> }]
+                ? [
+                    { id: "open_link_commit", label: `Open this commit on ${remoteName}`, icon: <ExternalLink size={15} /> },
+                    { id: "copy_link_commit", label: `Copy link to this commit on remote: ${remoteName}`, icon: <Link size={15} /> },
+                ]
                 : []),
         ];
         const tagItems = (): ContextAction[] => [
@@ -327,6 +334,11 @@ export function useContextMenuActions({
                 .then(() => addToast({ tone: "success", title }))
                 .catch((error) => showError(`Could not copy ${title.toLowerCase()}`, error));
         };
+        const openOrCopy = (url: string, copyTitle: string) => {
+            void openExternal(url)
+                .then((opened) => { if (!opened) copyText(url, copyTitle); })
+                .catch((error) => showError("Could not open the link", error));
+        };
         switch (action) {
             case "copy":
                 void copySha(commit.oid);
@@ -334,6 +346,22 @@ export function useContextMenuActions({
             case "copy_branch":
                 if (reference.displayName) copyText(reference.displayName, "Branch name copied");
                 break;
+            // Opening falls back to the clipboard: outside the desktop
+            // application there is no browser to hand the link to.
+            case "open_link_branch": {
+                const url = reference.remoteName && reference.localName
+                    ? remoteBranchUrl(snapshot, reference.remoteName, reference.localName)
+                    : null;
+                if (url) openOrCopy(url, "Branch link copied");
+                break;
+            }
+            case "open_link_commit": {
+                const url = reference.remoteName
+                    ? remoteCommitUrl(snapshot, reference.remoteName, commit.oid)
+                    : null;
+                if (url) openOrCopy(url, "Commit link copied");
+                break;
+            }
             case "copy_link_branch": {
                 const url = reference.remoteName && reference.localName
                     ? remoteBranchUrl(snapshot, reference.remoteName, reference.localName)
