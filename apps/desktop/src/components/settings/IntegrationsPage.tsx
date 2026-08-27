@@ -71,7 +71,7 @@ export function IntegrationsPage({
         <header className="mb-3 flex items-center gap-2">
           <selected.icon className="text-accent" size={17} />
           <h3 className="text-[14px] font-[640]">{selected.label}</h3>
-          {selected.support === "links_only" ? <Badge>Links only</Badge> : null}
+          {selected.support === "links_only" ? <Badge>Coming soon</Badge> : null}
         </header>
 
         <p className="mb-4 text-[11px] leading-[1.55] text-muted">

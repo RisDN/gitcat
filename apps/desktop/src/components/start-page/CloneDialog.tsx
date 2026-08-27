@@ -118,7 +118,7 @@ export function CloneDialog({
           {INTEGRATIONS.map((entry) => (
             <SourceButton
               active={source === entry.id}
-              badge={entry.support === "links_only" ? <Badge>Links only</Badge> : null}
+              badge={entry.support === "links_only" ? <Badge>Coming soon</Badge> : null}
               connected={selfHostedHosts(entry, overrides).some((named) => credentialFor(connections, named))}
               disabled={entry.support === "links_only"}
               icon={<entry.icon size={15} />}
