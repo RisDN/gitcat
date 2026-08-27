@@ -28,11 +28,13 @@ function Row({ children, label }: { children: (id: string) => React.ReactNode; l
 export function CreateDialog({
   busy,
   onClose,
+  onNameHost,
   onSubmit,
   overrides,
 }: {
   busy: boolean;
   onClose: () => void;
+  onNameHost: (host: string, forge: ForgeKind) => void;
   onSubmit: (
     path: string,
     defaultBranch: string,
@@ -120,35 +122,30 @@ export function CreateDialog({
 
           {integration && !connected ? (
             <div className="col-span-2">
-              {selectedHost ? (
-                <>
-                  {hosts.length > 1 ? (
-                    <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
-                      {hosts.map((entry) => (
-                        <button
-                          className={cx(
-                            "cursor-pointer rounded-[5px] border px-2 py-1 text-[11px]",
-                            entry === selectedHost
-                              ? "border-accent bg-accent/12 text-foreground"
-                              : "border-border text-muted hover:text-foreground",
-                          )}
-                          key={entry}
-                          onClick={() => setHost(entry)}
-                          type="button"
-                        >
-                          {entry}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                  <ForgeConnectPanel host={selectedHost} integration={integration} />
-                </>
-              ) : (
-                <p className="rounded-[7px] border border-border bg-background/45 px-3.5 py-3 text-[11px] leading-[1.5] text-muted">
-                  No {integration.label} host is named yet. Add one under Integrations in the
-                  preferences, then come back here.
-                </p>
-              )}
+              {hosts.length > 1 ? (
+                <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
+                  {hosts.map((entry) => (
+                    <button
+                      className={cx(
+                        "cursor-pointer rounded-[5px] border px-2 py-1 text-[11px]",
+                        entry === selectedHost
+                          ? "border-accent bg-accent/12 text-foreground"
+                          : "border-border text-muted hover:text-foreground",
+                      )}
+                      key={entry}
+                      onClick={() => setHost(entry)}
+                      type="button"
+                    >
+                      {entry}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <ForgeConnectPanel
+                host={selectedHost}
+                integration={integration}
+                onHostNamed={(named) => onNameHost(named, integration.forge)}
+              />
             </div>
           ) : (
             <>

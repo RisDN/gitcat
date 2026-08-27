@@ -3,22 +3,12 @@ import { useState } from "react";
 
 import { credentialFor, useForgeConnections } from "../../app/forgeConnections";
 import { cx } from "../../lib";
-import { INTEGRATIONS, selfHostedHosts } from "../../lib/integrations";
+import { hostNameError, INTEGRATIONS, selfHostedHosts } from "../../lib/integrations";
 import type { Integration } from "../../lib/integrations";
 import type { ForgeKind } from "../../lib/types";
 import { ForgeConnectPanel } from "../forge";
 import { Badge, Button, IconButton, Input } from "../ui";
 import { FIELD_INPUT } from "./SettingsField";
-
-// The backend matches against the host it parsed out of the remote URL, which
-// carries no scheme, port, credentials or path.
-function hostError(host: string): string | null {
-  if (!host) return null;
-  if (host.includes("://")) return "host only, without the scheme";
-  if (/[/:@\s]/.test(host)) return "host only, without port or path";
-  if (!host.includes(".")) return "expected a domain name";
-  return null;
-}
 
 /**
  * One page per hosting service: what GitCat can do with it, which hosts it
@@ -123,7 +113,7 @@ function SelfHostedHosts({
   const [draft, setDraft] = useState("");
   const hosts = selfHostedHosts(integration, overrides);
   const candidate = draft.trim().toLowerCase();
-  const error = hostError(candidate);
+  const error = hostNameError(candidate);
   const duplicate = candidate.length > 0 && candidate in overrides;
 
   const add = () => {

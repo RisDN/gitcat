@@ -10,6 +10,7 @@ import {
   useForgeConnections,
 } from "../../app/forgeConnections";
 import { cx } from "../../lib";
+import { hostNameError } from "../../lib/integrations";
 import type { Integration } from "../../lib/integrations";
 import { isTauriEnvironment, openExternal } from "../../lib/platform";
 import { Button, IconButton, Input } from "../ui";
@@ -23,23 +24,33 @@ const FIELD =
  *
  * The same block serves preferences and the start dialogs, so a service that
  * is not connected offers the connection where the user ran into it rather
- * than sending them to another window.
+ * than sending them to another window. A self-hosted service with no host
+ * named yet is the same case: `onHostNamed` lets the panel take the address
+ * along with the token, so naming the install is part of connecting it.
  */
 export function ForgeConnectPanel({
   className = "",
   host,
   integration,
+  onHostNamed,
 }: {
   className?: string;
-  host: string;
+  /** The install to connect, or `null` for a self-hosted one not named yet. */
+  host: string | null;
   integration: Integration;
+  onHostNamed?: (host: string) => void;
 }) {
   const connections = useForgeConnections();
   const [token, setToken] = useState("");
+  const [draftHost, setDraftHost] = useState("");
   const [copied, setCopied] = useState(false);
-  const credential = credentialFor(connections, host);
-  const pending = connections.pending?.host === host.toLowerCase() ? connections.pending : null;
-  const notice = connections.notice?.host === host.toLowerCase() ? connections.notice : null;
+  const credential = host ? credentialFor(connections, host) : undefined;
+  const pending = host && connections.pending?.host === host.toLowerCase()
+    ? connections.pending
+    : null;
+  const notice = host && connections.notice?.host === host.toLowerCase()
+    ? connections.notice
+    : null;
 
   if (!isTauriEnvironment()) {
     return (
@@ -48,6 +59,31 @@ export function ForgeConnectPanel({
       </p>
     );
   }
+
+  // A self-hosted install with no address yet, and nowhere in this dialog to
+  // put one: preferences is where the host list lives.
+  if (!host && !onHostNamed) {
+    return (
+      <p className={cx("rounded-[7px] border border-border bg-background/45 px-3.5 py-3 text-[11px] leading-[1.5] text-muted", className)}>
+        No {integration.label} host is named yet. Add one under Integrations in the preferences,
+        then come back here.
+      </p>
+    );
+  }
+
+  const candidate = draftHost.trim().toLowerCase();
+  const candidateError = hostNameError(candidate);
+  const target = host ?? candidate;
+  const tokenReady = Boolean(target) && !candidateError && Boolean(token.trim());
+
+  const connectWithToken = () => {
+    if (!tokenReady) return;
+    // Naming the install is what tells the rest of GitCat which service
+    // answers there, so it is recorded with the credential rather than after.
+    if (!host) onHostNamed?.(target);
+    void storeForgeToken(target, token.trim());
+    setToken("");
+  };
 
   return (
     <div className={cx("flex flex-col gap-2.5", className)}>
@@ -64,7 +100,7 @@ export function ForgeConnectPanel({
           </span>
           <IconButton
             aria-label={`Disconnect from ${host}`}
-            onClick={() => void disconnectForge(host)}
+            onClick={() => { if (host) void disconnectForge(host); }}
             title="Disconnect"
           >
             <LogOut size={13} />
@@ -110,8 +146,8 @@ export function ForgeConnectPanel({
         <div className="flex flex-col items-center gap-2.5 rounded-[7px] border border-border bg-background/45 px-4 py-6 text-center">
           <p className="text-[12px] text-muted">{integration.label} is not connected</p>
           <Button
-            disabled={connections.pending !== null}
-            onClick={() => void connectForge(host)}
+            disabled={connections.pending !== null || !host}
+            onClick={() => { if (host) void connectForge(host); }}
             tone="accent"
           >
             Connect to {integration.label}
@@ -119,29 +155,40 @@ export function ForgeConnectPanel({
         </div>
       ) : integration.support === "token" ? (
         <div className="flex flex-col gap-2 rounded-[7px] border border-border bg-background/45 px-3.5 py-3">
-          <p className="text-[12px] text-muted">{integration.label} is not connected</p>
+          <p className="text-[12px] text-muted">
+            {host ? `${host} is not connected` : `${integration.label} is not connected`}
+          </p>
           <p className="text-[10px] leading-[1.5] text-muted/72">
             Signing in needs an OAuth application registered on the instance itself, which GitCat
             cannot ship. A personal access token connects it instead.
           </p>
+          {host ? null : (
+            <Input
+              aria-label={`Host of the ${integration.label} install`}
+              className={FIELD}
+              onChange={(event) => setDraftHost(event.target.value)}
+              placeholder="git.example.com"
+              spellCheck={false}
+              value={draftHost}
+            />
+          )}
           <div className="flex items-center gap-1.5">
             <Input
-              aria-label={`Access token for ${host}`}
+              aria-label={`Access token for ${target || integration.label}`}
               className={FIELD}
               onChange={(event) => setToken(event.target.value)}
+              onKeyDown={(event) => { if (event.key === "Enter") connectWithToken(); }}
               placeholder="Access token"
               type="password"
               value={token}
             />
-            <Button
-              compact
-              disabled={!token.trim()}
-              onClick={() => { void storeForgeToken(host, token.trim()); setToken(""); }}
-              tone="accent"
-            >
+            <Button compact disabled={!tokenReady} onClick={connectWithToken} tone="accent">
               Connect
             </Button>
           </div>
+          {candidateError ? (
+            <small className="text-[10px] text-danger">{candidateError}</small>
+          ) : null}
         </div>
       ) : (
         <p className="rounded-[7px] border border-border bg-background/45 px-3.5 py-3 text-[11px] leading-[1.5] text-muted">

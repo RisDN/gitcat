@@ -17,11 +17,13 @@ const URL_SOURCE = "url";
 export function CloneDialog({
   busy,
   onClose,
+  onNameHost,
   onSubmit,
   overrides,
 }: {
   busy: boolean;
   onClose: () => void;
+  onNameHost: (host: string, forge: ForgeKind) => void;
   onSubmit: (options: CloneOptions) => void;
   overrides: Readonly<Record<string, ForgeKind>>;
 }) {
@@ -118,6 +120,7 @@ export function CloneDialog({
               hosts={hosts}
               integration={integration}
               onHostChange={setHost}
+              onNameHost={onNameHost}
               onSelect={selectRepository}
               selected={picked}
               selectedHost={selectedHost}
@@ -168,12 +171,15 @@ export function CloneDialog({
 
 /**
  * The repository list of one service, or whatever stands between the user and
- * it: no host named for a self-hosted install, or no connection yet.
+ * it: a self-hosted install still to be named, or a connection still to be
+ * made. Both are offered here rather than in preferences, because this is
+ * where the user asked for the repositories.
  */
 function RepositorySource({
   hosts,
   integration,
   onHostChange,
+  onNameHost,
   onSelect,
   selected,
   selectedHost,
@@ -181,6 +187,7 @@ function RepositorySource({
   hosts: readonly string[];
   integration: Integration;
   onHostChange: (host: string) => void;
+  onNameHost: (host: string, forge: ForgeKind) => void;
   onSelect: (repository: ForgeRepository) => void;
   selected: string | null;
   selectedHost: string | null;
@@ -189,10 +196,11 @@ function RepositorySource({
 
   if (!selectedHost) {
     return (
-      <p className="rounded-[7px] border border-border bg-background/45 px-3.5 py-3 text-[11px] leading-[1.5] text-muted">
-        No {integration.label} host is named yet. Add one under Integrations in the preferences,
-        then come back here.
-      </p>
+      <ForgeConnectPanel
+        host={null}
+        integration={integration}
+        onHostNamed={(named) => onNameHost(named, integration.forge)}
+      />
     );
   }
 

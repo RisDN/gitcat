@@ -45,6 +45,20 @@ export const INTEGRATIONS: readonly Integration[] = [
     { id: "gitea", label: "Gitea / Forgejo", host: null, forge: "gitea", support: "links_only", icon: Server },
 ];
 
+/**
+ * Why a host cannot be used, or `null` when it can.
+ *
+ * The backend matches against the host it parsed out of the remote URL, which
+ * carries no scheme, port, credentials or path.
+ */
+export function hostNameError(host: string): string | null {
+    if (!host) return null;
+    if (host.includes("://")) return "host only, without the scheme";
+    if (/[/:@\s]/.test(host)) return "host only, without port or path";
+    if (!host.includes(".")) return "expected a domain name";
+    return null;
+}
+
 export function integrationById(id: string): Integration | undefined {
     return INTEGRATIONS.find((integration) => integration.id === id);
 }
