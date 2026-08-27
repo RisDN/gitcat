@@ -105,6 +105,7 @@ export function AppDialogs({
                 <CloneDialog
                     busy={busy}
                     onClose={() => { if (!busy) setStartDialog(null); }}
+                    overrides={settings.forge_overrides}
                     onSubmit={(options) => {
                         setStartDialog(null);
                         void cloneRepository(options, activeTab?.kind === "start" ? activeTab.id : null);
