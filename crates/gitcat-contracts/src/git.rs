@@ -662,6 +662,11 @@ pub struct CloneOptions {
     pub branch: Option<String>,
     pub depth: Option<u32>,
     pub filter_blob_none: bool,
+    /// Directories to check out, or `None` for a full checkout. An empty list
+    /// is sparse with nothing chosen yet: the clone lands with its root files
+    /// only, which is what `git clone --sparse` gives on its own.
+    #[serde(default)]
+    pub sparse_paths: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -32,7 +32,7 @@ use crate::{
     },
     runner::{GitCommandOutput, GitRunOptions, GitRunner, os_args, redact_sensitive},
     validate::{
-        is_full_oid, validate_mainline_parent, validate_message, validate_paths,
+        is_full_oid, sparse_patterns, validate_mainline_parent, validate_message, validate_paths,
         validate_relative_path, validate_remote_name, validate_remote_url,
     },
 };
@@ -1120,13 +1120,35 @@ impl GitBackend for GitCliBackend {
         if options.filter_blob_none {
             args.push("--filter=blob:none".into());
         }
+        let sparse = options
+            .sparse_paths
+            .as_deref()
+            .map(sparse_patterns)
+            .transpose()?;
+        if sparse.is_some() {
+            args.push("--sparse".into());
+        }
         args.push("--".into());
         args.push(options.url.as_str().into());
         args.push(destination.as_os_str().to_owned());
         let run = self.clone_options(&options.url).await;
         self.runner
-            .run(None, &args, None, cancellation, run)
+            .run(None, &args, None, cancellation.clone(), run)
             .await?;
+        // The clone itself only sets the sparse root up; which directories
+        // join it is a second command, and the patterns go in on stdin so a
+        // path that looks like an option cannot become one.
+        if let Some(patterns) = sparse.filter(|patterns| !patterns.is_empty()) {
+            self.runner
+                .run(
+                    Some(&destination),
+                    &os_args(&["sparse-checkout", "set", "--stdin"]),
+                    Some(patterns.join("\n").as_bytes()),
+                    cancellation,
+                    GitRunOptions::mutation(READ_OUTPUT_CAP),
+                )
+                .await?;
+        }
         self.inspect_repository(&destination).await
     }
 

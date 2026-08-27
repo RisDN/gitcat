@@ -11,6 +11,7 @@ import {
     forgeCommitUrl,
     forgeOwnerIconUrl,
     forgeRepoFor,
+    groupByOwner,
     isForgeKind,
     pullRequestsByBranch,
     withForgeOverrides,
@@ -18,6 +19,7 @@ import {
 import type {
     CheckSummary,
     ForgeKind,
+    ForgeRepository,
     PullRequestInfo,
     RemoteInfo,
     RepositorySnapshot,
@@ -267,4 +269,47 @@ test("forge settings fall back to the defaults", () => {
         normalizeAppSettings({ forge: { pull_requests: false, checks: "yes" } }).forge,
         { pull_requests: false, checks: true },
     );
+});
+
+function listed(full_name: string, overrides: Partial<ForgeRepository> = {}): ForgeRepository {
+    const [owner, name] = full_name.split("/");
+    return {
+        full_name,
+        owner,
+        name,
+        private: false,
+        fork: false,
+        clone_url: `https://github.com/${full_name}.git`,
+        ...overrides,
+    };
+}
+
+test("a listing is grouped by owner, with the signed-in account leading", () => {
+    const groups = groupByOwner([
+        listed("riftmarch/servers"),
+        listed("fantasydream-hu/mono"),
+        listed("RisDN/gitcat"),
+        listed("fantasydream-hu/discord-bot"),
+    ], "risdn");
+
+    assert.deepEqual(groups.map((group) => group.owner), [
+        "RisDN",
+        "fantasydream-hu",
+        "riftmarch",
+    ]);
+    assert.deepEqual(groups[1].repositories.map((repository) => repository.name), [
+        "discord-bot",
+        "mono",
+    ]);
+});
+
+test("owners group case-insensitively, and without an account nothing leads", () => {
+    const groups = groupByOwner([
+        listed("Riftmarch/servers"),
+        listed("riftmarch/wiki"),
+        listed("acme/tool"),
+    ]);
+
+    assert.deepEqual(groups.map((group) => group.owner), ["acme", "Riftmarch"]);
+    assert.equal(groups[1].repositories.length, 2);
 });

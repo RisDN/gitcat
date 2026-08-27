@@ -2,6 +2,7 @@ import type {
     CheckSummary,
     ForgeKind,
     ForgeRepo,
+    ForgeRepository,
     PullRequestInfo,
     RemoteInfo,
     RepositorySnapshot,
@@ -145,4 +146,40 @@ export function checksByOid(summaries: readonly CheckSummary[]): Map<string, Che
         if (summary.state !== "none") byOid.set(summary.oid, summary);
     }
     return byOid;
+}
+
+/** One owner's repositories, in the order a listing draws them. */
+export interface OwnerGroup {
+    owner: string;
+    repositories: ForgeRepository[];
+}
+
+// An account reaches its own repositories and every user or organisation that
+// granted it access, and those are separate places rather than one flat list:
+// a repository name only says which repository it is once its owner is on
+// screen. The signed-in account leads because it is the one owner the user
+// always has; the rest are alphabetical, since nothing else orders them.
+export function groupByOwner(
+    repositories: readonly ForgeRepository[],
+    account?: string,
+): OwnerGroup[] {
+    const groups = new Map<string, OwnerGroup>();
+    for (const repository of repositories) {
+        const owner = repository.owner || repository.full_name.split("/")[0] || repository.full_name;
+        const key = owner.toLocaleLowerCase();
+        const group = groups.get(key);
+        if (group) group.repositories.push(repository);
+        else groups.set(key, { owner, repositories: [repository] });
+    }
+
+    const own = account?.trim().toLocaleLowerCase();
+    for (const group of groups.values()) {
+        group.repositories.sort((left, right) => left.name.localeCompare(right.name));
+    }
+    return [...groups.values()].sort((left, right) => {
+        const leftOwn = left.owner.toLocaleLowerCase() === own;
+        const rightOwn = right.owner.toLocaleLowerCase() === own;
+        if (leftOwn !== rightOwn) return leftOwn ? -1 : 1;
+        return left.owner.localeCompare(right.owner);
+    });
 }

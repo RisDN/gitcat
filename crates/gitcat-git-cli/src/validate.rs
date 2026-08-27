@@ -62,6 +62,31 @@ pub(crate) fn validate_relative_path(path: &str) -> ApiResult<()> {
     Ok(())
 }
 
+// Directories for a sparse checkout. Git reads them in cone mode, where a
+// pattern is a directory rather than a glob, so they are normalised to the
+// forward slashes Git speaks and checked to stay inside the repository. A
+// blank line is dropped rather than refused: it is how a user separates the
+// list, not a path.
+pub(crate) fn sparse_patterns(paths: &[String]) -> ApiResult<Vec<String>> {
+    let mut patterns = Vec::with_capacity(paths.len());
+    for path in paths {
+        let trimmed = path.trim().replace('\\', "/");
+        let trimmed = trimmed.trim_start_matches("./").trim_matches('/');
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.contains(char::is_control) {
+            return Err(ApiError::new(
+                ErrorCode::InvalidPath,
+                "Sparse checkout path is malformed",
+            ));
+        }
+        validate_relative_path(trimmed)?;
+        patterns.push(format!("/{trimmed}"));
+    }
+    Ok(patterns)
+}
+
 pub(crate) fn validate_paths(paths: &[String]) -> ApiResult<()> {
     for path in paths {
         validate_relative_path(path)?;

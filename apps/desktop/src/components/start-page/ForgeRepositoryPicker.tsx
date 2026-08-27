@@ -1,10 +1,26 @@
-import { Lock, RefreshCw, Search } from "lucide-react";
+import { GitFork, Globe, Lock, RefreshCw, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { cx } from "../../lib";
+import { groupByOwner } from "../../lib/forge";
 import { forgeRepositories } from "../../lib/forgeAuth";
 import type { ForgeRepository } from "../../lib/types";
 import { IconButton, Input, Spinner } from "../ui";
+
+/**
+ * What a repository is, in one glyph. Every row carries one: without a mark on
+ * the public rows the lock reads as a property of the row's indentation rather
+ * than of the repository.
+ */
+function RepositoryIcon({ repository }: { repository: ForgeRepository }) {
+  if (repository.private) {
+    return <Lock aria-label="Private" className="shrink-0 text-muted" size={11} />;
+  }
+  if (repository.fork) {
+    return <GitFork aria-label="Public fork" className="shrink-0 text-muted" size={11} />;
+  }
+  return <Globe aria-label="Public" className="shrink-0 text-muted" size={11} />;
+}
 
 /**
  * The repositories one signed-in account can clone.
@@ -14,10 +30,13 @@ import { IconButton, Input, Spinner } from "../ui";
  * typing.
  */
 export function ForgeRepositoryPicker({
+  account,
   host,
   onSelect,
   selected,
 }: {
+  /** Login of the connected account, so its own repositories sort first. */
+  account?: string;
   host: string;
   onSelect: (repository: ForgeRepository) => void;
   selected: string | null;
@@ -56,6 +75,8 @@ export function ForgeRepositoryPicker({
       || (repository.description ?? "").toLocaleLowerCase().includes(needle));
   }, [filter, repositories]);
 
+  const groups = useMemo(() => groupByOwner(matches, account), [account, matches]);
+
   return (
     <div className="flex min-h-0 flex-col gap-2">
       <div className="flex items-center gap-1.5">
@@ -89,31 +110,39 @@ export function ForgeRepositoryPicker({
         </p>
       ) : (
         <ul className="h-40 overflow-y-auto rounded-[5px] border border-border bg-background">
-          {matches.map((repository) => (
-            <li key={repository.full_name}>
-              <button
-                className={cx(
-                  "flex w-full min-w-0 cursor-pointer items-center gap-1.5 px-2.25 py-1.5 text-left text-[11px]",
-                  selected === repository.full_name
-                    ? "bg-accent/16 text-foreground"
-                    : "text-foreground hover:bg-foreground/5",
-                )}
-                onClick={() => onSelect(repository)}
-                type="button"
-              >
-                {repository.private ? (
-                  <Lock aria-label="Private" className="shrink-0 text-muted" size={11} />
-                ) : null}
-                <span className="min-w-0 truncate">{repository.full_name}</span>
-                {repository.description ? (
-                  <span className="min-w-0 flex-1 truncate text-muted">
-                    {repository.description}
-                  </span>
-                ) : null}
-              </button>
+          {groups.map((group) => (
+            <li key={group.owner}>
+              <p className="sticky top-0 z-1 flex items-center gap-1.5 border-b border-border bg-panel px-2.25 py-1 text-[10px] font-medium text-muted">
+                <span className="min-w-0 truncate">{group.owner}</span>
+                <span className="text-muted/70">{group.repositories.length}</span>
+              </p>
+              <ul>
+                {group.repositories.map((repository) => (
+                  <li key={repository.full_name}>
+                    <button
+                      className={cx(
+                        "flex w-full min-w-0 cursor-pointer items-center gap-1.5 px-2.25 py-1.5 pl-3.5 text-left text-[11px]",
+                        selected === repository.full_name
+                          ? "bg-accent/16 text-foreground"
+                          : "text-foreground hover:bg-foreground/5",
+                      )}
+                      onClick={() => onSelect(repository)}
+                      type="button"
+                    >
+                      <RepositoryIcon repository={repository} />
+                      <span className="min-w-0 truncate">{repository.name}</span>
+                      {repository.description ? (
+                        <span className="min-w-0 flex-1 truncate text-muted">
+                          {repository.description}
+                        </span>
+                      ) : null}
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </li>
           ))}
-          {matches.length === 0 ? (
+          {groups.length === 0 ? (
             <li className="px-2.25 py-3 text-center text-[11px] text-muted">
               {repositories.length === 0
                 ? "This account can reach no repositories."

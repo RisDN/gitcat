@@ -2,8 +2,8 @@ import { FolderOpen } from "lucide-react";
 import { useId } from "react";
 import type { ReactNode } from "react";
 
-import { FIELD_INPUT, gitcatApi } from "../../lib";
-import { Button, Input } from "../ui";
+import { cx, FIELD_INPUT, gitcatApi } from "../../lib";
+import { Button, Input, TextArea } from "../ui";
 
 export function Field({
   hint,
@@ -52,6 +52,61 @@ export function TextInputField({
         />
       )}
     />
+  );
+}
+
+export function TextAreaField({
+  hint,
+  label,
+  onChange,
+  placeholder,
+  value,
+}: {
+  hint?: string;
+  label: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  value: string;
+}) {
+  return (
+    <Field
+      hint={hint}
+      label={label}
+      render={(id) => (
+        <TextArea
+          className={cx(FIELD_INPUT, "h-20 resize-y py-1.75 font-normal leading-[1.5]")}
+          id={id}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          spellCheck={false}
+          value={value}
+        />
+      )}
+    />
+  );
+}
+
+// An option that is off until asked for. The control it reveals is rendered by
+// the caller, so the box and what it turns on stay next to each other there.
+export function CheckboxField({
+  checked,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center gap-1.75 text-[11px] font-[650] text-muted">
+      <input
+        checked={checked}
+        className="accent-accent"
+        onChange={(event) => onChange(event.target.checked)}
+        type="checkbox"
+      />
+      {label}
+    </label>
   );
 }
 

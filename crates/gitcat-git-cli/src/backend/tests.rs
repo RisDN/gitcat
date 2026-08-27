@@ -3,7 +3,7 @@ use crate::conflict::{
     supports_merge_tree_preflight,
 };
 use crate::parse::StashCommit;
-use crate::validate::validate_mainline_parent;
+use crate::validate::{sparse_patterns, validate_mainline_parent};
 
 use std::{fs, process::Command};
 
@@ -1872,6 +1872,37 @@ fn mainline_parent_is_required_only_for_merge_commits() {
     );
 }
 
+#[test]
+fn sparse_paths_become_repository_rooted_cone_patterns() {
+    assert_eq!(
+        sparse_patterns(&[
+            "apps/desktop".into(),
+            r"  crates\gitcat-core  ".into(),
+            "./docs/".into(),
+            "   ".into(),
+        ])
+        .expect("patterns"),
+        vec![
+            "/apps/desktop".to_string(),
+            "/crates/gitcat-core".to_string(),
+            "/docs".to_string(),
+        ]
+    );
+    assert!(sparse_patterns(&[]).expect("patterns").is_empty());
+}
+
+#[test]
+fn sparse_paths_cannot_leave_the_repository() {
+    // A leading slash is the repository root in a sparse pattern, not the
+    // file system root, so it is normalised rather than refused.
+    for path in ["../secrets", "apps/../../etc", r"C:\secrets"] {
+        assert_eq!(
+            sparse_patterns(&[path.into()]).unwrap_err().code,
+            ErrorCode::InvalidPath
+        );
+    }
+}
+
 #[tokio::test]
 async fn rejects_ext_remote_before_spawning_clone() {
     let destination = tempdir().expect("destination parent");
@@ -1888,6 +1919,7 @@ async fn rejects_ext_remote_before_spawning_clone() {
                 branch: None,
                 depth: None,
                 filter_blob_none: false,
+                sparse_paths: None,
             },
             CancellationToken::new(),
         )
@@ -1917,6 +1949,7 @@ async fn rejects_custom_remote_helpers_and_ambiguous_push_selection() {
                     branch: None,
                     depth: None,
                     filter_blob_none: false,
+                    sparse_paths: None,
                 },
                 CancellationToken::new(),
             )

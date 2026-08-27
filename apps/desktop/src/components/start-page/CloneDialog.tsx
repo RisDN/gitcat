@@ -9,10 +9,19 @@ import type { CloneOptions, ForgeKind, ForgeRepository } from "../../lib/types";
 import { ForgeConnectPanel } from "../forge";
 import { Badge, Button, Modal, ModalSpacer } from "../ui";
 import { ForgeRepositoryPicker } from "./ForgeRepositoryPicker";
-import { PathField, TextInputField } from "./PathField";
+import { CheckboxField, PathField, TextAreaField, TextInputField } from "./PathField";
 import { SourceButton } from "./SourceButton";
 
 const URL_SOURCE = "url";
+
+// What a shallow clone fetches when the box is first ticked: the tip alone,
+// which is the reason to ask for one.
+const DEFAULT_DEPTH = "1";
+
+// One directory per line, so a path with a space needs no quoting.
+function sparseLines(value: string): string[] {
+  return value.split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
+}
 
 export function CloneDialog({
   busy,
@@ -29,6 +38,10 @@ export function CloneDialog({
   const [parent, setParent] = useState("");
   const [folder, setFolder] = useState("");
   const [branch, setBranch] = useState("");
+  const [shallow, setShallow] = useState(false);
+  const [depth, setDepth] = useState(DEFAULT_DEPTH);
+  const [sparse, setSparse] = useState(false);
+  const [sparsePaths, setSparsePaths] = useState("");
   // Where the URL is coming from: typed in, or picked out of a connected
   // account. Typing one needs no account, so it stays the opening choice.
   const [source, setSource] = useState(URL_SOURCE);
@@ -46,7 +59,11 @@ export function CloneDialog({
 
   const derivedFolder = folder.trim() || repositoryNameFromUrl(url);
   const destination = parent.trim() && derivedFolder ? joinPath(parent, derivedFolder) : "";
-  const submittable = Boolean(url.trim() && destination) && !busy;
+  // A depth of zero is not a shallower clone, it is Git refusing the command,
+  // so the button waits for a usable number rather than reporting it after.
+  const parsedDepth = Number.parseInt(depth.trim(), 10);
+  const depthValid = !shallow || (Number.isFinite(parsedDepth) && parsedDepth > 0);
+  const submittable = Boolean(url.trim() && destination) && depthValid && !busy;
 
   const selectRepository = (repository: ForgeRepository) => {
     setPicked(repository.full_name);
@@ -59,8 +76,9 @@ export function CloneDialog({
       url: url.trim(),
       destination,
       branch: branch.trim() || null,
-      depth: null,
+      depth: shallow ? parsedDepth : null,
       filter_blob_none: false,
+      sparse_paths: sparse ? sparseLines(sparsePaths) : null,
     });
   };
 
@@ -158,6 +176,28 @@ export function CloneDialog({
                 placeholder="main"
                 value={branch}
               />
+              <CheckboxField checked={shallow} label="Shallow clone" onChange={setShallow} />
+              {shallow ? (
+                <TextInputField
+                  hint={depthValid
+                    ? "Commits to fetch per branch, newest first."
+                    : "Depth must be a whole number greater than zero."}
+                  label="Depth"
+                  onChange={setDepth}
+                  placeholder={DEFAULT_DEPTH}
+                  value={depth}
+                />
+              ) : null}
+              <CheckboxField checked={sparse} label="Sparse checkout" onChange={setSparse} />
+              {sparse ? (
+                <TextAreaField
+                  hint="One directory per line, relative to the repository root. Leave empty to check out the root files only."
+                  label="Directories to check out"
+                  onChange={setSparsePaths}
+                  placeholder={"apps/desktop\ncrates/gitcat-core"}
+                  value={sparsePaths}
+                />
+              ) : null}
             </>
           ) : null}
         </div>
@@ -192,6 +232,8 @@ function RepositorySource({
     return <ForgeConnectPanel host={null} integration={integration} />;
   }
 
+  const credential = credentialFor(connections, selectedHost);
+
   return (
     <div className="flex min-h-0 flex-col gap-2.5">
       {hosts.length > 1 ? (
@@ -214,8 +256,13 @@ function RepositorySource({
         </div>
       ) : null}
 
-      {credentialFor(connections, selectedHost) ? (
-        <ForgeRepositoryPicker host={selectedHost} onSelect={onSelect} selected={selected} />
+      {credential ? (
+        <ForgeRepositoryPicker
+          account={credential.account}
+          host={selectedHost}
+          onSelect={onSelect}
+          selected={selected}
+        />
       ) : (
         <ForgeConnectPanel host={selectedHost} integration={integration} />
       )}

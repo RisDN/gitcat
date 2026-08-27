@@ -468,6 +468,8 @@ export interface CloneOptions {
   branch: string | null;
   depth: number | null;
   filter_blob_none: boolean;
+  /** Directories to check out, or null for the whole tree. */
+  sparse_paths: string[] | null;
 }
 
 export interface CommitOptions {
