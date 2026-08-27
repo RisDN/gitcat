@@ -1,8 +1,9 @@
-import { FolderGit } from "lucide-react";
+import { CircleDot, FolderGit, GitPullRequest, GitPullRequestDraft } from "lucide-react";
 import { useState } from "react";
 import type { ComponentPropsWithRef, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 
 import { cx } from "../../lib";
+import type { CheckState, CheckSummary, PullRequestInfo } from "../../lib/types";
 
 const ENTRY = "flex min-h-7.5 min-w-0 flex-1 items-center bg-transparent pr-1.25 text-left text-foreground";
 
@@ -65,5 +66,65 @@ export function RemoteIcon({ iconUrl }: { iconUrl?: string }) {
       onError={() => setFailed(true)}
       src={iconUrl}
     />
+  );
+}
+
+// A check badge is a state, not a score: the counts belong in the tooltip so a
+// narrow row still reads at a glance.
+const CHECK_TONES: Record<Exclude<CheckState, "none">, string> = {
+  success: "text-success",
+  failure: "text-danger",
+  pending: "text-warning",
+  neutral: "text-muted",
+};
+
+function checkTitle({ state, total, failed, pending }: CheckSummary): string {
+  if (state === "failure") return `${failed} of ${total} checks failing`;
+  if (state === "pending") return `${pending} of ${total} checks running`;
+  if (state === "neutral") return `${total} checks reported nothing conclusive`;
+  return `${total} checks passing`;
+}
+
+export function CheckBadge({ summary }: { summary: CheckSummary }) {
+  if (summary.state === "none") return null;
+  return (
+    <span
+      className={cx("shrink-0", CHECK_TONES[summary.state])}
+      title={checkTitle(summary)}
+    >
+      <CircleDot aria-label={checkTitle(summary)} size={11} strokeWidth={2.5} />
+    </span>
+  );
+}
+
+// Only open pull requests reach a branch row, but a draft is drawn apart from
+// one that is ready: they mean different things to the person looking at it.
+export function PullRequestBadge({
+  pull,
+  onOpen,
+}: {
+  pull: PullRequestInfo;
+  onOpen?: (pull: PullRequestInfo) => void;
+}) {
+  const Icon = pull.state === "draft" ? GitPullRequestDraft : GitPullRequest;
+  const label = `#${pull.number} ${pull.title}`;
+  return (
+    <button
+      className={cx(
+        "flex shrink-0 items-center gap-0.75 rounded px-1 py-0.25 text-[10px] hover:bg-foreground/8",
+        pull.state === "draft" ? "text-muted" : "text-accent",
+        onOpen ? "cursor-pointer" : "cursor-default",
+      )}
+      disabled={!onOpen}
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpen?.(pull);
+      }}
+      title={label}
+      type="button"
+    >
+      <Icon aria-hidden="true" size={11} />
+      {pull.number}
+    </button>
   );
 }

@@ -330,6 +330,7 @@ const defaultState = (): PersistedState => ({
     graph_column_widths: { refs: 118, graph: null, message: 300, author: 86, date: 116, sha: 64 },
     forge_overrides: {},
     avatars: { enabled: true, gravatar_fallback: false },
+    forge: { pull_requests: true, checks: true },
     keybinds: { ...DEFAULT_KEYBINDS },
     active_theme_id: DEFAULT_THEME_ID,
     themes: cloneDefaultThemes(),

@@ -1,16 +1,21 @@
-//! Minimal GitHub REST client, scoped to what avatar resolution needs.
+//! Minimal GitHub REST client: author resolution, pull requests and checks.
 //!
-//! The commit list is the endpoint that matters: it answers with one hundred
+//! The commit list is the endpoint that matters for authors: it answers with one hundred
 //! commits per request, and each entry pairs the raw commit email with the
 //! account GitHub matched it to. That mapping is the part no local heuristic
 //! can reproduce -- an author who commits under a private address still
 //! resolves, because GitHub holds the address-to-account link itself.
 
-use gitcat_contracts::{ApiError, ApiResult, ErrorCode};
+use gitcat_contracts::{
+    ApiError, ApiResult, CheckState, CheckSummary, ErrorCode, PullRequestInfo, PullRequestState,
+};
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 
 /// One request covers a whole history page and then some.
 const COMMITS_PER_REQUEST: u16 = 100;
+/// More open pull requests than a branch sidebar can meaningfully decorate.
+const PULLS_PER_REQUEST: u16 = 100;
 const API_VERSION: &str = "2022-11-28";
 
 pub struct GitHubClient {
@@ -54,19 +59,70 @@ impl GitHubClient {
         repo: &str,
         sha: Option<&str>,
     ) -> ApiResult<Vec<CommitAuthor>> {
-        let mut url = format!(
-            "{}/repos/{}/{}/commits?per_page={COMMITS_PER_REQUEST}",
-            self.api_base,
+        let mut path = format!(
+            "/repos/{}/{}/commits?per_page={COMMITS_PER_REQUEST}",
             encode(owner),
             encode(repo),
         );
         if let Some(sha) = sha {
-            url.push_str(&format!("&sha={}", encode(sha)));
+            path.push_str(&format!("&sha={}", encode(sha)));
         }
 
+        let commits: Vec<CommitListItem> = self.get_json(&path).await?;
+        Ok(commits.into_iter().filter_map(commit_author).collect())
+    }
+
+    /// Lists the pull requests currently open against this repository.
+    ///
+    /// Only the open ones: a branch row answers "is there something in flight
+    /// for this branch", and every closed pull request would be answering a
+    /// different question out of the same rate limit.
+    pub async fn pull_requests(&self, owner: &str, repo: &str) -> ApiResult<Vec<PullRequestInfo>> {
+        let path = format!(
+            "/repos/{}/{}/pulls?state=open&per_page={PULLS_PER_REQUEST}&sort=updated&direction=desc",
+            encode(owner),
+            encode(repo),
+        );
+
+        let pulls: Vec<PullListItem> = self.get_json(&path).await?;
+        Ok(pulls
+            .into_iter()
+            .map(pull_request)
+            .filter(|pull| !pull.head_ref.is_empty() && !pull.head_oid.is_empty())
+            .collect())
+    }
+
+    /// Rolls up everything that reported a result for one commit.
+    ///
+    /// Both halves are real and a repository can carry them at once: an
+    /// external service posts commit statuses, a workflow reports check runs.
+    /// Check runs are the newer of the two, so an install that does not serve
+    /// them counts as having none rather than as a failed request.
+    pub async fn commit_checks(
+        &self,
+        owner: &str,
+        repo: &str,
+        oid: &str,
+    ) -> ApiResult<CheckSummary> {
+        let owner = encode(owner);
+        let repo = encode(repo);
+        let sha = encode(oid);
+        let status_path = format!("/repos/{owner}/{repo}/commits/{sha}/status");
+        let runs_path = format!("/repos/{owner}/{repo}/commits/{sha}/check-runs");
+        let (statuses, runs) = tokio::join!(
+            self.get_json::<CombinedStatus>(&status_path),
+            self.get_json::<CheckRunList>(&runs_path),
+        );
+
+        let statuses = statuses?;
+        let runs = runs.unwrap_or_default();
+        Ok(roll_up(oid, &statuses.statuses, &runs.check_runs))
+    }
+
+    async fn get_json<T: DeserializeOwned>(&self, path: &str) -> ApiResult<T> {
         let mut request = self
             .http
-            .get(&url)
+            .get(format!("{}{path}", self.api_base))
             .header("accept", "application/vnd.github+json")
             .header("x-github-api-version", API_VERSION);
         if let Some(token) = &self.token {
@@ -79,15 +135,13 @@ impl GitHubClient {
             return Err(status_error(status, rate_limited(&response)));
         }
 
-        let commits: Vec<CommitListItem> = response.json().await.map_err(|error| {
+        response.json().await.map_err(|error| {
             ApiError::new(
                 ErrorCode::NetworkFailed,
                 "the hosting service returned an unexpected response",
             )
             .with_details(error.to_string())
-        })?;
-
-        Ok(commits.into_iter().filter_map(commit_author).collect())
+        })
     }
 }
 
@@ -127,6 +181,150 @@ struct AuthorMeta {
 #[derive(Deserialize)]
 struct Account {
     avatar_url: Option<String>,
+}
+
+fn pull_request(item: PullListItem) -> PullRequestInfo {
+    let state = if item.draft.unwrap_or(false) {
+        PullRequestState::Draft
+    } else if item.merged_at.is_some() {
+        PullRequestState::Merged
+    } else if item.state.as_deref() == Some("closed") {
+        PullRequestState::Closed
+    } else {
+        PullRequestState::Open
+    };
+    PullRequestInfo {
+        number: item.number,
+        title: item.title.unwrap_or_default(),
+        state,
+        author: item
+            .user
+            .and_then(|user| user.login)
+            .filter(|login| !login.is_empty()),
+        head_ref: item.head.reference.unwrap_or_default(),
+        head_oid: item.head.sha.unwrap_or_default(),
+        head_owner: item
+            .head
+            .repo
+            .and_then(|repo| repo.owner)
+            .and_then(|owner| owner.login)
+            .filter(|login| !login.is_empty()),
+        base_ref: item.base.reference.unwrap_or_default(),
+        url: item.html_url.unwrap_or_default(),
+        updated_at: item.updated_at,
+    }
+}
+
+/// Collapses both report kinds into one badge.
+///
+/// A single failure outranks anything still running, because a run that has
+/// already failed will not be un-failed by the rest finishing. `Neutral` is
+/// reserved for the case where everything that reported was skipped: calling
+/// that a success would claim a green tick nothing actually earned.
+fn roll_up(oid: &str, statuses: &[CommitStatus], runs: &[CheckRun]) -> CheckSummary {
+    let mut total = 0u32;
+    let mut failed = 0u32;
+    let mut pending = 0u32;
+    let mut succeeded = 0u32;
+
+    for status in statuses {
+        total += 1;
+        match status.state.as_deref() {
+            Some("success") => succeeded += 1,
+            Some("pending") | None => pending += 1,
+            _ => failed += 1,
+        }
+    }
+
+    for run in runs {
+        total += 1;
+        match run.conclusion.as_deref() {
+            Some("success") => succeeded += 1,
+            // Reported, deliberately inconclusive.
+            Some("neutral") | Some("skipped") | Some("stale") => {}
+            Some(_) => failed += 1,
+            // Queued, waiting or still running: no conclusion yet.
+            None => pending += 1,
+        }
+    }
+
+    let state = if failed > 0 {
+        CheckState::Failure
+    } else if pending > 0 {
+        CheckState::Pending
+    } else if total == 0 {
+        CheckState::None
+    } else if succeeded > 0 {
+        CheckState::Success
+    } else {
+        CheckState::Neutral
+    };
+
+    CheckSummary {
+        oid: oid.to_owned(),
+        state,
+        total,
+        failed,
+        pending,
+    }
+}
+
+/// `ref` is a keyword, so the head and base branch names are renamed rather
+/// than spelled `r#ref`.
+#[derive(Deserialize)]
+struct PullListItem {
+    number: u64,
+    title: Option<String>,
+    state: Option<String>,
+    draft: Option<bool>,
+    merged_at: Option<String>,
+    updated_at: Option<String>,
+    html_url: Option<String>,
+    user: Option<UserMeta>,
+    #[serde(default)]
+    head: PullRef,
+    #[serde(default)]
+    base: PullRef,
+}
+
+#[derive(Default, Deserialize)]
+struct PullRef {
+    #[serde(rename = "ref")]
+    reference: Option<String>,
+    sha: Option<String>,
+    repo: Option<RepoMeta>,
+}
+
+#[derive(Deserialize)]
+struct RepoMeta {
+    owner: Option<UserMeta>,
+}
+
+#[derive(Deserialize)]
+struct UserMeta {
+    login: Option<String>,
+}
+
+#[derive(Default, Deserialize)]
+struct CombinedStatus {
+    #[serde(default)]
+    statuses: Vec<CommitStatus>,
+}
+
+#[derive(Deserialize)]
+struct CommitStatus {
+    state: Option<String>,
+}
+
+#[derive(Default, Deserialize)]
+struct CheckRunList {
+    #[serde(default)]
+    check_runs: Vec<CheckRun>,
+}
+
+#[derive(Deserialize)]
+struct CheckRun {
+    conclusion: Option<String>,
 }
 
 /// GitHub answers an exhausted rate limit with 403 or 429 and no remaining
@@ -237,5 +435,130 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn a_draft_is_its_own_state_and_a_fork_head_keeps_its_owner() {
+        let payload = r#"[
+            {"number":7,"title":"Add lanes","state":"open","draft":true,
+             "html_url":"https://github.test/o/r/pull/7","user":{"login":"ikoli"},
+             "head":{"ref":"feat/lanes","sha":"abc","repo":{"owner":{"login":"ikoli"}}},
+             "base":{"ref":"main"}},
+            {"number":8,"title":"From a fork","state":"open",
+             "html_url":"https://github.test/o/r/pull/8","user":{"login":"other"},
+             "head":{"ref":"main","sha":"def","repo":{"owner":{"login":"other"}}},
+             "base":{"ref":"main"}},
+            {"number":9,"state":"open","head":{"ref":"","sha":""},"base":{"ref":"main"}}
+        ]"#;
+        let items: Vec<PullListItem> = serde_json::from_str(payload).unwrap();
+        let pulls: Vec<PullRequestInfo> = items
+            .into_iter()
+            .map(pull_request)
+            .filter(|pull| !pull.head_ref.is_empty() && !pull.head_oid.is_empty())
+            .collect();
+
+        assert_eq!(pulls.len(), 2, "the head-less entry is dropped");
+        assert_eq!(pulls[0].state, PullRequestState::Draft);
+        assert_eq!(pulls[0].head_ref, "feat/lanes");
+        assert_eq!(pulls[0].head_owner.as_deref(), Some("ikoli"));
+        // Same branch name, different repository: the owner is what tells a
+        // local `main` apart from a fork's.
+        assert_eq!(pulls[1].state, PullRequestState::Open);
+        assert_eq!(pulls[1].head_owner.as_deref(), Some("other"));
+    }
+
+    fn statuses(states: &[&str]) -> Vec<CommitStatus> {
+        states
+            .iter()
+            .map(|state| CommitStatus {
+                state: Some((*state).to_owned()),
+            })
+            .collect()
+    }
+
+    fn runs(conclusions: &[Option<&str>]) -> Vec<CheckRun> {
+        conclusions
+            .iter()
+            .map(|conclusion| CheckRun {
+                conclusion: conclusion.map(str::to_owned),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn nothing_reported_is_not_a_success() {
+        let summary = roll_up("abc", &[], &[]);
+        assert_eq!(summary.state, CheckState::None);
+        assert_eq!(summary.total, 0);
+    }
+
+    #[test]
+    fn a_failure_outranks_a_run_that_is_still_going() {
+        let summary = roll_up(
+            "abc",
+            &statuses(&["success"]),
+            &runs(&[Some("failure"), None]),
+        );
+        assert_eq!(summary.state, CheckState::Failure);
+        assert_eq!(summary.total, 3);
+        assert_eq!(summary.failed, 1);
+        assert_eq!(summary.pending, 1);
+    }
+
+    #[test]
+    fn a_pending_status_holds_the_badge_back_from_green() {
+        let summary = roll_up("abc", &statuses(&["success", "pending"]), &[]);
+        assert_eq!(summary.state, CheckState::Pending);
+    }
+
+    #[test]
+    fn an_all_skipped_commit_is_neutral_rather_than_green() {
+        let summary = roll_up("abc", &[], &runs(&[Some("skipped"), Some("neutral")]));
+        assert_eq!(summary.state, CheckState::Neutral);
+        assert_eq!(summary.total, 2);
+        assert_eq!(summary.failed, 0);
+    }
+
+    #[test]
+    fn both_report_kinds_count_towards_the_same_badge() {
+        let summary = roll_up(
+            "abc",
+            &statuses(&["success"]),
+            &runs(&[Some("success"), Some("skipped")]),
+        );
+        assert_eq!(summary.state, CheckState::Success);
+        assert_eq!(summary.total, 3);
+    }
+
+    #[test]
+    fn a_cancelled_run_counts_as_failed() {
+        let summary = roll_up("abc", &[], &runs(&[Some("cancelled")]));
+        assert_eq!(summary.state, CheckState::Failure);
+    }
+
+    /// A commit nothing reported on comes back as `"state":"pending"` with no
+    /// statuses in it, so the top-level verdict is deliberately not read --
+    /// the array is. Confirmed against the live API on 2026-08-27.
+    #[test]
+    fn an_empty_combined_status_is_not_pending_however_it_labels_itself() {
+        let combined: CombinedStatus =
+            serde_json::from_str(r#"{"state":"pending","total_count":0,"statuses":[]}"#).unwrap();
+        let runs: CheckRunList =
+            serde_json::from_str(r#"{"total_count":0,"check_runs":[]}"#).unwrap();
+
+        let summary = roll_up("abc", &combined.statuses, &runs.check_runs);
+        assert_eq!(summary.state, CheckState::None);
+    }
+
+    #[test]
+    fn a_finished_check_run_is_read_from_its_conclusion() {
+        let payload = r#"{"total_count":1,"check_runs":[
+            {"name":"test-windows","status":"completed","conclusion":"success"}
+        ]}"#;
+        let runs: CheckRunList = serde_json::from_str(payload).unwrap();
+
+        let summary = roll_up("abc", &[], &runs.check_runs);
+        assert_eq!(summary.state, CheckState::Success);
+        assert_eq!(summary.total, 1);
     }
 }

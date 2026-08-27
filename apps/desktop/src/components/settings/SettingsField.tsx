@@ -26,16 +26,25 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
   );
 }
 
-export function CheckField({ checked, children, onChange }: {
+// `disabled` is for an option that only means something while another one is
+// on: it stays visible and keeps its stored value rather than disappearing.
+export function CheckField({ checked, children, disabled = false, onChange }: {
   checked: boolean;
   children: string;
+  disabled?: boolean;
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex items-start gap-1.75 text-[11px] leading-[1.4] text-muted">
+    <label
+      className={cx(
+        "flex items-start gap-1.75 text-[11px] leading-[1.4] text-muted",
+        disabled && "opacity-55",
+      )}
+    >
       <input
         checked={checked}
         className="mt-0.5 accent-accent"
+        disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
         type="checkbox"
       />

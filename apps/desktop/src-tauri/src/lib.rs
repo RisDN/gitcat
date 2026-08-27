@@ -5,15 +5,16 @@ use std::sync::Arc;
 
 use gitcat_contracts::{
     ApiError, ApiResult, AppMetadata, AppSettings, AvatarEntry, AvatarLookup, AvatarSettings,
-    CloneOptions, CommitActionAvailability, CommitDetails, CommitOptions, CommitSearchQuery,
-    CommitSearchResult, ConflictExpectedState, ConflictFileDetails, ConflictLineEndingPolicy,
-    ConflictPreflightResult, ConflictResolution, ContinueOperation, DiffRequest, ErrorCode,
-    ExpectedState, FetchOptions, FileDiff, ForgeCredential, GitVersion, HistoryPage, HistoryQuery,
-    MutationResult, PersistedState, PullOptions, PushOptions, RepositoryId, RepositoryInfo,
-    RepositorySnapshot, ResetMode, StashEntry,
+    CheckSummary, CloneOptions, CommitActionAvailability, CommitDetails, CommitOptions,
+    CommitSearchQuery, CommitSearchResult, ConflictExpectedState, ConflictFileDetails,
+    ConflictLineEndingPolicy, ConflictPreflightResult, ConflictResolution, ContinueOperation,
+    DiffRequest, ErrorCode, ExpectedState, FetchOptions, FileDiff, ForgeCredential, ForgeRepo,
+    GitVersion, HistoryPage, HistoryQuery, MutationResult, PersistedState, PullOptions,
+    PullRequestInfo, PushOptions, RepositoryId, RepositoryInfo, RepositorySnapshot, ResetMode,
+    StashEntry,
 };
 use gitcat_core::{CoreApi, JsonStateStore, export_settings, import_settings};
-use gitcat_forge::{AvatarService, TokenStore};
+use gitcat_forge::{AvatarService, ForgeService, TokenStore};
 use gitcat_git_cli::GitCliBackend;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State, WindowEvent};
@@ -636,6 +637,31 @@ async fn forge_credentials(tokens: State<'_, Arc<TokenStore>>) -> ApiResult<Vec<
     tokens.credentials()
 }
 
+/// The pull requests open against one repository.
+///
+/// `refresh` bypasses the short-lived cache, which is what a manual refresh
+/// after a push wants; an ordinary redraw leaves it alone.
+#[tauri::command]
+async fn forge_pull_requests(
+    forge: State<'_, ForgeService>,
+    repo: ForgeRepo,
+    refresh: bool,
+) -> ApiResult<Vec<PullRequestInfo>> {
+    forge.pull_requests(&repo, refresh).await
+}
+
+/// Rolled-up check state for a handful of commits, normally the branch tips
+/// currently painted. The service caps how many it will ask about.
+#[tauri::command]
+async fn forge_checks(
+    forge: State<'_, ForgeService>,
+    repo: ForgeRepo,
+    oids: Vec<String>,
+    refresh: bool,
+) -> ApiResult<Vec<CheckSummary>> {
+    forge.checks(&repo, &oids, refresh).await
+}
+
 #[tauri::command]
 async fn settings_export(settings: AppSettings, destination: String) -> ApiResult<()> {
     tauri::async_runtime::spawn_blocking(move || export_settings(&settings, destination))
@@ -673,6 +699,7 @@ pub fn run() {
             // so a settings export cannot carry one off the machine.
             let tokens = Arc::new(TokenStore::new(&data_dir));
             app.manage(AvatarService::new(data_dir.join("avatars"), tokens.clone()));
+            app.manage(ForgeService::new(tokens.clone()));
             app.manage(tokens);
             app.manage(RepositoryWatchState::default());
             app.manage(WindowModeStore::new(data_dir.join("window.json")));
@@ -746,6 +773,8 @@ pub fn run() {
             avatars_resolve,
             forge_token_set,
             forge_credentials,
+            forge_pull_requests,
+            forge_checks,
         ])
         .run(tauri::generate_context!())
         .expect("error while running GitCat");

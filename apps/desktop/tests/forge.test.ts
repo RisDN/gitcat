@@ -5,14 +5,23 @@ import { remoteBranchUrl, remoteCommitUrl, remoteIconUrls } from "../src/app/bra
 import { avatarLookupFor, remoteSupportsAvatars } from "../src/lib/avatars";
 import { normalizeAppSettings } from "../src/app/workspace";
 import {
+    checksByOid,
     effectiveForge,
     forgeBranchUrl,
     forgeCommitUrl,
     forgeOwnerIconUrl,
+    forgeRepoFor,
     isForgeKind,
+    pullRequestsByBranch,
     withForgeOverrides,
 } from "../src/lib/forge";
-import type { ForgeKind, RemoteInfo, RepositorySnapshot } from "../src/lib/types";
+import type {
+    CheckSummary,
+    ForgeKind,
+    PullRequestInfo,
+    RemoteInfo,
+    RepositorySnapshot,
+} from "../src/lib/types";
 
 const OID = "e90df7571bc1195ac454e29873f2bb2276f5dc04";
 
@@ -184,4 +193,78 @@ test("avatar settings fall back to the defaults, not to enabled Gravatar", () =>
 test("forge kinds are recognised by name", () => {
     assert.ok(isForgeKind("github"));
     assert.ok(!isForgeKind("sourcehut"));
+});
+
+
+function pull(overrides: Partial<PullRequestInfo> = {}): PullRequestInfo {
+    return {
+        number: 7,
+        title: "Add lanes",
+        state: "open",
+        head_ref: "feat/lanes",
+        head_oid: OID,
+        head_owner: "ikoli",
+        base_ref: "main",
+        url: "https://github.com/ikoli/gitcat/pull/7",
+        ...overrides,
+    };
+}
+
+function summary(overrides: Partial<CheckSummary> = {}): CheckSummary {
+    return { oid: OID, state: "success", total: 3, failed: 0, pending: 0, ...overrides };
+}
+
+test("a request target needs the path, not just the host", () => {
+    assert.deepEqual(forgeRepoFor(remote()), {
+        host: "github.com",
+        owner: "ikoli",
+        repo: "gitcat",
+        forge: "github",
+    });
+    assert.equal(forgeRepoFor(remote({ url: undefined })), null);
+    assert.equal(forgeRepoFor(null), null);
+    // An override reaches the request, so a self-hosted install is asked as
+    // the forge the user named.
+    assert.equal(forgeRepoFor(remote({ forge: "gitlab" }))?.forge, "gitlab");
+});
+
+test("a fork's pull request does not decorate the local branch of that name", () => {
+    const byBranch = pullRequestsByBranch(
+        [
+            pull(),
+            pull({ number: 8, head_ref: "main", head_owner: "someone-else" }),
+            pull({ number: 9, head_ref: "main", head_owner: "IKOLI" }),
+        ],
+        "ikoli",
+    );
+
+    assert.deepEqual([...byBranch.keys()], ["feat/lanes", "main"]);
+    // The owner comparison is case-insensitive; GitHub logins are.
+    assert.equal(byBranch.get("main")?.number, 9);
+});
+
+test("the first pull request on a branch wins, and the service sorted them", () => {
+    const byBranch = pullRequestsByBranch(
+        [pull({ number: 4 }), pull({ number: 5 })],
+        "ikoli",
+    );
+    assert.equal(byBranch.get("feat/lanes")?.number, 4);
+});
+
+test("a commit nothing reported on is absent rather than present and empty", () => {
+    const byOid = checksByOid([
+        summary(),
+        summary({ oid: "abc", state: "none", total: 0 }),
+    ]);
+
+    assert.deepEqual([...byOid.keys()], [OID]);
+    assert.equal(byOid.get(OID)?.state, "success");
+});
+
+test("forge settings fall back to the defaults", () => {
+    assert.deepEqual(normalizeAppSettings({}).forge, { pull_requests: true, checks: true });
+    assert.deepEqual(
+        normalizeAppSettings({ forge: { pull_requests: false, checks: "yes" } }).forge,
+        { pull_requests: false, checks: true },
+    );
 });

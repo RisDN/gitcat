@@ -7,11 +7,21 @@ import type {
 } from "react";
 
 import { cx } from "../../lib";
-import type { BranchInfo, RefLabel } from "../../lib/types";
+import type { BranchInfo, CheckSummary, PullRequestInfo, RefLabel } from "../../lib/types";
 import { IconButton, Input, SidePanel } from "../ui";
 import type { BranchTreeNode } from "./branchTree";
 import { branchIndent, buildBranchTree } from "./branchTree";
-import { RefButton, RefCounter, RefName, RefRow, RefStatic, RemoteIcon, TagNode } from "./RefRow";
+import {
+  CheckBadge,
+  PullRequestBadge,
+  RefButton,
+  RefCounter,
+  RefName,
+  RefRow,
+  RefStatic,
+  RemoteIcon,
+  TagNode,
+} from "./RefRow";
 import { RefSection, SidebarEmpty } from "./RefSection";
 import type { RefSectionKey, RefSectionState } from "./sections";
 
@@ -30,6 +40,10 @@ interface RefSidebarProps {
   localBranches: BranchInfo[];
   remoteBranches: BranchInfo[];
   remoteIconUrls?: ReadonlyMap<string, string>;
+  /** Open pull requests, keyed by branch name without its remote. */
+  pullRequests?: ReadonlyMap<string, PullRequestInfo>;
+  /** Reported check state, keyed the same way as the pull requests. */
+  checks?: ReadonlyMap<string, CheckSummary>;
   tags: RefLabel[];
   collapseKeybind: string;
   sections: RefSectionState;
@@ -39,6 +53,7 @@ interface RefSidebarProps {
   onCreateBranch: () => void;
   onCheckoutRemote: (branch: BranchInfo) => void;
   onBranchContextMenu: (request: BranchContextMenuRequest) => void;
+  onOpenPullRequest?: (pull: PullRequestInfo) => void;
 }
 
 export function remoteNameOf(branchName: string): string {
@@ -55,6 +70,8 @@ export function RefSidebar({
   localBranches,
   remoteBranches,
   remoteIconUrls,
+  pullRequests,
+  checks,
   tags,
   collapseKeybind,
   sections,
@@ -64,6 +81,7 @@ export function RefSidebar({
   onCreateBranch,
   onCheckoutRemote,
   onBranchContextMenu,
+  onOpenPullRequest,
 }: RefSidebarProps) {
   const [filter, setFilter] = useState("");
   const needle = filter.trim().toLocaleLowerCase();
@@ -86,6 +104,20 @@ export function RefSidebar({
     }
     return [...groups.entries()];
   }, [filteredRemote]);
+
+  // A local row and the remote row tracking it describe the same branch, so
+  // both look their decorations up under the plain branch name.
+  const decorations = (name: string) => {
+    const summary = checks?.get(name);
+    const pull = pullRequests?.get(name);
+    if (!summary && !pull) return null;
+    return (
+      <span className="flex shrink-0 items-center gap-1 pr-1">
+        {summary ? <CheckBadge summary={summary} /> : null}
+        {pull ? <PullRequestBadge onOpen={onOpenPullRequest} pull={pull} /> : null}
+      </span>
+    );
+  };
 
   const openBranchMenu = (branch: BranchInfo, scope: BranchScope, event: ReactMouseEvent) => {
     event.preventDefault();
@@ -157,6 +189,7 @@ export function RefSidebar({
             {branch.ahead ? <RefCounter>{`↑${branch.ahead}`}</RefCounter> : null}
             {branch.behind ? <RefCounter>{`↓${branch.behind}`}</RefCounter> : null}
           </RefButton>
+          {decorations(branch.name)}
         </RefRow>
       );
     });
@@ -228,6 +261,7 @@ export function RefSidebar({
                   <GitBranch className="shrink-0 text-muted" size={13} />
                   <RefName>{branchNameWithoutRemote(branch.name)}</RefName>
                 </RefButton>
+                {decorations(branchNameWithoutRemote(branch.name))}
               </RefRow>
             ))}
           </div>

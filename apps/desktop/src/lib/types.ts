@@ -134,6 +134,49 @@ export interface AvatarEntry {
   image: string;
 }
 
+export interface ForgeSettings {
+  /** Show the open pull request a branch belongs to. */
+  pull_requests: boolean;
+  /** Show the rolled-up check state of a branch tip. */
+  checks: boolean;
+}
+
+/** The repository a hosting-service request is scoped to. */
+export interface ForgeRepo {
+  host: string;
+  owner: string;
+  repo: string;
+  forge: ForgeKind;
+}
+
+export type PullRequestState = "open" | "draft" | "merged" | "closed";
+
+export interface PullRequestInfo {
+  number: number;
+  title: string;
+  state: PullRequestState;
+  author?: string;
+  /** Branch being merged, named as it is in the repository that holds it. */
+  head_ref: string;
+  head_oid: string;
+  /** Owner of the head repository when the branch lives in a fork. */
+  head_owner?: string;
+  base_ref: string;
+  url: string;
+  updated_at?: string;
+}
+
+/** `none` means nothing reported at all, which is not the same as passing. */
+export type CheckState = "none" | "success" | "failure" | "pending" | "neutral";
+
+export interface CheckSummary {
+  oid: string;
+  state: CheckState;
+  total: number;
+  failed: number;
+  pending: number;
+}
+
 export interface ForgeCredential {
   host: string;
   /** Last few characters of the token, never the token itself. */
@@ -529,6 +572,7 @@ export interface AppSettings {
   /** Hosting service per URL host, for installs the backend cannot name. */
   forge_overrides: Record<string, ForgeKind>;
   avatars: AvatarSettings;
+  forge: ForgeSettings;
   active_theme_id: string;
   themes: AppTheme[];
 }

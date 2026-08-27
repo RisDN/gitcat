@@ -18,6 +18,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     keybinds: DEFAULT_KEYBINDS,
     forge_overrides: {},
     avatars: { enabled: true, gravatar_fallback: false },
+    forge: { pull_requests: true, checks: true },
     active_theme_id: DEFAULT_THEME_ID,
     themes: cloneDefaultThemes(),
 };

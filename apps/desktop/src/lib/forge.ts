@@ -1,4 +1,11 @@
-import type { ForgeKind, RemoteInfo, RepositorySnapshot } from "./types";
+import type {
+    CheckSummary,
+    ForgeKind,
+    ForgeRepo,
+    PullRequestInfo,
+    RemoteInfo,
+    RepositorySnapshot,
+} from "./types";
 
 // Human-readable names for the settings override list.
 export const FORGE_LABELS: Record<ForgeKind, string> = {
@@ -102,4 +109,40 @@ export function forgeOwnerIconUrl(
     if (forge !== "github") return null;
     const owner = remote.url?.owner;
     return owner ? `https://github.com/${encodeURIComponent(owner)}.png?size=${size}` : null;
+}
+
+// A hosting-service request needs the path as well as the host, so a remote
+// that parsed to neither -- a local clone, an unresolved SSH alias -- has
+// nothing to ask about.
+export function forgeRepoFor(remote: RemoteInfo | null | undefined): ForgeRepo | null {
+    const { host, owner, repo } = remote?.url ?? {};
+    if (!remote || !host || !owner || !repo) return null;
+    return { host, owner, repo, forge: remote.forge };
+}
+
+// Branch rows look their pull request up by branch name, so a fork's pull
+// request is dropped rather than matched: a fork's `main` is not this
+// repository's `main`. When two pull requests share a head branch the first
+// wins, and the service already sorted them by most recently updated.
+export function pullRequestsByBranch(
+    pulls: readonly PullRequestInfo[],
+    owner: string,
+): Map<string, PullRequestInfo> {
+    const byBranch = new Map<string, PullRequestInfo>();
+    const target = owner.toLocaleLowerCase();
+    for (const pull of pulls) {
+        if (pull.head_owner && pull.head_owner.toLocaleLowerCase() !== target) continue;
+        if (!byBranch.has(pull.head_ref)) byBranch.set(pull.head_ref, pull);
+    }
+    return byBranch;
+}
+
+// Rows without a reported check are absent rather than present-and-empty, so
+// a caller can tell "nothing ran" from "not asked yet".
+export function checksByOid(summaries: readonly CheckSummary[]): Map<string, CheckSummary> {
+    const byOid = new Map<string, CheckSummary>();
+    for (const summary of summaries) {
+        if (summary.state !== "none") byOid.set(summary.oid, summary);
+    }
+    return byOid;
 }

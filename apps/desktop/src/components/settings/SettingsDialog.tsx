@@ -257,6 +257,32 @@ export function SettingsDialog({ settings, defaults, onSave, onClose }: Settings
                 </p>
               </section>
               <section className="col-span-full">
+                <SectionHeading>Pull requests and checks</SectionHeading>
+                <CheckField
+                  checked={draft.forge.pull_requests}
+                  onChange={(pull_requests) => setDraft((current) => ({
+                    ...current,
+                    forge: { ...current.forge, pull_requests },
+                  }))}
+                >
+                  Show the open pull request a branch belongs to
+                </CheckField>
+                <CheckField
+                  checked={draft.forge.checks}
+                  disabled={!draft.forge.pull_requests}
+                  onChange={(checks) => setDraft((current) => ({
+                    ...current,
+                    forge: { ...current.forge, checks },
+                  }))}
+                >
+                  Show the check state of branches with a pull request
+                </CheckField>
+                <p className="mt-1.5 text-[10px] leading-[1.45] text-muted/72">
+                  Both ask the service that already hosts the repository. Checks are only looked up
+                  for branches with a pull request and for the checked-out branch.
+                </p>
+              </section>
+              <section className="col-span-full">
                 <SectionHeading>Hosting services</SectionHeading>
                 <ForgeOverrideEditor
                   onChange={(forge_overrides) => setDraft((current) => ({ ...current, forge_overrides }))}

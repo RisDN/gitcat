@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import type { BranchInfo, RefLabel } from "../../lib/types";
+import type { BranchInfo, CheckSummary, PullRequestInfo, RefLabel } from "../../lib/types";
 import { RefRail } from "./RefRail";
 import { RefSidebar } from "./RefSidebar";
 import type { BranchContextMenuRequest } from "./RefSidebar";
@@ -11,6 +11,8 @@ interface RefPanelProps {
   localBranches: BranchInfo[];
   remoteBranches: BranchInfo[];
   remoteIconUrls?: ReadonlyMap<string, string>;
+  pullRequests?: ReadonlyMap<string, PullRequestInfo>;
+  checks?: ReadonlyMap<string, CheckSummary>;
   tags: RefLabel[];
   toggleKeybind: string;
   onCollapse: () => void;
@@ -19,6 +21,7 @@ interface RefPanelProps {
   onCreateBranch: () => void;
   onCheckoutRemote: (branch: BranchInfo) => void;
   onBranchContextMenu: (request: BranchContextMenuRequest) => void;
+  onOpenPullRequest?: (pull: PullRequestInfo) => void;
 }
 
 // Owns the expanded/collapsed section state so the rail can expand the panel

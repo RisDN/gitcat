@@ -14,6 +14,7 @@ import type {
     AppTheme,
     AvatarSettings,
     ForgeKind,
+    ForgeSettings,
     GraphColumnSettings,
     GraphColumnWidths,
     KeybindSettings,
@@ -63,6 +64,16 @@ function normalizeAvatarSettings(avatars: Partial<AvatarSettings> | undefined): 
         gravatar_fallback: typeof avatars?.gravatar_fallback === "boolean"
             ? avatars.gravatar_fallback
             : defaults.gravatar_fallback,
+    };
+}
+
+function normalizeForgeSettings(forge: Partial<ForgeSettings> | undefined): ForgeSettings {
+    const defaults = DEFAULT_SETTINGS.forge;
+    return {
+        pull_requests: typeof forge?.pull_requests === "boolean"
+            ? forge.pull_requests
+            : defaults.pull_requests,
+        checks: typeof forge?.checks === "boolean" ? forge.checks : defaults.checks,
     };
 }
 
@@ -218,6 +229,7 @@ export function normalizeAppSettings(value: unknown): AppSettings {
         graph_column_widths: normalizeGraphColumnWidths(source.graph_column_widths),
         forge_overrides: normalizeForgeOverrides(source.forge_overrides),
         avatars: normalizeAvatarSettings(source.avatars),
+        forge: normalizeForgeSettings(source.forge),
         keybinds: normalizePersistedKeybinds(source.keybinds),
         active_theme_id: activeThemeId,
         themes,

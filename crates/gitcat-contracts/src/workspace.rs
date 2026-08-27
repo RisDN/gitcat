@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{AvatarSettings, ForgeKind, PullMode};
+use crate::{AvatarSettings, ForgeKind, ForgeSettings, PullMode};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -360,6 +360,7 @@ pub struct AppSettings {
     /// GitLab install looks like any other domain until it is named here.
     pub forge_overrides: BTreeMap<String, ForgeKind>,
     pub avatars: AvatarSettings,
+    pub forge: ForgeSettings,
     pub active_theme_id: String,
     pub themes: Vec<AppTheme>,
     #[serde(default, rename = "theme", skip_serializing)]
@@ -382,6 +383,7 @@ impl Default for AppSettings {
             keybinds: KeybindSettings::default(),
             forge_overrides: BTreeMap::new(),
             avatars: AvatarSettings::default(),
+            forge: ForgeSettings::default(),
             active_theme_id: "gitcat-midnight".into(),
             themes: default_themes(),
             legacy_theme: None,

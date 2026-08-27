@@ -64,3 +64,99 @@ pub struct ForgeCredential {
     /// Non-secret hint for the settings UI, such as the last four characters.
     pub hint: String,
 }
+
+/// The repository a hosting-service request is scoped to.
+///
+/// The webview derives this from the remote it links against, so a request
+/// always names the host that holds the credential as well as the path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ForgeRepo {
+    pub host: String,
+    pub owner: String,
+    pub repo: String,
+    pub forge: ForgeKind,
+}
+
+/// Which hosting-service lookups are allowed to leave the machine.
+///
+/// Both default to on: unlike Gravatar these ask the service that already
+/// hosts the repository, which the user is pushing to anyway.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ForgeSettings {
+    /// Show the open pull request a branch belongs to.
+    pub pull_requests: bool,
+    /// Show the rolled-up check state of a branch tip.
+    pub checks: bool,
+}
+
+impl Default for ForgeSettings {
+    fn default() -> Self {
+        Self {
+            pull_requests: true,
+            checks: true,
+        }
+    }
+}
+
+/// Where a pull request stands.
+///
+/// Draft is a state of its own rather than a flag beside `Open`, because it is
+/// what the UI paints and a draft is never simultaneously merged or closed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PullRequestState {
+    #[default]
+    Open,
+    Draft,
+    Merged,
+    Closed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PullRequestInfo {
+    pub number: u64,
+    pub title: String,
+    pub state: PullRequestState,
+    /// Account that opened it, absent once that account is gone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+    /// Branch being merged, named as it is in the repository that holds it.
+    pub head_ref: String,
+    pub head_oid: String,
+    /// Owner of the head repository when the branch lives in a fork. A local
+    /// branch only matches a pull request opened from this same repository,
+    /// so a fork's `main` is never mistaken for the local one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub head_owner: Option<String>,
+    pub base_ref: String,
+    pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+}
+
+/// Rolled-up state of everything that reported a result for one commit.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckState {
+    /// Nothing reported at all, which is different from reporting nothing
+    /// conclusive.
+    #[default]
+    None,
+    Success,
+    Failure,
+    Pending,
+    /// Everything that reported was skipped or explicitly neutral.
+    Neutral,
+}
+
+/// Both halves of a commit's status -- the legacy commit statuses and the
+/// check runs -- collapsed into the one badge a branch row can show.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CheckSummary {
+    pub oid: String,
+    pub state: CheckState,
+    pub total: u32,
+    pub failed: u32,
+    pub pending: u32,
+}

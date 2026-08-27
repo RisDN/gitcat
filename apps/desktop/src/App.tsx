@@ -31,6 +31,7 @@ import type {
     GraphColumnWidths,
     HistoryPage,
     PersistedState,
+    PullRequestInfo,
     RepositorySnapshot,
     RepositoryTab,
     StashEntry,
@@ -38,6 +39,7 @@ import type {
 import { currentBranch, remoteIconUrls } from "./app/branches";
 import { withForgeOverrides } from "./lib/forge";
 import { useAvatars } from "./app/useAvatars";
+import { useForgeStatus } from "./app/useForgeStatus";
 import { EMPTY_COMMIT_DRAFT, EMPTY_STATE } from "./app/defaults";
 import { continuableOperation } from "./app/snapshot";
 import type { BranchMenuState, CommitMenuState, ConfirmState, PromptState, RuntimeRepository, TabMenuState } from "./app/state";
@@ -633,6 +635,14 @@ function App() {
         [snapshot?.remotes],
     );
     const avatarImages = useAvatars(snapshot, history?.commits ?? [], persisted.settings.avatars);
+    const forgeStatus = useForgeStatus(snapshot, persisted.settings.forge);
+    // Following the link out of the application is the user's move, so the row
+    // hands them the address the same way the commit menu does.
+    const copyPullRequestLink = useCallback((pull: PullRequestInfo) => {
+        void navigator.clipboard.writeText(pull.url)
+            .then(() => addToast({ tone: "success", title: `Link to #${pull.number} copied` }))
+            .catch((error) => showError("Could not copy the pull request link", error));
+    }, [addToast, showError]);
     const currentHeadOid = snapshot?.head.kind === "unborn" ? null : snapshot?.head.oid ?? null;
     const wipLane = useMemo(
         () => getWipLane(history?.commits ?? [], currentHeadOid),
@@ -804,6 +814,9 @@ function App() {
                                 }}
                                 onCheckoutRemote={checkoutRemoteBranch}
                                 onCreateBranch={() => currentHeadOid ? setPrompt({ kind: "create_branch", startOid: currentHeadOid }) : undefined}
+                                onOpenPullRequest={copyPullRequestLink}
+                                pullRequests={forgeStatus.pullRequests}
+                                checks={forgeStatus.checks}
                                 remoteBranches={snapshot?.remote_branches ?? []}
                                 remoteIconUrls={iconUrlsByRemote}
                                 tags={snapshot?.tags ?? []}
