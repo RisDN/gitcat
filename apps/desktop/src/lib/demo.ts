@@ -529,6 +529,11 @@ class DemoGitCatApi implements GitCatApi {
     return { repository_id: DEMO_REPOSITORY_ID, info: clone(this.repositoryInfo) };
   }
 
+  async launchRepositoryPath(): Promise<string | null> {
+    // Nothing launches the browser demo with a folder.
+    return null;
+  }
+
   async initRepository(path: string, _defaultBranch: string): Promise<OpenedRepository> {
     return this.openRepository(path);
   }

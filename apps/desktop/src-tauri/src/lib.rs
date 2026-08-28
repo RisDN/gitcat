@@ -1,3 +1,4 @@
+mod launch;
 mod watcher;
 mod window_state;
 
@@ -21,6 +22,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager, State, WindowEvent};
 use tokio_util::sync::CancellationToken;
 
+use crate::launch::{OPEN_REQUEST_EVENT, OpenRequestPayload, PendingOpen, repository_argument};
 use crate::watcher::RepositoryWatchState;
 use crate::window_state::WindowModeStore;
 
@@ -47,6 +49,28 @@ fn app_metadata() -> AppMetadata {
             .unwrap_or("unknown")
             .to_owned(),
     }
+}
+
+/// Hands the frontend the folder GitCat was launched with, if there was one.
+///
+/// The Explorer context menu starts GitCat with a folder on the command line,
+/// and at that point there is no window to send an event to, so the folder
+/// waits here until the frontend has restored its workspace and asks.
+#[tauri::command]
+fn launch_repository_path(pending: State<'_, PendingOpen>) -> Option<String> {
+    pending.take()
+}
+
+/// Restarts GitCat after an update has been installed.
+///
+/// This exists instead of the process plugin's `relaunch` because the
+/// single-instance lock has to be released first: the replacement process
+/// starts before this one is gone, and would otherwise hand its arguments to a
+/// window that is on its way out and exit.
+#[tauri::command]
+fn app_relaunch(app: AppHandle) {
+    tauri_plugin_single_instance::destroy(&app);
+    app.restart();
 }
 
 #[tauri::command]
@@ -777,6 +801,19 @@ fn task_join_error(error: impl std::fmt::Display) -> ApiError {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Registered first, as the plugin requires. A second launch -- right
+        // -clicking another folder in Explorer, say -- has to reach the window
+        // that is already open: two instances would each hold their own copy of
+        // the workspace and the last one to exit would win.
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+            if let Some(path) = repository_argument(argv) {
+                let _ = tauri::Emitter::emit(app, OPEN_REQUEST_EVENT, OpenRequestPayload { path });
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
@@ -798,6 +835,7 @@ pub fn run() {
             app.manage(auth);
             app.manage(tokens);
             app.manage(RepositoryWatchState::default());
+            app.manage(PendingOpen::new(repository_argument(std::env::args())));
             app.manage(WindowModeStore::new(data_dir.join("window.json")));
 
             if let Some(window) = app.get_webview_window("main") {
@@ -813,7 +851,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_metadata,
+            app_relaunch,
             git_probe,
+            launch_repository_path,
             repository_open,
             repository_init,
             repository_clone,

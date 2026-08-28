@@ -37,7 +37,13 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "template": "nsis/installer.nsi",
+        "installerHooks": "nsis/hooks.nsh"
+      }
+    }
   },
   "plugins": {
     "updater": {

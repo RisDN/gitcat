@@ -58,6 +58,7 @@ import { useContextMenuActions } from "./app/useContextMenuActions";
 import { useDialogActions } from "./app/useDialogActions";
 import { useDiffPane } from "./app/useDiffPane";
 import { useGlobalKeybinds } from "./app/useGlobalKeybinds";
+import { useLaunchRepository } from "./app/useLaunchRepository";
 import { usePanelLayout } from "./app/usePanelLayout";
 import { useRepositoryCommands } from "./app/useRepositoryCommands";
 import { useRepositoryOverview } from "./app/useRepositoryOverview";
@@ -357,6 +358,8 @@ function App() {
         workspace: persisted.workspace,
         workspaceRef,
     });
+
+    useLaunchRepository({ initializing, openRepositoryPath });
 
     const {
         focusWorktree,

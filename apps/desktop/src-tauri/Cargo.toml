@@ -17,6 +17,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 async-trait.workspace = true
+dunce.workspace = true
 gitcat-contracts = { path = "../../../crates/gitcat-contracts" }
 gitcat-core = { path = "../../../crates/gitcat-core" }
 gitcat-forge = { path = "../../../crates/gitcat-forge" }
@@ -28,5 +29,11 @@ tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2.5.4"
 tauri-plugin-process = "2"
+# The Explorer context menu launches GitCat with a folder; a second instance
+# hands that folder to the running window instead of opening a rival one.
+tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
 tokio-util.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -39,6 +39,13 @@ export interface GitCatCommands {
   appMetadata(): Promise<AppMetadata>;
   probe(): Promise<GitVersion>;
   openRepository(path: string): Promise<OpenedRepository>;
+  /**
+   * The folder GitCat was started with, or `null`.
+   *
+   * The Windows Explorer context menu the installer offers launches GitCat
+   * with a folder; asking for it clears it, so a reload does not reopen it.
+   */
+  launchRepositoryPath(): Promise<string | null>;
   initRepository(path: string, defaultBranch: string): Promise<OpenedRepository>;
   cloneRepository(options: CloneOptions): Promise<OpenedRepository>;
   closeRepository(repositoryId: RepositoryId): Promise<void>;
@@ -239,6 +246,7 @@ export function createTauriGitCatApi(): GitCatApi {
     appMetadata: () => invokeTauri("app_metadata"),
     probe: () => invokeTauri("git_probe"),
     openRepository: (path) => invokeTauri("repository_open", { path }),
+    launchRepositoryPath: () => invokeTauri("launch_repository_path"),
     initRepository: (path, defaultBranch) =>
       invokeTauri("repository_init", { path, defaultBranch }),
     cloneRepository: (options) => invokeTauri("repository_clone", { options }),

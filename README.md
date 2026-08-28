@@ -63,6 +63,7 @@ Lightweight, Windows-first desktop Git client. Tauri v2 + React UI, Rust core, a
 - Resizable panels, a persisted Path/Tree changed-files view mode, and customizable semantic UI and diff colors plus all ten graph lane colors, each resettable on its own.
 - Hideable side panels, window-centered repository actions, configurable command keybinds, and persistent footer build identity.
 - Window size, position, and maximized state are restored on the next launch.
+- The Windows installer offers to add an "Open with GitCat" entry to the Explorer context menu, both on a folder and on the background of an open folder. Opening a folder that way hands it to the window that is already running as a new tab rather than starting a second instance. The choice is remembered, so an update never turns it back on.
 
 Keyboard shortcuts:
 
@@ -196,6 +197,8 @@ The web build is written to `apps/desktop/dist`; native artifacts are written un
 The current version is 1.2.0. `.github/workflows/release-windows.yml` (`workflow_dispatch`) builds the Windows release on `windows-latest`: it enforces the `x86_64-pc-windows-msvc` host, runs fmt, clippy, tests, and typecheck, then bundles the NSIS installer and uploads the installer plus the binary as an artifact.
 
 The build is verified to be self-contained: the job fails if `gitcat-desktop.exe` still imports `WebView2Loader.dll` or if a dynamic loader DLL is left in the release output, and it prints the installer's SHA-256.
+
+`apps/desktop/src-tauri/nsis/installer.nsi` is a vendored copy of the Tauri bundler's NSIS template for the pinned `@tauri-apps/cli` version, carrying one addition: the "Additional tasks" page that offers the Explorer context menu. Tauri's four `NSIS_HOOK_*` macros all run inside a section, which is too late to declare an installer page, so the page itself cannot live in `nsis/hooks.nsh` with the rest of the logic. Upgrading the CLI means re-fetching the template for the new version and reapplying that one insertion; see `AGENTS.md`.
 
 ## Security model
 

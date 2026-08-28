@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { isTauriEnvironment } from "./platform";
+import { invokeTauri, isTauriEnvironment } from "./platform";
 
 type UpdateHandle = {
   version: string;
@@ -98,8 +98,9 @@ export function useAppUpdate(): AppUpdateState {
           }
         });
         setStatus("ready");
-        const { relaunch } = await import("@tauri-apps/plugin-process");
-        await relaunch();
+        // Not the process plugin's relaunch: GitCat has to release its
+        // single-instance lock before the replacement process claims it.
+        await invokeTauri("app_relaunch");
       } catch (cause) {
         setError(errorMessage(cause));
         setStatus("error");

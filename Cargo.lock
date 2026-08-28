@@ -1492,6 +1492,7 @@ name = "gitcat-desktop"
 version = "1.4.0"
 dependencies = [
  "async-trait",
+ "dunce",
  "gitcat-contracts",
  "gitcat-core",
  "gitcat-forge",
@@ -1504,7 +1505,9 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
  "tauri-plugin-process",
+ "tauri-plugin-single-instance",
  "tauri-plugin-updater",
+ "tempfile",
  "tokio-util",
 ]
 
@@ -4426,6 +4429,22 @@ checksum = "d55511a7bf6cd70c8767b02c97bf8134fa434daf3926cfc1be0a0f94132d165a"
 dependencies = [
  "tauri",
  "tauri-plugin",
+]
+
+[[package]]
+name = "tauri-plugin-single-instance"
+version = "2.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b3214becf9ef5783c0ae99a3bb25adf5353a7a16ebf53e74b909e29205735c6c"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tauri",
+ "thiserror 2.0.19",
+ "tokio",
+ "tracing",
+ "windows-sys 0.60.2",
+ "zbus 5.19.0",
 ]
 
 [[package]]
