@@ -72,8 +72,13 @@ impl AvatarService {
 
         for email in emails {
             match self.cache.identity(&email) {
+                // Sized here as well as at first resolution: the stored URL
+                // names the account's full-size portrait, which is both bigger
+                // than the node it is drawn in and regularly over the size
+                // this cache accepts, so a large avatar would never load again
+                // after the session that resolved it.
                 CachedIdentity::Known(url) => {
-                    if let Some(image) = self.image(&url).await {
+                    if let Some(image) = self.image(&sized(&url)).await {
                         entries.push(AvatarEntry { email, image });
                         continue;
                     }
@@ -300,6 +305,19 @@ mod tests {
         assert_eq!(noreply_avatar_url("szilagypet53@gmail.com"), None);
         assert_eq!(noreply_avatar_url("@users.noreply.github.com"), None);
         assert_eq!(noreply_avatar_url("a/b@users.noreply.github.com"), None);
+    }
+
+    #[test]
+    fn an_account_avatar_is_asked_for_at_the_size_it_is_drawn() {
+        assert_eq!(
+            sized("https://avatars.githubusercontent.com/u/1?v=4"),
+            "https://avatars.githubusercontent.com/u/1?v=4&s=64",
+        );
+        // Already sized, by this code or by the service itself.
+        assert_eq!(
+            sized("https://avatars.githubusercontent.com/u/1?v=4&s=64"),
+            "https://avatars.githubusercontent.com/u/1?v=4&s=64",
+        );
     }
 
     #[test]
