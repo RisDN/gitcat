@@ -1,5 +1,5 @@
-import { Check, CircleCheck, Copy, ExternalLink, LogOut } from "lucide-react";
-import { useState } from "react";
+import { Check, CircleCheck, Copy, ExternalLink } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import {
   cancelForgeSignIn,
@@ -9,10 +9,12 @@ import {
   storeForgeToken,
   useForgeConnections,
 } from "../../app/forgeConnections";
-import { cx } from "../../lib";
+import { cx, identityInitials } from "../../lib";
+import { forgeAccount } from "../../lib/forgeAuth";
 import { hostNameError } from "../../lib/integrations";
 import type { Integration } from "../../lib/integrations";
 import { isTauriEnvironment, openExternal } from "../../lib/platform";
+import type { ForgeAccount, ForgeCredential } from "../../lib/types";
 import { Button, IconButton, Input } from "../ui";
 
 const FIELD =
@@ -50,6 +52,7 @@ export function ForgeConnectPanel({
   const [draftHost, setDraftHost] = useState("");
   const [copied, setCopied] = useState(false);
   const credential = host ? credentialFor(connections, host) : undefined;
+  const account = useForgeAccount(host, credential);
   const pending = host && connections.pending?.host === host.toLowerCase()
     ? connections.pending
     : null;
@@ -83,24 +86,12 @@ export function ForgeConnectPanel({
   return (
     <div className={cx("flex flex-col gap-2.5", className)}>
       {credential ? (
-        <div className="flex items-center gap-2 rounded-[5px] border border-[color-mix(in_srgb,var(--gc-success)_45%,var(--gc-border))] bg-[color-mix(in_srgb,var(--gc-success)_8%,var(--gc-background))] px-2.5 py-2 text-[11px]">
-          <CircleCheck className="shrink-0 text-success" size={14} />
-          <span className="min-w-0 grow truncate text-foreground">
-            {credential.account
-              ? `Connected to ${host} as ${credential.account}`
-              : `Connected to ${host}`}
-          </span>
-          <span className="shrink-0 text-muted">
-            {credential.kind === "oauth" ? "signed in" : "token"} {credential.hint}
-          </span>
-          <IconButton
-            aria-label={`Disconnect from ${host}`}
-            onClick={() => { if (host) void disconnectForge(host); }}
-            title="Disconnect"
-          >
-            <LogOut size={13} />
-          </IconButton>
-        </div>
+        <ConnectedAccount
+          account={account}
+          credential={credential}
+          host={host ?? ""}
+          onDisconnect={() => { if (host) void disconnectForge(host); }}
+        />
       ) : pending ? (
         <div className="flex flex-col gap-1.5 rounded-[5px] border border-border bg-background p-2.5">
           <p className="flex flex-wrap items-center gap-1 text-[11px] leading-[1.45] text-muted">
@@ -210,4 +201,118 @@ export function ForgeConnectPanel({
       ) : null}
     </div>
   );
+}
+
+/**
+ * The account one connection belongs to: its picture, the name the service
+ * shows it under, and the way out of it.
+ *
+ * The credential store never gives up more than a host and a hint, so who the
+ * credential belongs to is asked of the service itself; until it answers, and
+ * whenever it will not, the card falls back to what the credential already
+ * knows.
+ */
+function ConnectedAccount({
+  account,
+  credential,
+  host,
+  onDisconnect,
+}: {
+  account: ForgeAccount | null;
+  credential: ForgeCredential;
+  host: string;
+  onDisconnect: () => void;
+}) {
+  const name = account?.name ?? account?.login ?? credential.account ?? host;
+  const handle = account?.login ?? credential.account;
+  const secondary = handle && handle !== name ? handle : host;
+
+  return (
+    <div className="flex items-center gap-2.5 rounded-[7px] border border-border bg-background/45 px-3 py-2.5">
+      <AccountPicture name={name} url={account?.avatar_url} />
+      <div className="min-w-0">
+        <div className="truncate text-[12px] font-[650] text-foreground">{name}</div>
+        <div className="truncate text-[11px] text-muted">{secondary}</div>
+      </div>
+      <span className="mx-auto flex shrink-0 items-center gap-1.5 px-2 text-[12px] font-[600] text-success">
+        <CircleCheck size={15} />
+        Connected
+      </span>
+      <Button
+        aria-label={`Disconnect from ${host}`}
+        compact
+        onClick={onDisconnect}
+        tone="danger"
+      >
+        Disconnect
+      </Button>
+    </div>
+  );
+}
+
+/** The account's picture, or its initials while there is none to draw. */
+function AccountPicture({ name, url }: { name: string; url?: string }) {
+  const [failed, setFailed] = useState(false);
+  const shape = "size-9 shrink-0 rounded-[5px] border border-border";
+
+  if (url && !failed) {
+    return (
+      <img
+        alt=""
+        className={cx(shape, "object-cover")}
+        onError={() => setFailed(true)}
+        src={url}
+      />
+    );
+  }
+  return (
+    <span className={cx(shape, "grid place-items-center text-[12px] font-extrabold text-accent")}>
+      {identityInitials(name) || "?"}
+    </span>
+  );
+}
+
+/**
+ * The account behind a stored credential, asked of the service once per
+ * credential.
+ *
+ * The answer is kept for the host and the credential it was asked about, so
+ * reopening the dialog does not spend the request limit again while a new
+ * credential on the same host is looked up afresh. A failed lookup is not
+ * remembered: it is usually the network, and the card reads fine without it.
+ */
+const accounts = new Map<string, ForgeAccount | null>();
+
+function useForgeAccount(
+  host: string | null,
+  credential: ForgeCredential | undefined,
+): ForgeAccount | null {
+  const key = host && credential
+    ? `${host.toLowerCase()}:${credential.kind}:${credential.hint}`
+    : null;
+  const [account, setAccount] = useState<ForgeAccount | null>(
+    () => (key ? accounts.get(key) ?? null : null),
+  );
+
+  useEffect(() => {
+    if (!key || !host) {
+      setAccount(null);
+      return;
+    }
+    const cached = accounts.get(key);
+    if (cached !== undefined) {
+      setAccount(cached);
+      return;
+    }
+    let live = true;
+    void forgeAccount(host)
+      .then((found) => {
+        accounts.set(key, found);
+        if (live) setAccount(found);
+      })
+      .catch(() => { if (live) setAccount(null); });
+    return () => { live = false; };
+  }, [host, key]);
+
+  return account;
 }
