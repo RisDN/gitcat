@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { remoteBranchUrl, remoteCommitUrl, remoteIconUrls } from "../src/app/branches";
-import { avatarLookupFor, remoteSupportsAvatars } from "../src/lib/avatars";
+import { avatarEmailsToAsk, avatarLookupFor, remoteSupportsAvatars } from "../src/lib/avatars";
 import { normalizeAppSettings } from "../src/app/workspace";
 import {
     checksByOid,
@@ -179,6 +179,22 @@ test("a lookup carries the repository, the forge and the page tip", () => {
     // Without a tip the service walks from the default branch instead.
     assert.deepEqual(avatarLookupFor(remote(), [], null)?.tip_oid, undefined);
     assert.equal(avatarLookupFor(remote({ url: undefined }), ["a@b.test"], OID), null);
+});
+
+test("an unresolved author is asked about again once the tip has moved", () => {
+    const emails = ["known@b.test", "new@b.test", "unknown@b.test"];
+    const asked = new Set(["known@b.test", "unknown@b.test"]);
+    const unresolved = new Set(["unknown@b.test"]);
+
+    // The same tip only pays for the addresses nobody has asked about yet.
+    assert.deepEqual(avatarEmailsToAsk(emails, asked, unresolved, false), ["new@b.test"]);
+    // A tip that moved may name the author the last round could not.
+    assert.deepEqual(
+        avatarEmailsToAsk(emails, asked, unresolved, true),
+        ["new@b.test", "unknown@b.test"],
+    );
+    // A resolved author is never sent again.
+    assert.deepEqual(avatarEmailsToAsk(["known@b.test"], asked, unresolved, true), []);
 });
 
 test("avatar settings fall back to the defaults, not to enabled Gravatar", () => {

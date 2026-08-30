@@ -31,6 +31,26 @@ export function avatarLookupFor(
 }
 
 /**
+ * Which addresses this round should send.
+ *
+ * An address is asked once, and again as soon as history has advanced past the
+ * tip it was asked about. An author the service could not name then is exactly
+ * the one a newer tip names: their commit had not been pushed yet, or the
+ * request itself did not get through. Resolved addresses are never re-sent,
+ * and a tip that has not moved costs nothing.
+ */
+export function avatarEmailsToAsk(
+    emails: readonly string[],
+    asked: ReadonlySet<string>,
+    unresolved: ReadonlySet<string>,
+    tipMoved: boolean,
+): string[] {
+    return emails.filter(
+        (email) => !asked.has(email) || (tipMoved && unresolved.has(email)),
+    );
+}
+
+/**
  * Resolves author avatars through the backend, which owns the network access,
  * the credential and the cache. Outside Tauri there is no backend to ask.
  */

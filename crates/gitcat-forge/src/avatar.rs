@@ -10,11 +10,13 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::Arc;
 
-use gitcat_contracts::{ApiResult, AvatarEntry, AvatarLookup, AvatarSettings, ForgeKind};
+use gitcat_contracts::{
+    ApiResult, AvatarEntry, AvatarLookup, AvatarSettings, ErrorCode, ForgeKind,
+};
 use sha2::{Digest, Sha256};
 
 use crate::cache::{AvatarCache, CachedIdentity};
-use crate::github::GitHubClient;
+use crate::github::{CommitAuthor, GitHubClient};
 use crate::oauth::ForgeAuth;
 
 /// Twice the rendered node diameter, so the image stays sharp on a high-DPI
@@ -122,11 +124,17 @@ impl AvatarService {
         entries: &mut Vec<AvatarEntry>,
     ) {
         let token = self.auth.access_token(&lookup.host).await;
-        let client = GitHubClient::new(self.http.clone(), &lookup.host, token);
-        let Ok(authors) = client
-            .commit_authors(&lookup.owner, &lookup.repo, lookup.tip_oid.as_deref())
-            .await
-        else {
+        let mut walk = self.walk(lookup, token).await;
+        // A credential the service has rejected renews once and the walk is
+        // tried again. Without this a token that stopped working early leaves
+        // every author on their initial until it reaches its recorded expiry,
+        // which can be hours away.
+        if matches!(&walk, Err(error) if error.code == ErrorCode::AuthenticationRequired) {
+            if let Some(renewed) = self.auth.renew_rejected(&lookup.host).await {
+                walk = self.walk(lookup, Some(renewed)).await;
+            }
+        }
+        let Ok(authors) = walk else {
             return;
         };
 
@@ -151,6 +159,35 @@ impl AvatarService {
             }
         }
         *pending = still_pending;
+    }
+
+    /// One commit walk, with the credential it should use.
+    ///
+    /// The newest visible commit is regularly one the service has never seen
+    /// -- anything committed locally and not yet pushed -- and asking to walk
+    /// from it answers "no such commit" for the whole batch. The default
+    /// branch names most of the same authors, so it is asked for instead of
+    /// leaving every author on their initial. A refused credential is not
+    /// retried that way: the second walk would be refused for the same reason.
+    async fn walk(
+        &self,
+        lookup: &AvatarLookup,
+        token: Option<String>,
+    ) -> ApiResult<Vec<CommitAuthor>> {
+        let client = GitHubClient::new(self.http.clone(), &lookup.host, token);
+        let walk = client
+            .commit_authors(&lookup.owner, &lookup.repo, lookup.tip_oid.as_deref())
+            .await;
+        match walk {
+            Err(error)
+                if error.code != ErrorCode::AuthenticationRequired && lookup.tip_oid.is_some() =>
+            {
+                client
+                    .commit_authors(&lookup.owner, &lookup.repo, None)
+                    .await
+            }
+            answer => answer,
+        }
     }
 
     async fn gravatar(&self, email: &str) -> Option<String> {

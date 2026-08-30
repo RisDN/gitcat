@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { avatarLookupFor, remoteSupportsAvatars, resolveAvatars } from "../lib/avatars";
+import {
+    avatarEmailsToAsk,
+    avatarLookupFor,
+    remoteSupportsAvatars,
+    resolveAvatars,
+} from "../lib/avatars";
 import type { AvatarSettings, CommitSummary, RepositorySnapshot } from "../lib/types";
 import { linkRemoteName } from "./branches";
 
@@ -9,10 +14,14 @@ const EMPTY: ReadonlyMap<string, string> = new Map();
 /**
  * Resolves the avatars for the authors currently in view.
  *
- * Only addresses that have not been asked about before are sent, so paging
+ * Only addresses that have not been answered before are sent, so paging
  * through history costs one request per new batch of authors and nothing at
- * all once the repository's authors are known. Everything else -- the network,
- * the credential, the cache -- lives in the backend.
+ * all once the repository's authors are known. An address that stayed
+ * unresolved is asked again once history advances -- a commit that has since
+ * been pushed, or a request that did not get through, resolves on the next
+ * tip -- so an author does not keep their initial until the next restart.
+ * Everything else -- the network, the credential, the cache -- lives in the
+ * backend.
  */
 export function useAvatars(
     snapshot: RepositorySnapshot | null,
@@ -21,6 +30,10 @@ export function useAvatars(
 ): ReadonlyMap<string, string> {
     const [avatars, setAvatars] = useState<ReadonlyMap<string, string>>(EMPTY);
     const asked = useRef(new Set<string>());
+    // Asked about and still without a picture, plus the tip they were asked
+    // about, which is what a retry waits for.
+    const unresolved = useRef(new Set<string>());
+    const askedTip = useRef<string | null>(null);
 
     // The repository the authors belong to, which is what the hosting service
     // resolves them against.
@@ -37,6 +50,8 @@ export function useAvatars(
     // before says nothing about what the new configuration would answer.
     useEffect(() => {
         asked.current = new Set();
+        unresolved.current = new Set();
+        askedTip.current = null;
         setAvatars(EMPTY);
     }, [enabled, gravatarFallback, repositoryKey]);
 
@@ -53,9 +68,14 @@ export function useAvatars(
 
     useEffect(() => {
         if (!remote || !enabled) return;
-        const pending = emails.filter((email) => !asked.current.has(email));
+        const tipMoved = tipOid !== askedTip.current;
+        const pending = avatarEmailsToAsk(emails, asked.current, unresolved.current, tipMoved);
         if (pending.length === 0) return;
-        for (const email of pending) asked.current.add(email);
+        askedTip.current = tipOid;
+        for (const email of pending) {
+            asked.current.add(email);
+            unresolved.current.add(email);
+        }
 
         const lookup = avatarLookupFor(remote, pending, tipOid);
         if (!lookup) return;
@@ -63,7 +83,9 @@ export function useAvatars(
         let cancelled = false;
         resolveAvatars(lookup, { enabled, gravatar_fallback: gravatarFallback })
             .then((entries) => {
-                if (cancelled || entries.length === 0) return;
+                if (cancelled) return;
+                for (const entry of entries) unresolved.current.delete(entry.email);
+                if (entries.length === 0) return;
                 setAvatars((current) => {
                     const next = new Map(current);
                     for (const entry of entries) next.set(entry.email, entry.image);
@@ -71,7 +93,8 @@ export function useAvatars(
                 });
             })
             // A service that cannot be reached leaves the initials in place;
-            // the authors are simply retried on the next repository open.
+            // clearing the record asks for the whole set again rather than
+            // holding a failed round against the authors in it.
             .catch(() => { asked.current = new Set(); });
 
         return () => { cancelled = true; };

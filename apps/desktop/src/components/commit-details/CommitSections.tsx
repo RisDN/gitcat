@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 import { cx, identityInitials } from "../../lib";
@@ -8,10 +9,24 @@ export function IdentityRow({ children }: { children: ReactNode }) {
   return <div className="flex gap-2.5 px-3 pb-3 pt-0.75">{children}</div>;
 }
 
-// Renders the shimmer placeholder when no initials are known yet.
-export function Avatar({ initials }: { initials?: string }) {
+// Renders the shimmer placeholder when no initials are known yet, and the
+// author's picture once the hosting service has named them. A picture that
+// fails to decode falls back to the initials, so a stale cache entry never
+// leaves an empty square.
+export function Avatar({ image, initials }: { image?: string; initials?: string }) {
+  const [failed, setFailed] = useState(false);
   const shape = "size-9.75 shrink-0 rounded";
   if (initials === undefined) return <span className={cx("skeleton", shape)} />;
+  if (image && !failed) {
+    return (
+      <img
+        alt=""
+        className={cx(shape, "border object-cover")}
+        onError={() => setFailed(true)}
+        src={image}
+      />
+    );
+  }
   return (
     <span
       className={cx(

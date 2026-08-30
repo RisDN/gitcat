@@ -12,6 +12,8 @@ import { ShaBar, ShaCopy } from "./ShaBar";
 
 interface CommitDetailsProps {
     details: CommitDetailsType;
+    /** Author pictures keyed by lower-cased email, as the graph rows use. */
+    avatarImages?: ReadonlyMap<string, string>;
     selectedPath?: string;
     busy?: boolean;
     fileViewMode: FileViewMode;
@@ -40,7 +42,7 @@ const STATUS_LABEL: Record<string, string> = {
     unmerged: "U",
 };
 
-export function CommitDetails({ details, selectedPath, busy = false, fileViewMode, onFileViewModeChange, onSelectFile, onCopySha, onJumpToCommit, onReword, editRequest }: CommitDetailsProps) {
+export function CommitDetails({ details, avatarImages, selectedPath, busy = false, fileViewMode, onFileViewModeChange, onSelectFile, onCopySha, onJumpToCommit, onReword, editRequest }: CommitDetailsProps) {
     const [editing, setEditing] = useState(false);
     const [subject, setSubject] = useState(details.subject);
     const [body, setBody] = useState(details.body);
@@ -78,6 +80,7 @@ export function CommitDetails({ details, selectedPath, busy = false, fileViewMod
     };
     const authored = new Date(details.authored_at.seconds * 1000);
     const initials = identityInitials(details.author.name);
+    const authorImage = avatarImages?.get(details.author.email.trim().toLowerCase());
     const coAuthors = useMemo(() => parseCoAuthors(details.body), [details.body]);
     const fileItems = useMemo<FileTreeItem<ChangedFile>[]>(() => details.files.map((file) => ({
         id: file.new_path,
@@ -119,7 +122,7 @@ export function CommitDetails({ details, selectedPath, busy = false, fileViewMod
                 />
             )}
             <IdentityRow>
-                <Avatar initials={initials} />
+                <Avatar image={authorImage} initials={initials} />
                 <div className="flex min-w-0 flex-col gap-0.5">
                     <strong className="overflow-hidden text-ellipsis whitespace-nowrap" title={details.author.email}>{details.author.name}</strong>
                     <small className="mt-0.75 flex items-center gap-1 text-[10px] text-muted">

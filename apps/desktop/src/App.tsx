@@ -348,6 +348,7 @@ function App() {
         addToast,
         busy,
         closedTabsRef,
+        lastDirectory: persisted.last_directory,
         runtime,
         setBusy,
         setCommitDrafts,
@@ -894,6 +895,7 @@ function App() {
                                 activeCommitDraft={activeCommitDraft}
                                 activeRepository={activeRepository}
                                 autoResolveActiveConflicts={autoResolveActiveConflicts}
+                                avatarImages={avatarImages}
                                 busy={busy}
                                 changeFileViewMode={changeFileViewMode}
                                 continueActiveOperation={continueActiveOperation}
@@ -952,6 +954,7 @@ function App() {
                 executeBranchAction={executeBranchAction}
                 executeCommitAction={executeCommitAction}
                 executeTabAction={executeTabAction}
+                lastDirectory={persisted.last_directory}
                 prompt={prompt}
                 promptConfig={promptConfig}
                 runMutation={runMutation}

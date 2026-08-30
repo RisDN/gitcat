@@ -19,6 +19,7 @@ export interface InspectorPaneProps {
     activeCommitDraft: CommitDraft;
     activeRepository: RuntimeRepository | undefined;
     autoResolveActiveConflicts: () => void;
+    avatarImages: ReadonlyMap<string, string>;
     busy: boolean;
     changeFileViewMode: (mode: FileViewMode) => void;
     continueActiveOperation: () => void;
@@ -54,6 +55,7 @@ export function InspectorPane({
     activeCommitDraft,
     activeRepository,
     autoResolveActiveConflicts,
+    avatarImages,
     busy,
     changeFileViewMode,
     continueActiveOperation,
@@ -125,6 +127,7 @@ export function InspectorPane({
             />
         ) : details ? (
             <CommitDetails
+                avatarImages={avatarImages}
                 busy={busy || overviewLoading}
                 details={details}
                 fileViewMode={settings.file_view_mode}

@@ -254,6 +254,23 @@ impl ForgeAuth {
         }
     }
 
+    /// Renews a sign-in the service has just rejected.
+    ///
+    /// A token can stop working before the expiry it was issued with: it is
+    /// revoked on the service's own page, or the account signed in again
+    /// elsewhere. `access_token` renews on the clock alone, so until that
+    /// expiry passes it would keep handing out the dead token and every
+    /// request would come back unauthorized. One rejection is worth one
+    /// renewal, and the refresh token is the only thing that can answer it.
+    pub async fn renew_rejected(&self, host: &str) -> Option<String> {
+        let host = normalize(host);
+        let StoredCredential::OAuth(credential) = self.tokens.stored(&host)? else {
+            return None;
+        };
+        let refresh_token = credential.refresh_token.clone()?;
+        self.renew(&host, &refresh_token, &credential).await.ok()
+    }
+
     async fn renew(
         &self,
         host: &str,
