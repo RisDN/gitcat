@@ -27,8 +27,8 @@ use crate::{
     parse::{
         DETAIL_FORMAT, LOG_FORMAT, ParsedStatus, REF_FORMAT, STASH_GRAPH_FORMAT, StashCommit,
         StashGraph, parse_changed_files, parse_commit_details, parse_file_diff, parse_git_version,
-        parse_line_stats, parse_log, parse_refs, parse_search_hits, parse_stash_graph,
-        parse_status,
+        parse_line_stats, parse_log, parse_name_status, parse_refs, parse_search_hits,
+        parse_stash_graph, parse_status,
     },
     runner::{GitCommandOutput, GitRunOptions, GitRunner, os_args, redact_sensitive},
     validate::{
@@ -1584,7 +1584,7 @@ impl GitBackend for GitCliBackend {
         };
         let mut name_args = args.clone();
         name_args.extend(os_args(&[
-            "--name-only",
+            "--name-status",
             "-z",
             "--no-ext-diff",
             "--no-textconv",
@@ -1592,21 +1592,25 @@ impl GitBackend for GitCliBackend {
         ]));
         name_args.push(request.path.as_str().into());
         let names = self.read(Some(path), name_args).await?;
-        let resolved_paths: Vec<_> = names
-            .stdout
-            .split(|byte| *byte == 0)
-            .filter(|value| !value.is_empty())
-            .map(|value| String::from_utf8_lossy(value).into_owned())
-            .collect();
-        if resolved_paths.len() > 1
-            || resolved_paths
-                .first()
-                .is_some_and(|resolved| resolved != &request.path)
-        {
+        let selected = parse_name_status(&names.stdout)?;
+        // An unmerged path is reported once per stage, so the same path landing
+        // here twice is expected. Only a foreign path means the request widened
+        // past the single file the pane asked for.
+        if selected.iter().any(|file| file.new_path != request.path) {
             return Err(ApiError::new(
                 ErrorCode::InvalidRequest,
                 "Diff request must select exactly one changed file",
             ));
+        }
+        // Git answers an unmerged worktree path with a combined diff the patch
+        // parser cannot read. Ask for the stage-2 side instead, so the pane
+        // shows the conflicted working copy against "ours".
+        if matches!(request.target, DiffTarget::Worktree)
+            && selected
+                .iter()
+                .any(|file| file.status == ChangeKind::Unmerged)
+        {
+            args.push("--ours".into());
         }
         args.extend(os_args(&[
             "--patch",

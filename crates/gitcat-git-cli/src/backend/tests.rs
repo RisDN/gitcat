@@ -1534,6 +1534,36 @@ async fn whole_file_diff_keeps_every_line_as_context() {
 }
 
 #[tokio::test]
+async fn conflicted_worktree_file_diffs_against_the_ours_stage() {
+    let (directory, backend) = conflicted_repository().await;
+
+    let diff = backend
+        .diff(
+            directory.path(),
+            &DiffRequest {
+                target: DiffTarget::Worktree,
+                path: "hello.txt".into(),
+                context_lines: 3,
+                ignore_whitespace: false,
+                max_bytes: 1024 * 1024,
+                whole_file: false,
+            },
+        )
+        .await
+        .expect("an unmerged path diffs instead of tripping the single-file guard");
+
+    assert_eq!(diff.new_path, "hello.txt");
+    assert!(!diff.hunks.is_empty());
+    assert!(
+        diff.hunks
+            .iter()
+            .flat_map(|hunk| &hunk.lines)
+            .any(|line| line.kind == DiffLineKind::Addition && line.content.starts_with("<<<<<<<")),
+        "the ours-side patch shows the conflict markers the working copy gained",
+    );
+}
+
+#[tokio::test]
 async fn worktree_diff_branch_and_stash_workflow() {
     let (directory, backend, oid) = committed_repository().await;
     fs::write(directory.path().join("hello.txt"), "first\nsecond\n").expect("modify fixture");

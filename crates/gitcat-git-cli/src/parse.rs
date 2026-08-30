@@ -497,7 +497,7 @@ pub(crate) fn parse_changed_files(
     Ok(files)
 }
 
-fn parse_name_status(output: &[u8]) -> ApiResult<Vec<ChangedFile>> {
+pub(crate) fn parse_name_status(output: &[u8]) -> ApiResult<Vec<ChangedFile>> {
     let tokens: Vec<&[u8]> = output
         .split(|byte| *byte == 0)
         .filter(|part| !part.is_empty())
