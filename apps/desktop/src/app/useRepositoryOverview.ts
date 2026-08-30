@@ -10,7 +10,7 @@ import type {
     StashEntry,
 } from "../lib/types";
 import { continuableOperation } from "./snapshot";
-import type { CommitDetailsPanel, RuntimeRepository } from "./state";
+import type { CenterView, CommitDetailsPanel, RuntimeRepository } from "./state";
 
 export interface RepositoryOverviewParams {
     activeRepository: RuntimeRepository | undefined;
@@ -28,7 +28,7 @@ export interface RepositoryOverviewParams {
     pendingSelectionRef: RefObject<{ index: number; subject: string } | null>;
     selectedOid: string | null;
     selectedOidRef: RefObject<string | null>;
-    setCenterView: Dispatch<SetStateAction<"graph" | "diff">>;
+    setCenterView: Dispatch<SetStateAction<CenterView>>;
     setCommitActions: Dispatch<SetStateAction<CommitActionAvailability[]>>;
     setConflictEditor: Dispatch<SetStateAction<ConflictFileDetails | null>>;
     setDetails: Dispatch<SetStateAction<CommitDetailsPanel | null>>;

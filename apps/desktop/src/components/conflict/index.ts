@@ -1,1 +1,1 @@
-export { ConflictResolverDialog } from "./ConflictResolverDialog";
+export { MergeEditor } from "./MergeEditor";

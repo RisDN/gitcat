@@ -1,13 +1,13 @@
 import { useCallback, type Dispatch, type RefObject, type SetStateAction } from "react";
 
 import type { CommitActionAvailability, CommitSummary, FileDiff, HistoryPage } from "../lib/types";
-import type { CommitDetailsPanel } from "./state";
+import type { CenterView, CommitDetailsPanel } from "./state";
 
 export interface CommitSelectionParams {
     diffLoadSequence: RefObject<number>;
     history: HistoryPage | null;
     selectedOidRef: RefObject<string | null>;
-    setCenterView: Dispatch<SetStateAction<"graph" | "diff">>;
+    setCenterView: Dispatch<SetStateAction<CenterView>>;
     setCommitActions: Dispatch<SetStateAction<CommitActionAvailability[]>>;
     setDetails: Dispatch<SetStateAction<CommitDetailsPanel | null>>;
     setDiff: Dispatch<SetStateAction<FileDiff | null>>;

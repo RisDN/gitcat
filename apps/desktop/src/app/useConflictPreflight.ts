@@ -6,7 +6,7 @@ import { getApiError, gitcatApi } from "../lib/api";
 import { conflictOperationLabel } from "../lib/conflicts";
 import type { ConflictPreflightResult, PersistedState, RepositorySnapshot, RepositoryTab } from "../lib/types";
 import { defaultConflictPreflightTarget } from "./snapshot";
-import type { RuntimeRepository } from "./state";
+import type { CenterView, RuntimeRepository } from "./state";
 
 export interface ConflictPreflightParams {
     activeConflictCount: number;
@@ -15,7 +15,7 @@ export interface ConflictPreflightParams {
     activeTab: RepositoryTab | undefined;
     activeTabId: string | null;
     addToast: (toast: Omit<ToastMessage, "id">) => void;
-    setCenterView: Dispatch<SetStateAction<"graph" | "diff">>;
+    setCenterView: Dispatch<SetStateAction<CenterView>>;
     setPersisted: Dispatch<SetStateAction<PersistedState>>;
     setRightPanelVisible: Dispatch<SetStateAction<boolean>>;
     setSelectedOid: Dispatch<SetStateAction<string | null>>;

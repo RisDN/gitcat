@@ -5,13 +5,12 @@ import type { FolderCollapseTarget } from "../components/file-tree";
 import { gitcatApi } from "../lib/api";
 import { isEditableTarget, isPlainTypingKeybind, matchesKeybind } from "../lib/keybinds";
 import type {
-    ConflictFileDetails,
     FileDiff,
     KeybindSettings,
     PullMode,
     RepositorySnapshot,
 } from "../lib/types";
-import type { BranchMenuState, CommitMenuState, PromptState, RuntimeRepository, TabMenuState } from "./state";
+import type { BranchMenuState, CenterView, CommitMenuState, PromptState, RuntimeRepository, TabMenuState } from "./state";
 
 export interface GlobalKeybindsParams {
     abortActiveOperation: () => void;
@@ -20,12 +19,12 @@ export interface GlobalKeybindsParams {
     activeTabId: string | null;
     autoResolveActiveConflicts: () => void;
     busy: boolean;
-    centerView: "graph" | "diff";
+    centerView: CenterView;
     chooseRepository: (targetTabId?: string | null) => Promise<void>;
+    closeConflictEditor: () => void;
     closeDiff: () => void;
     closeTab: (tabId: string) => void;
     commitMenu: CommitMenuState | null;
-    conflictEditor: ConflictFileDetails | null;
     continueActiveOperation: () => void;
     copySha: (oid: string) => Promise<void>;
     createBranchAtHead: () => void;
@@ -49,7 +48,7 @@ export interface GlobalKeybindsParams {
     selectedOid: string | null;
     selectedWorktreeFile: { path: string; staged: boolean } | null;
     setBranchMenu: Dispatch<SetStateAction<BranchMenuState | null>>;
-    setCenterView: Dispatch<SetStateAction<"graph" | "diff">>;
+    setCenterView: Dispatch<SetStateAction<CenterView>>;
     setCommitMenu: Dispatch<SetStateAction<CommitMenuState | null>>;
     setDiffMode: (mode: DiffViewMode) => void;
     setLeftPanelVisible: Dispatch<SetStateAction<boolean>>;
@@ -76,10 +75,10 @@ export function useGlobalKeybinds({
     busy,
     centerView,
     chooseRepository,
+    closeConflictEditor,
     closeDiff,
     closeTab,
     commitMenu,
-    conflictEditor,
     continueActiveOperation,
     copySha,
     createBranchAtHead,
@@ -128,7 +127,7 @@ export function useGlobalKeybinds({
                 matchesKeybind(event, binding)
                 && !(editable && isPlainTypingKeybind(binding))
             );
-            if (settingsOpen || conflictEditor || prompt || startDialog || commitMenu || tabMenu) {
+            if (settingsOpen || prompt || startDialog || commitMenu || tabMenu) {
                 if (Object.values(keybinds).some((binding) => matches(binding))) event.preventDefault();
                 return;
             }
@@ -218,7 +217,9 @@ export function useGlobalKeybinds({
                 }
             } else if (matches(keybinds.show_graph)) {
                 event.preventDefault();
-                if (activeRepository) setCenterView("graph");
+                if (!activeRepository) return;
+                if (centerView === "merge") closeConflictEditor();
+                else setCenterView("graph");
             } else if (matches(keybinds.diff_inline)) {
                 event.preventDefault();
                 if (diff) setDiffMode("inline");
@@ -262,7 +263,10 @@ export function useGlobalKeybinds({
                 event.preventDefault();
                 window.dispatchEvent(new Event("gitcat:commit"));
             } else if (event.key === "Escape") {
-                if (centerView === "diff" || diff || diffLoading || selectedWorktreeFile) {
+                if (centerView === "merge") {
+                    event.preventDefault();
+                    closeConflictEditor();
+                } else if (centerView === "diff" || diff || diffLoading || selectedWorktreeFile) {
                     event.preventDefault();
                     closeDiff();
                 } else {
@@ -283,11 +287,11 @@ export function useGlobalKeybinds({
         busy,
         chooseRepository,
         centerView,
-        closeDiff,
+        closeConflictEditor,
+    closeDiff,
         closeTab,
         commitMenu,
-        conflictEditor,
-        continueActiveOperation,
+            continueActiveOperation,
         copySha,
         createBranchAtHead,
         cycleRepository,

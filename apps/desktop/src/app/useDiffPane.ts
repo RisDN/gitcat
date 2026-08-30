@@ -4,7 +4,7 @@ import { isWholeFileMode, type DiffViewMode } from "../components/diff";
 import { gitcatApi } from "../lib/api";
 import { sameFileDiff } from "../lib/diffs";
 import type { ChangedFile, DiffRequest, FileDiff, RepositorySnapshot, StatusEntry } from "../lib/types";
-import type { RuntimeRepository } from "./state";
+import type { CenterView, RuntimeRepository } from "./state";
 
 export interface DiffPaneParams {
     activeRepository: RuntimeRepository | undefined;
@@ -20,7 +20,7 @@ export interface DiffPaneParams {
     openWorktreeDiffRef: RefObject<(path: string, staged: boolean) => void>;
     selectedOid: string | null;
     selectedWorktreeFile: { path: string; staged: boolean } | null;
-    setCenterView: Dispatch<SetStateAction<"graph" | "diff">>;
+    setCenterView: Dispatch<SetStateAction<CenterView>>;
     setDiff: Dispatch<SetStateAction<FileDiff | null>>;
     setDiffLoading: Dispatch<SetStateAction<boolean>>;
     setSelectedPath: Dispatch<SetStateAction<string | undefined>>;

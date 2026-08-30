@@ -2,13 +2,13 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type RefObject
 
 import { gitcatApi } from "../lib/api";
 import type { CommitActionAvailability, FileDiff } from "../lib/types";
-import type { CommitDetailsPanel, RuntimeRepository } from "./state";
+import type { CenterView, CommitDetailsPanel, RuntimeRepository } from "./state";
 
 export interface CommitSearchParams {
     activeRepository: RuntimeRepository | undefined;
     activeRepositoryIdRef: RefObject<string | null>;
     diffLoadSequence: RefObject<number>;
-    setCenterView: Dispatch<SetStateAction<"graph" | "diff">>;
+    setCenterView: Dispatch<SetStateAction<CenterView>>;
     setCommitActions: Dispatch<SetStateAction<CommitActionAvailability[]>>;
     setDetails: Dispatch<SetStateAction<CommitDetailsPanel | null>>;
     setDiff: Dispatch<SetStateAction<FileDiff | null>>;

@@ -5,7 +5,7 @@ import type { ToastMessage } from "../components/ToastRegion";
 import { gitcatApi } from "../lib/api";
 import type { FileViewMode, HistoryPage, RepositorySnapshot } from "../lib/types";
 import { expectedState, isMutationResult } from "./snapshot";
-import type { RuntimeRepository } from "./state";
+import type { CenterView, RuntimeRepository } from "./state";
 import { nextWorktreeSelection, optimisticWorktreeSelection, optimisticWorktreeSnapshot, type WorktreeStageAction } from "./worktree";
 
 export interface WorktreeMutationsParams {
@@ -13,7 +13,7 @@ export interface WorktreeMutationsParams {
     activeRepositoryIdRef: RefObject<string | null>;
     addToast: (toast: Omit<ToastMessage, "id">) => void;
     busy: boolean;
-    centerView: "graph" | "diff";
+    centerView: CenterView;
     fileViewMode: FileViewMode;
     history: HistoryPage | null;
     loadOverview: (repository: RuntimeRepository, preserveSelection?: boolean, showLoading?: boolean) => Promise<void>;

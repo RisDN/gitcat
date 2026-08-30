@@ -3,6 +3,10 @@ import type { BranchScope } from "../components/ref-sidebar";
 import type { TabView } from "../components/top-tabs";
 import type { BranchInfo, CommitSummary, RefLabel, RepositoryInfo } from "../lib/types";
 
+// The center pane shows one of three things: the graph, a file diff, or the
+// three-way editor for a conflicted file.
+export type CenterView = "graph" | "diff" | "merge";
+
 export interface RuntimeRepository {
     repository_id: string;
     info: RepositoryInfo;

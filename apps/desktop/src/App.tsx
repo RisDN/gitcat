@@ -43,7 +43,7 @@ import { useAvatars } from "./app/useAvatars";
 import { useForgeStatus } from "./app/useForgeStatus";
 import { EMPTY_COMMIT_DRAFT, EMPTY_STATE } from "./app/defaults";
 import { continuableOperation } from "./app/snapshot";
-import type { BranchMenuState, CommitMenuState, ConfirmState, PromptState, RuntimeRepository, TabMenuState } from "./app/state";
+import type { BranchMenuState, CenterView, CommitMenuState, ConfirmState, PromptState, RuntimeRepository, TabMenuState } from "./app/state";
 import { AppDialogs } from "./app/AppDialogs";
 import { AppStatusBar } from "./app/AppStatusBar";
 import { HistoryPane } from "./app/HistoryPane";
@@ -97,7 +97,7 @@ function App() {
     const [diffLoading, setDiffLoading] = useState(false);
     const [selectedPath, setSelectedPath] = useState<string | undefined>();
     const [selectedWorktreeFile, setSelectedWorktreeFile] = useState<{ path: string; staged: boolean } | null>(null);
-    const [centerView, setCenterView] = useState<"graph" | "diff">("graph");
+    const [centerView, setCenterView] = useState<CenterView>("graph");
     const [stageCollapse, setStageCollapse] = useState<{ target: FolderCollapseTarget; staged: boolean; token: number } | null>(null);
     const [busy, setBusy] = useState(false);
     const [overviewLoading, setOverviewLoading] = useState(false);
@@ -393,14 +393,24 @@ function App() {
         setRewordRequest((current) => ({ oid, token: (current?.token ?? 0) + 1 }));
     }, [jumpToCommit]);
 
-    const { openConflictEditor, resolveConflictEntry, resolveConflictPaths } = useConflictActions({
+    const {
+        closeConflictEditor,
+        openConflictEditor,
+        resolveConflictEntry,
+        resolveConflictPaths,
+        saveConflictResult,
+    } = useConflictActions({
         activeRepository,
         activeRepositoryIdRef,
         busy,
+        conflictEditor,
         runMutation,
         setBusy,
+        setCenterView,
         setConflictEditor,
+        setSelectedWorktreeFile,
         showError,
+        snapshot,
     });
 
     const copySha = useCallback(async (oid: string) => {
@@ -490,10 +500,10 @@ function App() {
         busy,
         centerView,
         chooseRepository,
+        closeConflictEditor,
         closeDiff,
         closeTab,
         commitMenu,
-        conflictEditor,
         continueActiveOperation,
         copySha,
         createBranchAtHead,
@@ -840,7 +850,9 @@ function App() {
                             busy={busy}
                             centerView={centerView}
                             checkoutRemoteBranch={checkoutRemoteBranch}
+                            closeConflictEditor={closeConflictEditor}
                             closeDiff={closeDiff}
+                            conflictEditor={conflictEditor}
                             columnWidths={graphColumnWidths}
                             columns={graphColumns}
                             copySha={copySha}
@@ -858,6 +870,7 @@ function App() {
                             remoteIconUrls={iconUrlsByRemote}
                             avatarImages={avatarImages}
                             runMutation={runMutation}
+                            saveConflictResult={saveConflictResult}
                             searchBusy={searchBusy}
                             searchFocusToken={searchFocusToken}
                             searchIndex={searchIndex}
@@ -947,7 +960,6 @@ function App() {
                 busy={busy}
                 cloneRepository={cloneRepository}
                 commitMenu={commitMenu}
-                conflictEditor={conflictEditor}
                 contextActions={contextActions}
                 createRepository={createRepository}
                 dismissToast={dismissToast}
@@ -957,10 +969,8 @@ function App() {
                 lastDirectory={persisted.last_directory}
                 prompt={prompt}
                 promptConfig={promptConfig}
-                runMutation={runMutation}
                 setBranchMenu={setBranchMenu}
                 setCommitMenu={setCommitMenu}
-                setConflictEditor={setConflictEditor}
                 setPersisted={setPersisted}
                 setPrompt={setPrompt}
                 setSettingsOpen={setSettingsOpen}
@@ -968,7 +978,6 @@ function App() {
                 setTabMenu={setTabMenu}
                 settings={persisted.settings}
                 settingsOpen={settingsOpen}
-                snapshot={snapshot}
                 startDialog={startDialog}
                 submitPrompt={submitPrompt}
                 tabContextActions={tabContextActions}

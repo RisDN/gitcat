@@ -88,7 +88,9 @@ export function StatusSection({
           mode={viewMode}
           onItemContextMenu={onItemContextMenu}
           onFolderContextMenu={onFolderContextMenu}
-          onSelect={onOpenDiff}
+          // A conflicted file opens the three-way editor: its worktree copy is
+          // a file full of conflict markers, which is not a diff worth reading.
+          onSelect={(entry) => (entry.conflicted && onOpenConflict ? onOpenConflict(entry) : onOpenDiff(entry))}
           renderAction={(entry) => (
             entry.conflicted && onResolveConflict ? (
               <ConflictQuickActions

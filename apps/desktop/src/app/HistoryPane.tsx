@@ -9,6 +9,7 @@ import {
     type CommitContextMenuRequest,
 } from "../components/CommitGraph";
 import { GraphColumnResizer } from "../components/GraphColumnResizer";
+import { MergeEditor } from "../components/conflict";
 import { DiffViewer, type DiffViewMode } from "../components/diff";
 import { ChangeCountSummary, type FileChangeCounts } from "../components/file-tree";
 import { GraphColumnMenu } from "../components/GraphColumnMenu";
@@ -33,6 +34,8 @@ import type {
     BranchInfo,
 
     CommitSummary,
+    ConflictFileDetails,
+    ConflictLineEndingPolicy,
     FileDiff,
     GraphColumnSettings,
     GraphColumnWidths,
@@ -40,14 +43,17 @@ import type {
     RefLabel,
     RepositorySnapshot,
 } from "../lib/types";
-import type { CommitMenuState, RunMutation } from "./state";
+import { currentBranch } from "./branches";
+import type { CenterView, CommitMenuState, RunMutation } from "./state";
 
 export interface HistoryPaneProps {
     activeConflictCount: number;
     busy: boolean;
-    centerView: "graph" | "diff";
+    centerView: CenterView;
     checkoutRemoteBranch: (branch: BranchInfo) => void;
+    closeConflictEditor: () => void;
     closeDiff: () => void;
+    conflictEditor: ConflictFileDetails | null;
     columns: GraphColumnSettings;
     columnWidths: GraphColumnWidths;
     copySha: (oid: string) => Promise<void>;
@@ -65,6 +71,7 @@ export interface HistoryPaneProps {
     remoteIconUrls: Map<string, string>;
     avatarImages: ReadonlyMap<string, string>;
     runMutation: RunMutation;
+    saveConflictResult: (text: string, lineEnding: ConflictLineEndingPolicy) => void;
     searchBusy: boolean;
     searchFocusToken: number;
     searchIndex: number;
@@ -100,7 +107,9 @@ export function HistoryPane({
     busy,
     centerView,
     checkoutRemoteBranch,
+    closeConflictEditor,
     closeDiff,
+    conflictEditor,
     columns,
     columnWidths,
     copySha,
@@ -118,6 +127,7 @@ export function HistoryPane({
     remoteIconUrls,
     avatarImages,
     runMutation,
+    saveConflictResult,
     searchBusy,
     searchFocusToken,
     searchIndex,
@@ -224,7 +234,17 @@ export function HistoryPane({
                     value={searchQuery}
                 />
             ) : null}
-            {centerView === "diff" ? (
+            {centerView === "merge" && conflictEditor ? (
+                <MergeEditor
+                    branchName={currentBranch(snapshot)}
+                    busy={busy}
+                    closeKeybind={settings.keybinds.show_graph}
+                    details={conflictEditor}
+                    onClose={closeConflictEditor}
+                    onSave={saveConflictResult}
+                    operation={snapshot?.operation_state ?? "normal"}
+                />
+            ) : centerView === "diff" ? (
                 <DiffViewer
                     closeKeybind={settings.keybinds.show_graph}
                     diff={diff}

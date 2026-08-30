@@ -1,16 +1,13 @@
 import type { Dispatch, SetStateAction } from "react";
 
-import { ConflictResolverDialog } from "../components/conflict";
 import { ContextMenu, type ContextAction } from "../components/ContextMenu";
 import { PromptDialog } from "../components/PromptDialog";
 import { SettingsDialog } from "../components/settings";
 import { CloneDialog, CreateDialog } from "../components/start-page";
 import { ToastRegion, type ToastMessage } from "../components/ToastRegion";
-import { gitcatApi } from "../lib/api";
-import type { AppSettings, CloneOptions, ConflictFileDetails, NewRepository, PersistedState, RepositorySnapshot, RepositoryTab } from "../lib/types";
-import { currentBranch } from "./branches";
+import type { AppSettings, CloneOptions, NewRepository, PersistedState, RepositoryTab } from "../lib/types";
 import { DEFAULT_SETTINGS } from "./defaults";
-import type { BranchMenuState, CommitMenuState, PromptState, RunMutation, TabMenuState } from "./state";
+import type { BranchMenuState, CommitMenuState, PromptState, TabMenuState } from "./state";
 
 export interface AppDialogsProps {
     activeTab: RepositoryTab | undefined;
@@ -19,7 +16,6 @@ export interface AppDialogsProps {
     busy: boolean;
     cloneRepository: (options: CloneOptions, targetTabId: string | null) => Promise<void>;
     commitMenu: CommitMenuState | null;
-    conflictEditor: ConflictFileDetails | null;
     contextActions: ContextAction[];
     createRepository: (path: string, defaultBranch: string, ignorePatterns: string[], remote: NewRepository | null, targetTabId: string | null) => Promise<void>;
     dismissToast: (id: string) => void;
@@ -38,10 +34,8 @@ export interface AppDialogsProps {
         secondaryRequired?: boolean;
         confirmLabel: string;
     } | null | undefined;
-    runMutation: RunMutation;
     setBranchMenu: Dispatch<SetStateAction<BranchMenuState | null>>;
     setCommitMenu: Dispatch<SetStateAction<CommitMenuState | null>>;
-    setConflictEditor: Dispatch<SetStateAction<ConflictFileDetails | null>>;
     setPersisted: Dispatch<SetStateAction<PersistedState>>;
     setPrompt: Dispatch<SetStateAction<PromptState>>;
     setSettingsOpen: Dispatch<SetStateAction<boolean>>;
@@ -49,7 +43,6 @@ export interface AppDialogsProps {
     setTabMenu: Dispatch<SetStateAction<TabMenuState | null>>;
     settings: AppSettings;
     settingsOpen: boolean;
-    snapshot: RepositorySnapshot | null;
     startDialog: "clone" | "create" | null;
     submitPrompt: (value: string, secondaryValue?: string) => void;
     tabContextActions: ContextAction[];
@@ -64,7 +57,6 @@ export function AppDialogs({
     busy,
     cloneRepository,
     commitMenu,
-    conflictEditor,
     contextActions,
     createRepository,
     dismissToast,
@@ -74,10 +66,8 @@ export function AppDialogs({
     lastDirectory,
     prompt,
     promptConfig,
-    runMutation,
     setBranchMenu,
     setCommitMenu,
-    setConflictEditor,
     setPersisted,
     setPrompt,
     setSettingsOpen,
@@ -85,7 +75,6 @@ export function AppDialogs({
     setTabMenu,
     settings,
     settingsOpen,
-    snapshot,
     startDialog,
     submitPrompt,
     tabContextActions,
@@ -131,34 +120,6 @@ export function AppDialogs({
                         );
                     }}
                     overrides={settings.forge_overrides}
-                />
-            ) : null}
-            {conflictEditor && snapshot ? (
-                <ConflictResolverDialog
-                    branchName={currentBranch(snapshot)}
-                    busy={busy}
-                    details={conflictEditor}
-                    onClose={() => { if (!busy) setConflictEditor(null); }}
-                    onResolve={(resolution) => {
-                        const current = conflictEditor;
-                        void runMutation("Conflict resolved", (repository) => gitcatApi.resolveConflict(
-                            repository.repository_id,
-                            current.path,
-                            resolution,
-                            current.expected_state,
-                        )).then((success) => { if (success) setConflictEditor(null); });
-                    }}
-                    onSave={(text, lineEnding) => {
-                        const current = conflictEditor;
-                        void runMutation("Conflict result saved", (repository) => gitcatApi.saveConflictResult(
-                            repository.repository_id,
-                            current.path,
-                            text,
-                            lineEnding,
-                            current.expected_state,
-                        )).then((success) => { if (success) setConflictEditor(null); });
-                    }}
-                    operation={snapshot.operation_state}
                 />
             ) : null}
             {commitMenu ? <ContextMenu actions={contextActions} onAction={executeCommitAction} onClose={() => setCommitMenu(null)} x={commitMenu.x} y={commitMenu.y} /> : null}
