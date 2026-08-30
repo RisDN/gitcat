@@ -248,9 +248,15 @@ export function normalizePersistedState(state: PersistedState): PersistedState {
         : workspaceTabs(workspace)
             .filter((tab) => tab.kind !== "start")
             .map((tab) => ({ path: tab.repository_path, name: tab.display_name, opened_at: 0 }));
+    // A hand-edited state file can carry anything here, and the value is handed
+    // to a folder picker, so only a non-empty string survives.
+    const lastDirectory = typeof state.last_directory === "string" && state.last_directory.trim()
+        ? state.last_directory
+        : null;
     return {
         settings: normalizeAppSettings(state.settings),
         workspace,
         recents: recents.slice(0, RECENT_LIMIT),
+        last_directory: lastDirectory,
     };
 }

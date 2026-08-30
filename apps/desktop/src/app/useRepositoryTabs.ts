@@ -4,6 +4,7 @@ import type { ToastMessage } from "../components/ToastRegion";
 import type { CommitDraft } from "../components/worktree";
 import { gitcatApi } from "../lib/api";
 import { createForgeRepository } from "../lib/forgeAuth";
+import { parentDirectory } from "../lib/paths";
 import { chooseDirectory } from "../lib/platform";
 import type {
     CloneOptions,
@@ -21,6 +22,7 @@ export interface RepositoryTabsParams {
     addToast: (toast: Omit<ToastMessage, "id">) => void;
     busy: boolean;
     closedTabsRef: RefObject<RepositoryTab[]>;
+    lastDirectory: string | null;
     runtime: Record<string, RuntimeRepository>;
     setBusy: Dispatch<SetStateAction<boolean>>;
     setCommitDrafts: Dispatch<SetStateAction<Record<string, CommitDraft>>>;
@@ -36,6 +38,7 @@ export function useRepositoryTabs({
     addToast,
     busy,
     closedTabsRef,
+    lastDirectory,
     runtime,
     setBusy,
     setCommitDrafts,
@@ -98,6 +101,10 @@ export function useRepositoryTabs({
                 workspace,
                 recents: [recent, ...current.recents.filter((entry) => entry.path !== recent.path)]
                     .slice(0, RECENT_LIMIT),
+                // Every way a repository arrives -- opened, cloned, initialized --
+                // passes through here, so the folder it landed in is remembered
+                // once and every folder picker starts there next time.
+                last_directory: parentDirectory(opened.info.root) || current.last_directory,
             };
         });
     }, []);
@@ -147,7 +154,7 @@ export function useRepositoryTabs({
         try {
             let path = "C:\\Users\\demo\\aurora-engine";
             if (gitcatApi.runtime === "tauri") {
-                const selected = await chooseDirectory("Open Git repository");
+                const selected = await chooseDirectory("Open Git repository", lastDirectory);
                 if (!selected) return;
                 path = selected;
             }
@@ -155,7 +162,7 @@ export function useRepositoryTabs({
         } catch (error) {
             showError("Repository could not be opened", error);
         }
-    }, [busy, openRepositoryPath, showError]);
+    }, [busy, lastDirectory, openRepositoryPath, showError]);
 
     const cloneRepository = useCallback(async (options: CloneOptions, targetTabId: string | null) => {
         if (busy) return;

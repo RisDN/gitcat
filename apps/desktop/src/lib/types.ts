@@ -774,6 +774,8 @@ export interface PersistedState {
   settings: AppSettings;
   workspace: WorkspaceState;
   recents: RecentRepository[];
+  /** Folder the last repository was cloned into, initialized in, or opened from. */
+  last_directory: string | null;
 }
 
 export interface RepositoryOverview {

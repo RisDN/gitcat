@@ -27,6 +27,7 @@ export const EMPTY_STATE: PersistedState = {
     settings: DEFAULT_SETTINGS,
     workspace: { version: 2, ungrouped_tabs: [], groups: [], active_tab_id: null },
     recents: [],
+    last_directory: null,
 };
 
 export const RECENT_LIMIT = 30;

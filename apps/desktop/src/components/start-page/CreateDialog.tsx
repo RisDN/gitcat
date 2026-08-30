@@ -27,11 +27,13 @@ function Row({ children, label }: { children: (id: string) => React.ReactNode; l
 
 export function CreateDialog({
   busy,
+  lastDirectory,
   onClose,
   onSubmit,
   overrides,
 }: {
   busy: boolean;
+  lastDirectory: string | null;
   onClose: () => void;
   onSubmit: (
     path: string,
@@ -43,7 +45,8 @@ export function CreateDialog({
 }) {
   const [provider, setProvider] = useState(LOCAL);
   const [name, setName] = useState("");
-  const [parent, setParent] = useState("");
+  // The folder the last repository landed in is where the next one usually goes.
+  const [parent, setParent] = useState(lastDirectory ?? "");
   const [defaultBranch, setDefaultBranch] = useState("");
   const [template, setTemplate] = useState("");
   const [description, setDescription] = useState("");
@@ -211,7 +214,7 @@ export function CreateDialog({
                     {gitcatApi.runtime === "tauri" ? (
                       <Button
                         onClick={() => {
-                          void chooseDirectory("Choose parent folder").then((selected) => {
+                          void chooseDirectory("Choose parent folder", parent || lastDirectory).then((selected) => {
                             if (selected) setParent(selected);
                           });
                         }}

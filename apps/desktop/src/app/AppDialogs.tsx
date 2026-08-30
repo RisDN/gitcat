@@ -26,6 +26,7 @@ export interface AppDialogsProps {
     executeBranchAction: (action: string) => void;
     executeCommitAction: (action: string) => void;
     executeTabAction: (action: string) => void;
+    lastDirectory: string | null;
     prompt: PromptState;
     promptConfig: {
         title: string;
@@ -70,6 +71,7 @@ export function AppDialogs({
     executeBranchAction,
     executeCommitAction,
     executeTabAction,
+    lastDirectory,
     prompt,
     promptConfig,
     runMutation,
@@ -104,6 +106,7 @@ export function AppDialogs({
             {startDialog === "clone" ? (
                 <CloneDialog
                     busy={busy}
+                    lastDirectory={lastDirectory}
                     onClose={() => { if (!busy) setStartDialog(null); }}
                     overrides={settings.forge_overrides}
                     onSubmit={(options) => {
@@ -115,6 +118,7 @@ export function AppDialogs({
             {startDialog === "create" ? (
                 <CreateDialog
                     busy={busy}
+                    lastDirectory={lastDirectory}
                     onClose={() => { if (!busy) setStartDialog(null); }}
                     onSubmit={(path, defaultBranch, ignorePatterns, remote) => {
                         setStartDialog(null);

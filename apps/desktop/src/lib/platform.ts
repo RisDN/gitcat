@@ -16,10 +16,21 @@ export function getGitCatRuntime(): GitCatRuntime {
   return isTauriEnvironment() ? "tauri" : "browser";
 }
 
-export async function chooseDirectory(title: string): Promise<string | null> {
+/**
+ * Asks for a folder, starting where the caller says.
+ *
+ * `startIn` is the folder GitCat last put a repository in. It is a hint only:
+ * a path that has since been renamed or removed leaves the dialog at the
+ * platform's own default rather than failing to open.
+ */
+export async function chooseDirectory(
+  title: string,
+  startIn?: string | null,
+): Promise<string | null> {
   if (!isTauriEnvironment()) return null;
   const { open } = await import("@tauri-apps/plugin-dialog");
-  const selected = await open({ directory: true, multiple: false, title });
+  const defaultPath = startIn?.trim() || undefined;
+  const selected = await open({ defaultPath, directory: true, multiple: false, title });
   return typeof selected === "string" ? selected : null;
 }
 

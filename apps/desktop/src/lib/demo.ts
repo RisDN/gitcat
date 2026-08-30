@@ -368,6 +368,7 @@ const defaultState = (): PersistedState => ({
   recents: [
     { path: "C:\\Projects\\GitCat", name: "GitCat", opened_at: Date.now() },
   ],
+  last_directory: "C:\\Projects",
 });
 
 function clone<T>(value: T): T {

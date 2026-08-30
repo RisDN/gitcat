@@ -25,17 +25,21 @@ function sparseLines(value: string): string[] {
 
 export function CloneDialog({
   busy,
+  lastDirectory,
   onClose,
   onSubmit,
   overrides,
 }: {
   busy: boolean;
+  lastDirectory: string | null;
   onClose: () => void;
   onSubmit: (options: CloneOptions) => void;
   overrides: Readonly<Record<string, ForgeKind>>;
 }) {
   const [url, setUrl] = useState("");
-  const [parent, setParent] = useState("");
+  // Clones tend to land beside one another, so the folder the last repository
+  // went to is filled in rather than asked for again.
+  const [parent, setParent] = useState(lastDirectory ?? "");
   const [shallow, setShallow] = useState(false);
   const [depth, setDepth] = useState(DEFAULT_DEPTH);
   const [sparse, setSparse] = useState(false);
@@ -161,7 +165,7 @@ export function CloneDialog({
                 hint={destinationHint}
                 label="Where to clone to"
                 onBrowse={() => {
-                  void chooseDirectory("Choose destination folder").then((selected) => {
+                  void chooseDirectory("Choose destination folder", parent || lastDirectory).then((selected) => {
                     if (selected) setParent(selected);
                   });
                 }}

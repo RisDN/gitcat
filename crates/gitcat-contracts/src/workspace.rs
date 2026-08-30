@@ -501,6 +501,12 @@ pub struct PersistedState {
     pub settings: AppSettings,
     pub workspace: WorkspaceState,
     pub recents: Vec<RecentRepository>,
+    /// Folder the user last pointed a repository at -- where a clone landed, where
+    /// a repository was initialised, or the parent of one that was opened. It is
+    /// where the next folder picker starts, so the same place is not hunted down
+    /// again on every page. It stays out of `AppSettings` because settings are
+    /// exported to a shareable file and a path on this machine is not portable.
+    pub last_directory: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
