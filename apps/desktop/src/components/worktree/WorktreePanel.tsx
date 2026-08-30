@@ -299,7 +299,7 @@ export function WorktreePanel({
         />
       ) : null}
 
-      {operationPending && !unstaged.length ? null : (
+      {operationPending ? null : (
         <StatusSection
           actionLabel="Stage all"
           actionDisabled={!stageable.length}
