@@ -43,6 +43,18 @@
         "template": "nsis/installer.nsi",
         "installerHooks": "nsis/hooks.nsh"
       }
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "git"
+        ]
+      },
+      "rpm": {
+        "depends": [
+          "git"
+        ]
+      }
     }
   },
   "plugins": {

@@ -1,6 +1,6 @@
 # GitCat
 
-Lightweight, Windows-first desktop Git client. Tauri v2 + React UI, Rust core, and system-installed Git. No AI, cloud patches, PR/issue panel, or arbitrary shell/Git commands.
+Lightweight, Windows-first desktop Git client with Linux builds. Tauri v2 + React UI, Rust core, and system-installed Git. No AI, cloud patches, PR/issue panel, or arbitrary shell/Git commands.
 
 > **Status:** functional MVP. `tauri dev` works with real repositories; the standalone Vite development page uses a built-in demo data source.
 
@@ -115,9 +115,10 @@ Using system Git is intentional: it preserves Git Credential Manager, SSH agents
 
 - Git 2.31+
 - Rust 1.85+; Tauri Windows/MSVC prerequisites and WebView2 for native Windows builds
+- On Linux, the Tauri v2 prerequisites: `libwebkit2gtk-4.1-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`, `libssl-dev`, `libxdo-dev`, `build-essential`, plus `patchelf` for AppImage bundling
 - Node.js 22 LTS and npm
 
-Windows 10/11 is the primary target. Other platforms are neither packaged nor verified in this MVP.
+Windows 10/11 is the primary target. Linux x86_64 is built, tested, and packaged as AppImage, `.deb`, and `.rpm` (WebKitGTK 4.1); it receives less manual UX verification than Windows. macOS is neither packaged nor verified.
 
 ## Development
 
@@ -151,13 +152,20 @@ cd .\apps\desktop
 npm.cmd run build:all
 ```
 
-Flags:
+`scripts/build-all.sh` is the Linux/macOS counterpart with the same steps and the flags `--skip-install`, `--skip-verify`, and `--no-bundle`:
+
+```bash
+cd apps/desktop
+npm run build:all:unix
+```
+
+Flags of the PowerShell script:
 
 - `-SkipInstall`: do not run `npm ci` / `npm install` first.
 - `-SkipVerify`: skip fmt, clippy, tests, and typecheck; build only.
 - `-NoBundle`: build the release binary without MSI/NSIS installers (faster).
 
-Outputs: `apps/desktop/dist` (web), `target/release/gitcat-desktop.exe` (binary), `target/release/bundle` (installers).
+Outputs: `apps/desktop/dist` (web), `target/release/gitcat-desktop.exe` (`gitcat-desktop` on Linux), `target/release/bundle` (installers and packages).
 
 The individual steps are also available separately.
 
@@ -173,6 +181,12 @@ Windows helper for the same checks:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify.ps1
+```
+
+Linux/macOS helper:
+
+```bash
+./scripts/verify.sh
 ```
 
 Frontend:
@@ -194,9 +208,16 @@ The web build is written to `apps/desktop/dist`; native artifacts are written un
 
 ## Releases
 
-The current version is 1.5.0. `.github/workflows/release-windows.yml` (`workflow_dispatch`) builds the Windows release on `windows-latest`: it enforces the `x86_64-pc-windows-msvc` host, runs fmt, clippy, tests, and typecheck, then bundles the NSIS installer and uploads the installer plus the binary as an artifact.
+The current version is 1.5.0. `.github/workflows/release.yml` builds both platforms in parallel and then publishes them together:
 
-The build is verified to be self-contained: the job fails if `gitcat-desktop.exe` still imports `WebView2Loader.dll` or if a dynamic loader DLL is left in the release output, and it prints the installer's SHA-256.
+- `build-windows` on `windows-latest` enforces the `x86_64-pc-windows-msvc` host, runs fmt, clippy, tests, and typecheck, then bundles the NSIS installer. The build is verified to be self-contained: the job fails if `gitcat-desktop.exe` still imports `WebView2Loader.dll` or if a dynamic loader DLL is left in the release output, and it prints the installer's SHA-256.
+- `build-linux` on `ubuntu-24.04` (pinned, because the AppImage inherits that image's glibc as its minimum baseline) enforces the `x86_64-unknown-linux-gnu` host, installs the Tauri prerequisites, runs the same checks, and bundles the AppImage, `.deb`, and `.rpm`. It fails unless exactly one of each package exists and the binary links `libwebkit2gtk-4.1`, and it prints their SHA-256 sums. The `.deb` and `.rpm` declare a dependency on `git`.
+- `publish` merges the per-platform updater entries into one `latest.json` (`windows-x86_64` and `linux-x86_64`) and creates the GitHub release with every package and signature.
+
+Triggers:
+
+- `workflow_dispatch`: a stable `v<version>` release. Artifacts are always uploaded; the release is created only with `publish: true`.
+- `schedule` (daily at 03:00 UTC): a rolling `nightly` pre-release built from the default branch. Each run deletes the previous `nightly` release and tag and recreates them at the current commit; the run is skipped when the last nightly already covers that commit. Because it is a pre-release, it never becomes `releases/latest`, so the in-app updater keeps following the stable channel. GitHub pauses scheduled workflows after 60 days without repository activity.
 
 `apps/desktop/src-tauri/nsis/installer.nsi` is a vendored copy of the Tauri bundler's NSIS template for the pinned `@tauri-apps/cli` version, carrying one addition: the "Additional tasks" page that offers the Explorer context menu. Tauri's four `NSIS_HOOK_*` macros all run inside a section, which is too late to declare an installer page, so the page itself cannot live in `nsis/hooks.nsh` with the rest of the logic. Upgrading the CLI means re-fetching the template for the new version and reapplying that one insertion; see `AGENTS.md`.
 
