@@ -1,0 +1,340 @@
+name: release-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a GitHub release with the updater manifest
+        type: boolean
+        default: false
+      release_notes:
+        description: Release notes shown in the update prompt
+        type: string
+        default: ""
+  schedule:
+    # Nightly pre-release from the default branch, 03:00 UTC every day.
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Decides what this run produces. A scheduled run is always a published
+  # `nightly` pre-release; a manual run is a stable `v<version>` release that
+  # is only published when the `publish` input is set.
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      channel: ${{ steps.plan.outputs.channel }}
+      tag: ${{ steps.plan.outputs.tag }}
+      publish: ${{ steps.plan.outputs.publish }}
+      skip: ${{ steps.plan.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Plan the release
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PUBLISH_INPUT: ${{ inputs.publish }}
+        run: |
+          set -euo pipefail
+          version=$(sed -nE 's/^version = "(.+)"$/\1/p' Cargo.toml | head -n 1)
+          if [ -z "$version" ]; then
+            echo '::error::Could not read the workspace version from Cargo.toml'
+            exit 1
+          fi
+          skip=false
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            channel=nightly
+            tag=nightly
+            publish=true
+            # Skip the nightly when nothing changed since the last one.
+            previous=$(gh release view nightly --json body --jq .body 2>/dev/null |
+              sed -nE 's/^Commit: ([0-9a-f]{40})$/\1/p' | head -n 1 || true)
+            if [ "$previous" = "$GITHUB_SHA" ]; then
+              echo "Nightly already built for $GITHUB_SHA; skipping."
+              skip=true
+            fi
+          else
+            channel=stable
+            tag="v$version"
+            publish=$PUBLISH_INPUT
+          fi
+          {
+            echo "version=$version"
+            echo "channel=$channel"
+            echo "tag=$tag"
+            echo "publish=$publish"
+            echo "skip=$skip"
+          } | tee -a "$GITHUB_OUTPUT"
+
+  build-windows:
+    needs: prepare
+    if: needs.prepare.outputs.skip != 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - name: Verify MSVC target
+        shell: pwsh
+        run: |
+          $hostLine = rustc -vV | Select-String '^host:'
+          if ($hostLine -notmatch 'x86_64-pc-windows-msvc') {
+            throw "Release must use x86_64-pc-windows-msvc; got $hostLine"
+          }
+      - name: Install frontend dependencies
+        working-directory: apps/desktop
+        run: npm ci
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --workspace
+      - name: Verify frontend
+        working-directory: apps/desktop
+        run: npm run typecheck
+      - name: Build NSIS installer
+        working-directory: apps/desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run tauri build -- --bundles nsis
+      - name: Verify WebView2 loader is self-contained
+        shell: pwsh
+        run: |
+          $binary = Resolve-Path 'target\release\gitcat-desktop.exe'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $dumpbin = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe' |
+            Select-Object -First 1
+          if (-not $dumpbin) {
+            throw 'dumpbin.exe not found'
+          }
+          $dependencies = & $dumpbin /DEPENDENTS $binary
+          if ($dependencies -match 'WebView2Loader\.dll') {
+            throw 'gitcat-desktop.exe still imports WebView2Loader.dll'
+          }
+          if (Test-Path 'target\release\WebView2Loader.dll') {
+            throw 'Unexpected dynamic WebView2Loader.dll in MSVC release output'
+          }
+          $installers = @(Get-ChildItem 'target\release\bundle\nsis\*-setup.exe')
+          if ($installers.Count -ne 1) {
+            throw "Expected one NSIS installer, found $($installers.Count)"
+          }
+          Get-FileHash -Algorithm SHA256 $installers[0].FullName
+      - name: Write updater platform entry
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          $installer = Get-ChildItem 'target\release\bundle\nsis\*-setup.exe' | Select-Object -First 1
+          $signatureFile = "$($installer.FullName).sig"
+          if (-not (Test-Path $signatureFile)) {
+            throw "Missing updater signature: $signatureFile. Is TAURI_SIGNING_PRIVATE_KEY set?"
+          }
+          $entry = [ordered]@{
+            'windows-x86_64' = [ordered]@{
+              signature = (Get-Content $signatureFile -Raw).Trim()
+              url = "https://github.com/${{ github.repository }}/releases/download/$env:RELEASE_TAG/$($installer.Name)"
+            }
+          }
+          $entry | ConvertTo-Json -Depth 5 |
+            Out-File 'target\release\bundle\nsis\platform.json' -Encoding utf8NoBOM
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gitcat-windows-msvc
+          if-no-files-found: error
+          path: |
+            target/release/bundle/nsis/*-setup.exe
+            target/release/bundle/nsis/*-setup.exe.sig
+            target/release/bundle/nsis/platform.json
+            target/release/gitcat-desktop.exe
+
+  build-linux:
+    needs: prepare
+    if: needs.prepare.outputs.skip != 'true'
+    # Pinned on purpose: the AppImage inherits this image's glibc as its
+    # minimum supported baseline, so bumping it is a compatibility decision.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - name: Verify GNU target
+        run: |
+          host=$(rustc -vV | sed -n 's/^host: //p')
+          if [ "$host" != "x86_64-unknown-linux-gnu" ]; then
+            echo "::error::Release must use x86_64-unknown-linux-gnu; got $host"
+            exit 1
+          fi
+      - name: Install Tauri Linux prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential curl file libayatana-appindicator3-dev librsvg2-dev \
+            libssl-dev libwebkit2gtk-4.1-dev libxdo-dev patchelf wget
+      - name: Install frontend dependencies
+        working-directory: apps/desktop
+        run: npm ci
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --workspace
+      - name: Verify frontend
+        working-directory: apps/desktop
+        run: npm run typecheck
+      - name: Build AppImage, deb, and rpm
+        working-directory: apps/desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run tauri build -- --bundles appimage,deb,rpm
+      - name: Verify Linux bundles
+        run: |
+          set -euo pipefail
+          bundle=target/release/bundle
+          count() { find "$1" -maxdepth 1 -name "$2" | wc -l; }
+          if [ "$(count "$bundle/appimage" '*.AppImage')" -ne 1 ]; then
+            echo "::error::Expected one AppImage in $bundle/appimage"; exit 1
+          fi
+          if [ "$(count "$bundle/deb" '*.deb')" -ne 1 ]; then
+            echo "::error::Expected one .deb in $bundle/deb"; exit 1
+          fi
+          if [ "$(count "$bundle/rpm" '*.rpm')" -ne 1 ]; then
+            echo "::error::Expected one .rpm in $bundle/rpm"; exit 1
+          fi
+          # The desktop binary must link the WebKitGTK 4.1 ABI the packages declare.
+          if ! ldd target/release/gitcat-desktop | grep -q 'libwebkit2gtk-4\.1'; then
+            echo "::error::gitcat-desktop does not link libwebkit2gtk-4.1"; exit 1
+          fi
+          sha256sum "$bundle"/appimage/*.AppImage "$bundle"/deb/*.deb "$bundle"/rpm/*.rpm
+      - name: Write updater platform entry
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          appimage=$(find target/release/bundle/appimage -maxdepth 1 -name '*.AppImage' | head -n 1)
+          signature="$appimage.sig"
+          if [ ! -f "$signature" ]; then
+            echo "::error::Missing updater signature: $signature. Is TAURI_SIGNING_PRIVATE_KEY set?"
+            exit 1
+          fi
+          jq -n \
+            --arg signature "$(tr -d '\n' < "$signature")" \
+            --arg url "https://github.com/${{ github.repository }}/releases/download/$RELEASE_TAG/$(basename "$appimage")" \
+            '{"linux-x86_64": {signature: $signature, url: $url}}' \
+            > target/release/bundle/appimage/platform.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gitcat-linux-x86_64
+          if-no-files-found: error
+          path: |
+            target/release/bundle/appimage/*.AppImage
+            target/release/bundle/appimage/*.AppImage.sig
+            target/release/bundle/appimage/platform.json
+            target/release/bundle/deb/*.deb
+            target/release/bundle/rpm/*.rpm
+            target/release/gitcat-desktop
+
+  publish:
+    needs: [prepare, build-windows, build-linux]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Build updater manifest
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          CHANNEL: ${{ needs.prepare.outputs.channel }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          set -euo pipefail
+          notes=$RELEASE_NOTES
+          if [ -z "$notes" ]; then
+            if [ "$CHANNEL" = "nightly" ]; then
+              notes="GitCat nightly v$VERSION (${GITHUB_SHA:0:7})"
+            else
+              notes="GitCat v$VERSION"
+            fi
+          fi
+          echo "$notes" > release-notes.txt
+          platforms=$(find artifacts -name platform.json | sort)
+          if [ "$(echo "$platforms" | wc -l)" -ne 2 ]; then
+            echo "::error::Expected two platform entries, found: $platforms"; exit 1
+          fi
+          # shellcheck disable=SC2086
+          jq -s \
+            --arg version "$VERSION" \
+            --arg notes "$notes" \
+            --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{version: $version, notes: $notes, pub_date: $pub_date, platforms: add}' \
+            $platforms > latest.json
+          cat latest.json
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          CHANNEL: ${{ needs.prepare.outputs.channel }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          assets=$(find artifacts -type f \
+            \( -name '*-setup.exe' -o -name '*-setup.exe.sig' \
+               -o -name '*.AppImage' -o -name '*.AppImage.sig' \
+               -o -name '*.deb' -o -name '*.rpm' \) | sort)
+          echo "$assets"
+          if [ "$CHANNEL" = "nightly" ]; then
+            # Rolling pre-release: replace yesterday's build and re-point the tag.
+            # `--prerelease` keeps it out of releases/latest, so the stable
+            # updater endpoint never sees the nightly manifest.
+            gh release delete nightly --cleanup-tag --yes || true
+            {
+              echo "Automated nightly build of the default branch."
+              echo
+              echo "Not covered by the in-app updater; download a package below."
+              echo
+              echo "Commit: $GITHUB_SHA"
+            } > nightly-notes.txt
+            # shellcheck disable=SC2086
+            gh release create nightly \
+              --prerelease \
+              --target "$GITHUB_SHA" \
+              --title "GitCat nightly v$VERSION (${GITHUB_SHA:0:7})" \
+              --notes-file nightly-notes.txt \
+              latest.json $assets
+          else
+            # shellcheck disable=SC2086
+            gh release create "$TAG" \
+              --title "GitCat v$VERSION" \
+              --notes-file release-notes.txt \
+              latest.json $assets
+          fi

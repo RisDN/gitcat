@@ -1,5 +1,5 @@
 edition = "2024"
 max_width = 100
-newline_style = "Windows"
+newline_style = "Auto"
 use_field_init_shorthand = true
 

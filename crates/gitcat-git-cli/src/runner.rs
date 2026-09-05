@@ -260,8 +260,11 @@ impl GitRunner {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true)
-            .env("LC_ALL", "C")
-            .env("LANG", "C")
+            // C.UTF-8 keeps Git's messages untranslated like plain C, but lets
+            // `--regexp-ignore-case` fold non-ASCII letters on Linux, where the
+            // C locale only knows ASCII.
+            .env("LC_ALL", "C.UTF-8")
+            .env("LANG", "C.UTF-8")
             .env("GIT_PAGER", "cat")
             .env("PAGER", "cat")
             .env("TERM", "dumb")

@@ -11,7 +11,8 @@
     "typecheck": "tsc -b --pretty false",
     "preview": "vite preview --host 127.0.0.1 --port 1420",
     "tauri": "tauri",
-    "build:all": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/build-all.ps1 -SkipInstall"
+    "build:all": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/build-all.ps1 -SkipInstall",
+    "build:all:unix": "bash ../../scripts/build-all.sh --skip-install"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",
