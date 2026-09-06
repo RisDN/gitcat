@@ -98,6 +98,7 @@ export function SplitPanes({ contentColumns, hunks, leftRef, mapped, showHeaders
       if (driver && driver !== from) return;
       driver = from;
       to.scrollTop = from.scrollTop;
+      to.scrollLeft = from.scrollLeft;
       if (frame) cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         driver = null;

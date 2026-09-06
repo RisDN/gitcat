@@ -44,8 +44,16 @@ export function RefName({ children }: { children: string }) {
   return <span className={NAME}>{children}</span>;
 }
 
-export function RefCounter({ children }: { children: string }) {
-  return <small className="ml-auto text-[10px] text-muted">{children}</small>;
+// Ahead and behind read as one pair, so they sit in a single right-aligned
+// group instead of being pushed apart by the row's own gap.
+export function RefCounters({ ahead = 0, behind = 0 }: { ahead?: number; behind?: number }) {
+  if (!ahead && !behind) return null;
+  return (
+    <small className="ml-auto flex shrink-0 items-center gap-0.5 text-[10px] text-muted">
+      {ahead ? <span>{`↑${ahead}`}</span> : null}
+      {behind ? <span>{`↓${behind}`}</span> : null}
+    </small>
+  );
 }
 
 export function TagNode() {

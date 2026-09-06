@@ -107,6 +107,7 @@ export function InspectorPane({
                 onSkipOperation={skipActiveOperation}
                 onAbortOperation={abortActiveOperation}
                 operationProgress={snapshot.operation_progress ?? null}
+                operationSource={snapshot.operation_source ?? null}
                 onStage={stagePaths}
                 onUnstage={unstagePaths}
                 onDiscard={(paths) => {

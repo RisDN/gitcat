@@ -98,6 +98,20 @@ pub struct OperationProgress {
     pub subject: Option<String>,
 }
 
+/// Where an interrupted operation is bringing changes from, so the working tree
+/// panel can name both sides instead of only the branch that is checked out.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OperationSource {
+    pub incoming: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onto: Option<String>,
+    /// The object id the incoming side points at, where Git recorded one. A
+    /// merge in progress is the second parent the working copy will commit, so
+    /// the graph can draw the connection that is not in the history yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub incoming_oid: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepositorySnapshot {
     pub generation: String,
@@ -105,6 +119,8 @@ pub struct RepositorySnapshot {
     pub operation_state: RepositoryOperationState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operation_progress: Option<OperationProgress>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation_source: Option<OperationSource>,
     pub status: WorktreeStatus,
     pub local_branches: Vec<BranchInfo>,
     pub remote_branches: Vec<BranchInfo>,

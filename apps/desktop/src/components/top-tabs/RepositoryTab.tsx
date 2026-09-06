@@ -1,10 +1,4 @@
-import {
-  AlertTriangle,
-  CircleDotDashed,
-  FolderGit2,
-  House,
-  X,
-} from "lucide-react";
+import { FolderGit2, House, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 
@@ -151,15 +145,6 @@ export function RepositoryTab({
             <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-[12px] font-[670] leading-4 text-inherit">
               {tab.label}
             </strong>
-            {tab.conflictCount ? (
-              <span
-                aria-label={`${tab.conflictCount} unresolved conflict${tab.conflictCount === 1 ? "" : "s"}`}
-                className="inline-flex shrink-0 items-center gap-0.5 text-danger"
-              >
-                <AlertTriangle size={11} />
-                <b className="font-mono text-[8px] font-bold leading-none">{tab.conflictCount}</b>
-              </span>
-            ) : null}
           </span>
           <span
             className={cx(

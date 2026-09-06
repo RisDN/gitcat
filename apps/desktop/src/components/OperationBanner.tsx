@@ -4,25 +4,23 @@ import { operationContinueLabel, operationTitle } from "../lib/conflicts";
 import type { OperationProgress, RepositoryOperationState } from "../lib/types";
 import { Button } from "./ui";
 
+// Only for an operation that is waiting for a decision: one stopped on
+// conflicts states itself on the working-copy row in the graph instead.
 interface OperationBannerProps {
   busy: boolean;
-  conflictCount: number;
   operation: RepositoryOperationState;
   progress: OperationProgress | null;
   onAbort: () => void;
   onContinue: () => void;
-  onReview: () => void;
   onSkip: () => void;
 }
 
 export function OperationBanner({
   busy,
-  conflictCount,
   operation,
   progress,
   onAbort,
   onContinue,
-  onReview,
   onSkip,
 }: OperationBannerProps) {
   if (operation === "normal") return null;
@@ -58,22 +56,14 @@ export function OperationBanner({
           {progress ? ` — ${progress.current} of ${progress.total}` : ""}
         </strong>
         <span className="min-w-0 flex-1 truncate text-[12px] text-muted">
-          {conflictCount
-            ? `${conflictCount} conflicted file${conflictCount === 1 ? "" : "s"} left to resolve.`
-            : progress?.subject ?? "Stopped and waiting for your decision."}
+          {progress?.subject ?? "Stopped and waiting for your decision."}
         </span>
       </span>
 
       <div className="flex shrink-0 items-center gap-1.5">
-        {conflictCount ? (
-          <Button compact disabled={busy} onClick={onReview} tone="accent">
-            Resolve Conflicts
-          </Button>
-        ) : (
-          <Button compact disabled={busy} onClick={onContinue} tone="accent">
-            {operationContinueLabel(operation)}
-          </Button>
-        )}
+        <Button compact disabled={busy} onClick={onContinue} tone="accent">
+          {operationContinueLabel(operation)}
+        </Button>
         {operation === "merge" ? null : (
           <Button compact disabled={busy} onClick={onSkip}>Skip Commit</Button>
         )}

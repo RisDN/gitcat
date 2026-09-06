@@ -1,4 +1,4 @@
-import type { RepositoryOperationState } from "./types";
+import type { OperationSource, RepositoryOperationState } from "./types";
 
 export interface ConflictSideLabels {
   ours: string;
@@ -31,6 +31,30 @@ export function operationContinueLabel(operation: RepositoryOperationState): str
     case "revert": return "Continue Revert";
     case "bisect":
     case "normal": return "Continue";
+  }
+}
+
+/** Present participle of the operation, for "Merging x into y". */
+export function operationProgressiveLabel(operation: RepositoryOperationState): string {
+  switch (operation) {
+    case "merge": return "Merging";
+    case "rebase": return "Rebasing";
+    case "cherry_pick": return "Cherry-picking";
+    case "revert": return "Reverting";
+    case "bisect": return "Bisecting";
+    case "normal": return "Applying";
+  }
+}
+
+/** Headline shown while an operation is stopped on conflicts. */
+export function conflictHeadline(operation: RepositoryOperationState): string {
+  switch (operation) {
+    case "merge": return "Merge conflicts detected";
+    case "rebase": return "Rebase conflicts detected";
+    case "cherry_pick": return "Cherry-pick conflicts detected";
+    case "revert": return "Revert conflicts detected";
+    case "bisect":
+    case "normal": return "Conflicts detected";
   }
 }
 
@@ -76,4 +100,20 @@ export function conflictSideLabels(
         theirsDescription: "Git index stage 3. No active operation provides a safer branch label.",
       };
   }
+}
+
+/**
+ * The one-line notice the graph shows on the working-copy row while an
+ * operation is stopped on conflicts. It names both sides, because the row it
+ * sits on is the only place the interrupted operation is still visible.
+ */
+export function conflictNoticeMessage(
+  operation: RepositoryOperationState,
+  source: OperationSource | null,
+  branchName: string,
+): string {
+  const target = source?.onto ?? branchName;
+  const preposition = source?.onto ? "onto" : "into";
+  const incoming = source ? `${source.incoming} ` : "";
+  return `A file conflict was found when ${operationProgressiveLabel(operation).toLowerCase()} ${incoming}${preposition} ${target}`;
 }

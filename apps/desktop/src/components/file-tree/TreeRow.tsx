@@ -7,7 +7,7 @@ const FILE_STATUS_TONE: Record<string, string> = {
   added: "text-success",
   untracked: "text-success",
   deleted: "text-danger",
-  unmerged: "text-danger",
+  unmerged: "text-warning",
   modified: "text-warning",
   type_changed: "text-warning",
   renamed: "text-warning",
@@ -21,8 +21,9 @@ export function fileStatusClass(status: string): string {
   );
 }
 
-// A conflicted row keeps its danger tint over the selection colour: an unmerged
-// path needs attention before anything else in the list.
+// A conflicted row keeps its warning tint over the selection colour: an unmerged
+// path needs attention before anything else in the list, and a conflict is a
+// decision to make rather than a loss to warn about.
 export function TreeRow({ children, selected, unmerged, ...props }: ComponentPropsWithRef<"div"> & {
   selected?: boolean;
   unmerged?: boolean;
@@ -31,8 +32,7 @@ export function TreeRow({ children, selected, unmerged, ...props }: ComponentPro
     <div
       className={cx(
         "group/row relative flex min-w-0 items-center rounded-[3px]",
-        selected && "shadow-[inset_2px_0_0_var(--gc-accent)]",
-        unmerged ? "bg-danger/6" : selected ? "bg-row-selected" : "hover:bg-row-hover",
+        unmerged ? "bg-warning/8" : selected ? "bg-row-selected" : "hover:bg-row-hover",
       )}
       {...props}
     >

@@ -1588,6 +1588,7 @@ mod tests {
             },
             operation_state: RepositoryOperationState::Normal,
             operation_progress: None,
+            operation_source: None,
             status: WorktreeStatus::default(),
             local_branches: Vec::new(),
             remote_branches: Vec::new(),

@@ -15,7 +15,7 @@ import {
   CheckBadge,
   PullRequestBadge,
   RefButton,
-  RefCounter,
+  RefCounters,
   RefName,
   RefRow,
   RefStatic,
@@ -186,8 +186,7 @@ export function RefSidebar({
               size={13}
             />
             <RefName>{node.name}</RefName>
-            {branch.ahead ? <RefCounter>{`↑${branch.ahead}`}</RefCounter> : null}
-            {branch.behind ? <RefCounter>{`↓${branch.behind}`}</RefCounter> : null}
+            <RefCounters ahead={branch.ahead} behind={branch.behind} />
           </RefButton>
           {decorations(branch.name)}
         </RefRow>

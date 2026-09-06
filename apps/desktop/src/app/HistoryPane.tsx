@@ -1,4 +1,3 @@
-import { AlertTriangle } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import {
@@ -9,6 +8,7 @@ import {
     type CommitContextMenuRequest,
 } from "../components/CommitGraph";
 import { GraphColumnResizer } from "../components/GraphColumnResizer";
+import { GraphConflictNotice } from "../components/GraphConflictNotice";
 import { MergeEditor } from "../components/conflict";
 import { DiffViewer, type DiffViewMode } from "../components/diff";
 import { ChangeCountSummary, type FileChangeCounts } from "../components/file-tree";
@@ -63,6 +63,7 @@ export interface HistoryPaneProps {
     diff: FileDiff | null;
     diffLoading: boolean;
     diffMode: DiffViewMode;
+    focusWorktree: () => void;
     graphLaneExtent: number;
     graphMatches: Set<string>;
     history: HistoryPage | null;
@@ -121,6 +122,7 @@ export function HistoryPane({
     diff,
     diffLoading,
     diffMode,
+    focusWorktree,
     graphLaneExtent,
     graphMatches,
     history,
@@ -226,9 +228,6 @@ export function HistoryPane({
         setDraftWidths(null);
         if (next) setColumnWidths(next);
     };
-    const conflictBadge = activeConflictCount ? (
-        <span className="gc-wip-row__conflicts"><AlertTriangle size={12} /> {activeConflictCount}</span>
-    ) : null;
 
     return (
         <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background" aria-label="Repository history" style={{ gridColumn: 3 }}>
@@ -345,31 +344,46 @@ export function HistoryPane({
                         >
                             {columns.refs ? <span className="gc-wip-row__refs" /> : null}
                             {columns.graph ? <span className="gc-wip-row__rail"><i /></span> : null}
-                            {columns.message ? (
-                                <span className="gc-wip-row__message">
-                                    <span
-                                        className="gc-wip-row__summary"
-                                        data-value={wipDraftMessage || (wipTitleHint ?? "// WIP")}
-                                    >
-                                        <input
-                                            aria-label="Commit summary"
-                                            onChange={(event) => setWipDraftMessage(event.target.value)}
-                                            onClick={(event) => event.stopPropagation()}
-                                            onFocus={() => { if (!wipSelected) selectWip(); }}
-                                            onKeyDown={(event) => event.stopPropagation()}
-                                            placeholder={wipTitleHint ?? "// WIP"}
-                                            size={1}
-                                            type="text"
-                                            value={wipDraftMessage}
-                                        />
-                                    </span>
-                                    <ChangeCountSummary counts={wipStats} size="md" />
-                                    {columns.author ? null : conflictBadge}
-                                </span>
-                            ) : null}
-                            {columns.author ? <span className="min-w-0">{conflictBadge}</span> : null}
-                            {columns.date ? <span /> : null}
-                            {columns.sha ? <span /> : null}
+                            {/* A stopped operation takes the row over: there is
+                                nothing to summarise until the conflicts are
+                                resolved, and this is the row they belong to. */}
+                            {activeConflictCount && snapshot ? (
+                                <GraphConflictNotice
+                                    branchName={currentBranch(snapshot)}
+                                    columns={columns}
+                                    count={activeConflictCount}
+                                    onSelect={focusWorktree}
+                                    operation={snapshot.operation_state}
+                                    source={snapshot.operation_source ?? null}
+                                />
+                            ) : (
+                                <>
+                                    {columns.message ? (
+                                        <span className="gc-wip-row__message">
+                                            <span
+                                                className="gc-wip-row__summary"
+                                                data-value={wipDraftMessage || (wipTitleHint ?? "// WIP")}
+                                            >
+                                                <input
+                                                    aria-label="Commit summary"
+                                                    onChange={(event) => setWipDraftMessage(event.target.value)}
+                                                    onClick={(event) => event.stopPropagation()}
+                                                    onFocus={() => { if (!wipSelected) selectWip(); }}
+                                                    onKeyDown={(event) => event.stopPropagation()}
+                                                    placeholder={wipTitleHint ?? "// WIP"}
+                                                    size={1}
+                                                    type="text"
+                                                    value={wipDraftMessage}
+                                                />
+                                            </span>
+                                            <ChangeCountSummary counts={wipStats} size="md" />
+                                        </span>
+                                    ) : null}
+                                    {columns.author ? <span /> : null}
+                                    {columns.date ? <span /> : null}
+                                    {columns.sha ? <span /> : null}
+                                </>
+                            )}
                         </div>
                     ) : null}
                     {history ? (
@@ -390,7 +404,16 @@ export function HistoryPane({
                             searchMatchOids={graphMatches}
                             selectedOid={selectedOid}
                             wip={snapshot && !snapshot.status.clean
-                                ? { lane: wipLane, headOid: currentHeadOid }
+                                ? {
+                                    lane: wipLane,
+                                    headOid: currentHeadOid,
+                                    // Only a merge gives the working copy a
+                                    // second parent; a rebase or a cherry-pick
+                                    // replays onto the one it already has.
+                                    incomingOid: snapshot.operation_state === "merge"
+                                        ? snapshot.operation_source?.incoming_oid ?? null
+                                        : null,
+                                }
                                 : undefined}
                         />
                     ) : (

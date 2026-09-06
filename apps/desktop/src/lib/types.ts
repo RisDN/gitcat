@@ -263,11 +263,19 @@ export interface OperationProgress {
   subject?: string;
 }
 
+/** Where an interrupted operation is bringing changes from. */
+export interface OperationSource {
+  incoming: string;
+  onto?: string;
+  incoming_oid?: string;
+}
+
 export interface RepositorySnapshot {
   generation: string;
   head: HeadState;
   operation_state: RepositoryOperationState;
   operation_progress?: OperationProgress;
+  operation_source?: OperationSource;
   status: WorktreeStatus;
   local_branches: BranchInfo[];
   remote_branches: BranchInfo[];

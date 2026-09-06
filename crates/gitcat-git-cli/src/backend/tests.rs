@@ -1905,11 +1905,7 @@ async fn initial_commit_keeps_an_existing_readme() {
         directory.path(),
         &["config", "user.email", "gitcat@example.test"],
     );
-    fs::write(
-        directory.path().join("README.md"),
-        "# Written by hand\n",
-    )
-    .expect("write README");
+    fs::write(directory.path().join("README.md"), "# Written by hand\n").expect("write README");
 
     backend
         .create_initial_commit(directory.path(), "Initial commit")
@@ -3031,6 +3027,15 @@ async fn rebase_reports_stopped_commit_progress_and_can_skip_it() {
     assert_eq!(progress.current, 1);
     assert_eq!(progress.total, 2);
     assert_eq!(progress.subject.as_deref(), Some("feat: update plugins"));
+    let source = snapshot
+        .operation_source
+        .expect("a stopped rebase names the branch being replayed");
+    assert_eq!(source.incoming, "topic");
+    assert_eq!(
+        source.onto.as_deref(),
+        Some("main"),
+        "the rebase target resolves to the branch that points at it"
+    );
 
     let skipped = backend
         .skip_operation(directory.path(), ContinueOperation::Rebase)
@@ -3049,6 +3054,26 @@ async fn rebase_reports_stopped_commit_progress_and_can_skip_it() {
             .expect("read rebased file")
             .replace("\r\n", "\n"),
         "main version\n"
+    );
+}
+
+#[tokio::test]
+async fn stopped_merge_reports_the_branch_it_is_merging() {
+    let (directory, backend) = conflicted_repository().await;
+    let snapshot = backend
+        .snapshot(directory.path())
+        .await
+        .expect("read snapshot during a conflicted merge");
+    assert_eq!(snapshot.operation_state, RepositoryOperationState::Merge);
+    let source = snapshot
+        .operation_source
+        .expect("a stopped merge names the incoming side");
+    assert_eq!(source.incoming, "conflicting");
+    assert_eq!(source.onto, None);
+    assert_eq!(
+        source.incoming_oid.as_deref(),
+        Some(git_stdout(directory.path(), &["rev-parse", "conflicting"]).trim()),
+        "the incoming side carries the oid MERGE_HEAD points at: the second          parent the working copy is about to commit"
     );
 }
 

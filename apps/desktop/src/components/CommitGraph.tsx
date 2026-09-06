@@ -66,6 +66,10 @@ export interface CommitContextMenuRequest {
 export interface WipConnector {
   lane: number;
   headOid: string | null;
+  // The second parent of the merge the working copy is about to commit. Git
+  // knows it before the commit exists, and the graph draws it dashed, the same
+  // way the connection to HEAD is drawn.
+  incomingOid?: string | null;
 }
 
 export interface CommitGraphProps {
@@ -946,7 +950,35 @@ export function CommitGraph({
       color: FIRST_COLOR_SLOT,
     };
   }, [commits, maxX, wip?.headOid, wip?.lane]);
-  const maskTop = wipPath ? WIP_ROW_Y + WIP_NODE_EDGE : 0;
+  // The incoming side leaves the WIP node sideways and drops into its own lane,
+  // exactly like a committed merge, and keeps that lane's colour: the working
+  // copy is the merge, and this is the parent it has not committed yet.
+  const wipMergePath = useMemo(() => {
+    if (!wip?.incomingOid) return null;
+
+    const incomingIndex = commits.findIndex((commit) => commit.oid === wip.incomingOid);
+    if (incomingIndex < 0) return null;
+
+    const incomingLane = commits[incomingIndex].graph.lane;
+    const startX = laneX(wip.lane, maxX);
+    const endX = laneX(incomingLane, maxX);
+    if (startX === endX) return null;
+
+    return {
+      data: buildEdgePath(
+        startX + (endX < startX ? -WIP_NODE_EDGE : WIP_NODE_EDGE),
+        WIP_ROW_Y,
+        endX,
+        rowY(incomingIndex),
+        true,
+        true,
+      ),
+      color: geometry.colors.get(wip.incomingOid) ?? FIRST_COLOR_SLOT,
+    };
+  }, [commits, geometry, maxX, wip?.incomingOid, wip?.lane]);
+  // The mask reaches the WIP node's own row when the incoming edge starts
+  // there; everything above the mask is painted away.
+  const maskTop = wipMergePath ? WIP_ROW_Y : wipPath ? WIP_ROW_Y + WIP_NODE_EDGE : 0;
   const timeMarkers = useMemo(() => buildTimeMarkers(commits, Math.floor(Date.now() / 1_000)), [commits]);
   const hasMultipleBranches = useMemo(() => {
     const branchNames = new Set<string>();
@@ -1144,6 +1176,14 @@ export function CommitGraph({
               <path
                 className={`${colorClass("gc-commit-graph__edge", wipPath.color)} gc-commit-graph__edge--wip`}
                 d={wipPath.data}
+                fill="none"
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : null}
+            {wipMergePath ? (
+              <path
+                className={`${colorClass("gc-commit-graph__edge", wipMergePath.color)} gc-commit-graph__edge--wip`}
+                d={wipMergePath.data}
                 fill="none"
                 vectorEffect="non-scaling-stroke"
               />

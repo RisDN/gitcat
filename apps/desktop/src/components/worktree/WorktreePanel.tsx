@@ -3,7 +3,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 
 import { conflictSideLabels } from "../../lib/conflicts";
-import type { ConflictResolution, OperationProgress, RepositoryOperationState, StatusEntry, WorktreeStatus } from "../../lib/types";
+import type { ConflictResolution, OperationProgress, OperationSource, RepositoryOperationState, StatusEntry, WorktreeStatus } from "../../lib/types";
 import { ContextMenu, type ContextAction } from "../ContextMenu";
 import { FileTreeControls } from "../file-tree";
 import type { FileTreeItem, FileViewMode, FolderCollapse, FolderCollapseTarget } from "../file-tree";
@@ -11,6 +11,7 @@ import { SidePanel } from "../ui";
 import { CommitForm } from "./CommitForm";
 import type { CommitDraft } from "./CommitForm";
 import { ConflictBulkMenu } from "./ConflictBulkMenu";
+import { ConflictHeader } from "./ConflictHeader";
 import { OperationForm } from "./OperationForm";
 import { StatusSection } from "./StatusSection";
 import { WorktreeHeader } from "./WorktreeHeader";
@@ -55,6 +56,7 @@ interface WorktreePanelProps {
   selectedFile?: { path: string; staged: boolean } | null;
   operation: RepositoryOperationState;
   operationProgress: OperationProgress | null;
+  operationSource: OperationSource | null;
   branchName: string;
   draft: CommitDraft;
   onDraftChange: (draft: CommitDraft) => void;
@@ -108,6 +110,7 @@ export function WorktreePanel({
   selectedFile,
   operation,
   operationProgress,
+  operationSource,
   branchName,
   draft,
   onDraftChange,
@@ -257,14 +260,23 @@ export function WorktreePanel({
 
   return (
     <SidePanel aria-label="Working tree">
-      <WorktreeHeader
-        branchName={branchName}
-        busy={busy}
-        changeCount={status.entries.length}
-        clean={status.clean}
-        onDiscardAll={() => onDiscard(status.entries.map((entry) => entry.path))}
-        stashCount={status.stash_count}
-      />
+      {conflicts.length ? (
+        <ConflictHeader
+          branchName={branchName}
+          operation={operation}
+          source={operationSource}
+          stashCount={status.stash_count}
+        />
+      ) : (
+        <WorktreeHeader
+          branchName={branchName}
+          busy={busy}
+          changeCount={status.entries.length}
+          clean={status.clean}
+          onDiscardAll={() => onDiscard(status.entries.map((entry) => entry.path))}
+          stashCount={status.stash_count}
+        />
+      )}
 
       <FileTreeControls mode={fileViewMode} onModeChange={onFileViewModeChange} />
 

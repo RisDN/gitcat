@@ -44,7 +44,7 @@ export function ConflictQuickActions({
         aria-expanded={Boolean(menuPosition)}
         aria-haspopup="menu"
         aria-label={`Resolve conflict in ${entry.path}`}
-        className="size-6.25! text-danger!"
+        className="size-6.25! text-warning!"
         disabled={busy}
         onClick={(event) => {
           const bounds = event.currentTarget.getBoundingClientRect();

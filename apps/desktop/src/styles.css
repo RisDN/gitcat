@@ -230,6 +230,21 @@
   align-items: center;
 }
 
+/*
+ * The conflict notice is a cell of the working-copy row: it starts at the
+ * commit message column and runs to the end of the row, so the ref and graph
+ * columns keep showing where the working copy sits.
+ */
+.gc-graph-notice {
+  @apply flex h-full min-w-0 cursor-pointer items-center gap-[6px] self-stretch rounded-[3px] border-0 px-[8px] text-left text-[11px] leading-[1.2];
+  background: color-mix(in srgb, var(--gc-warning) 16%, var(--gc-surface));
+  color: color-mix(in srgb, var(--gc-warning) 76%, var(--gc-text));
+}
+
+.gc-graph-notice:hover {
+  background: color-mix(in srgb, var(--gc-warning) 24%, var(--gc-surface));
+}
+
 .gc-graph-columns {
   @apply h-6 text-[8px] font-[750] uppercase tracking-[0.08em] text-muted;
 }

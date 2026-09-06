@@ -1280,13 +1280,30 @@ impl GitBackend for GitCliBackend {
             .stdout_lossy()
             .trim()
             == "true";
-        let (operation_state, operation_progress) = self.operation_status(path).await?;
+        let (operation_state, operation_progress, raw_operation_source) =
+            self.operation_status(path).await?;
+        let name_side = |value: String| {
+            let branch = local_branches
+                .iter()
+                .chain(remote_branches.iter())
+                .find(|branch| branch.oid == value);
+            match branch {
+                Some(branch) => branch.name.clone(),
+                None => short_operation_oid(&value),
+            }
+        };
+        let operation_source = raw_operation_source.map(|source| OperationSource {
+            incoming: name_side(source.incoming),
+            onto: source.onto.map(name_side),
+            incoming_oid: source.incoming_oid,
+        });
         let remotes = self.remotes(path).await?;
         Ok(RepositorySnapshot {
             generation,
             head: parsed_status.head,
             operation_state,
             operation_progress,
+            operation_source,
             status: parsed_status.status,
             local_branches,
             remote_branches,
@@ -2912,6 +2929,17 @@ fn blocking_line_stats_task_error(error: tokio::task::JoinError) -> ApiError {
         "Untracked line count worker task failed unexpectedly",
     )
     .with_details(error.to_string())
+}
+
+/// An operation side that no ref points at is shown as an abbreviated object id;
+/// the panel prints it inline, where a full id would push the branch name out.
+fn short_operation_oid(value: &str) -> String {
+    let is_oid = value.len() >= 40 && value.chars().all(|character| character.is_ascii_hexdigit());
+    if is_oid {
+        value.chars().take(8).collect()
+    } else {
+        value.to_owned()
+    }
 }
 
 pub(crate) fn canonical_or_absolute(base: &Path, value: &str) -> ApiResult<PathBuf> {

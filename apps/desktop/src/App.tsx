@@ -809,16 +809,19 @@ function App() {
                         />
                     )}
 
-                    <OperationBanner
-                        busy={busy}
-                        conflictCount={activeConflictCount}
-                        onAbort={abortActiveOperation}
-                        onContinue={continueActiveOperation}
-                        onReview={focusWorktree}
-                        onSkip={skipActiveOperation}
-                        operation={snapshot?.operation_state ?? "normal"}
-                        progress={snapshot?.operation_progress ?? null}
-                    />
+                    {/* Conflicts are stated on the working-copy row instead,
+                        so the banner is left to the operations that are only
+                        waiting for a decision. */}
+                    {activeConflictCount ? null : (
+                        <OperationBanner
+                            busy={busy}
+                            onAbort={abortActiveOperation}
+                            onContinue={continueActiveOperation}
+                            onSkip={skipActiveOperation}
+                            operation={snapshot?.operation_state ?? "normal"}
+                            progress={snapshot?.operation_progress ?? null}
+                        />
+                    )}
 
                     <main
                         className="grid min-h-0 flex-auto overflow-hidden bg-background"
@@ -874,6 +877,7 @@ function App() {
                             diff={diff}
                             diffLoading={diffLoading}
                             diffMode={diffMode}
+                            focusWorktree={focusWorktree}
                             graphLaneExtent={graphLaneExtent}
                             graphMatches={graphMatches}
                             history={history}
@@ -959,14 +963,7 @@ function App() {
                 </>
             )}
 
-            <AppStatusBar
-                activeConflictCount={activeConflictCount}
-                activeRepository={activeRepository}
-                appMetadata={appMetadata}
-                appUpdate={appUpdate}
-                snapshot={snapshot}
-                stashes={stashes}
-            />
+            <AppStatusBar appMetadata={appMetadata} appUpdate={appUpdate} />
 
             <AppDialogs
                 activeTab={activeTab}
