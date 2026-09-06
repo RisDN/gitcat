@@ -290,8 +290,12 @@ export function HistoryPane({
                         </div>
                         <GraphColumnMenu columns={columns} onChange={setColumns} onWidthsChange={setColumnWidths} />
                     </div>
+                    {/* No reserved scrollbar gutter: it left a permanent ten
+                        pixel strip the selected row could not reach, so the
+                        highlight stopped short of the pane edge even with
+                        nothing to scroll. */}
                     <div
-                        className="min-h-0 min-w-0 flex-1 overflow-auto scrollbar-gutter-stable"
+                        className="min-h-0 min-w-0 flex-1 overflow-auto"
                         onScroll={(event) => {
                             if (graphHeaderRef.current) graphHeaderRef.current.scrollLeft = event.currentTarget.scrollLeft;
                         }}

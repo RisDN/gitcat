@@ -85,6 +85,9 @@
   --color-row-hover: color-mix(in srgb, var(--gc-accent) 8%, transparent);
   --color-row-selected: color-mix(in srgb, var(--gc-accent) 16%, var(--gc-panel));
   --color-branch-hover: color-mix(in srgb, var(--gc-panel) 74%, #2f4a74);
+  /* The selected row keeps one colour whatever branch it sits on: a
+     selection is a state of the list, not a property of the branch. */
+  --color-branch-selected: color-mix(in srgb, var(--gc-panel) 60%, #3a4bb8);
 
   --shadow-panel: 0 18px 50px rgb(0 0 0 / 38%);
 
@@ -402,11 +405,7 @@
 .gc-commit-row--selected:hover::before,
 .gc-wip-row--selected::before,
 .gc-wip-row--selected:hover::before {
-  background: color-mix(
-    in srgb,
-    var(--gc-row-branch-color, var(--gc-accent)) 8%,
-    var(--color-branch-hover)
-  );
+  background: var(--color-branch-selected);
 }
 
 .gc-commit-row > *,
