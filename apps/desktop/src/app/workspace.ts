@@ -9,6 +9,7 @@ import {
 } from "../lib/columns";
 import { isForgeKind } from "../lib/forge";
 import { DEFAULT_KEYBINDS, duplicateKeybinds, keybindValidationError } from "../lib/keybinds";
+import { samePath } from "../lib/paths";
 import type {
     AppSettings,
     AppTheme,
@@ -34,6 +35,22 @@ export function workspaceTabs(state: PersistedState["workspace"]): RepositoryTab
         ...(state.ungrouped_tabs ?? []),
         ...state.groups.flatMap((group) => group.tabs),
     ];
+}
+
+/**
+ * The open tab holding a repository, or undefined when nothing holds it.
+ *
+ * Paths are compared by what they name rather than by how they are spelled,
+ * because a folder opened from outside GitCat -- the Windows Explorer context
+ * menu -- arrives spelled the way the user right-clicked it, which need not
+ * match the root Git reported when the tab was opened.
+ */
+export function findRepositoryTab(
+    state: PersistedState["workspace"],
+    path: string,
+): RepositoryTab | undefined {
+    return workspaceTabs(state)
+        .find((tab) => tab.kind !== "start" && samePath(tab.repository_path, path));
 }
 
 export function normalizePersistedKeybinds(

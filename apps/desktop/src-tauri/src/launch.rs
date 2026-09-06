@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use serde::Serialize;
+use tauri::{Runtime, WebviewWindow};
 
 /// Event name the frontend subscribes to. Payload is [`OpenRequestPayload`].
 pub const OPEN_REQUEST_EVENT: &str = "repository:open-request";
@@ -33,6 +34,27 @@ impl PendingOpen {
     pub fn take(&self) -> Option<String> {
         self.0.lock().ok().and_then(|mut slot| slot.take())
     }
+}
+
+/// Brings the running window to the front for a launch that reached it from
+/// outside.
+///
+/// A minimized window has to be restored before it can take focus, and on
+/// Windows a process that is not already in the foreground -- which GitCat is
+/// not, the second launch is -- can have its `SetForegroundWindow` ignored and
+/// only get a flashing taskbar button. Raising the window above the others for
+/// the moment it takes to focus it is what makes the request land; the flag is
+/// put back immediately, so the window does not stay on top afterwards.
+pub fn focus_window<R: Runtime>(window: &WebviewWindow<R>) {
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+    if window.is_focused().unwrap_or(false) {
+        return;
+    }
+    let _ = window.set_always_on_top(true);
+    let _ = window.set_focus();
+    let _ = window.set_always_on_top(false);
 }
 
 /// Picks the folder to open out of a command line.

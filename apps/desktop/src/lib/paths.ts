@@ -21,3 +21,31 @@ export function repositoryNameFromUrl(url: string): string {
   const segment = trimmed.split(/[\\/:]/).filter(Boolean).at(-1) ?? "";
   return /^[\w.-]+$/.test(segment) ? segment : "";
 }
+
+function looksLikeWindowsPath(path: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(path) || path.startsWith("\\\\");
+}
+
+/**
+ * The form of a path used to ask whether two paths name the same folder.
+ *
+ * The same folder reaches GitCat spelled several ways: Explorer's context menu
+ * hands over exactly what was right-clicked, Git answers with its own root, and
+ * a stored workspace carries whatever was written when the tab was opened. So
+ * separators are unified and a trailing one dropped. A Windows path is folded
+ * to lower case because its filesystem is case-insensitive; elsewhere case is
+ * part of the name and is kept.
+ */
+export function comparablePath(path: string): string {
+  const trimmed = path.trim();
+  // A trailing separator is spelling rather than part of the name, except at a
+  // root -- `/` or `C:\` -- where it is all the name there is.
+  const unified = trimmed.replace(/[\\/]+/g, "/").replace(/(?<=[^:/])\/+$/, "");
+  return looksLikeWindowsPath(trimmed) ? unified.toLowerCase() : unified;
+}
+
+/** Whether two paths name the same folder. An empty path names nothing. */
+export function samePath(left: string, right: string): boolean {
+  if (!left.trim() || !right.trim()) return false;
+  return comparablePath(left) === comparablePath(right);
+}

@@ -16,7 +16,7 @@ import type {
 } from "../lib/types";
 import { RECENT_LIMIT } from "./defaults";
 import type { RuntimeRepository } from "./state";
-import { makeId, workspaceTabs } from "./workspace";
+import { findRepositoryTab, makeId, workspaceTabs } from "./workspace";
 
 export interface RepositoryTabsParams {
     addToast: (toast: Omit<ToastMessage, "id">) => void;
@@ -116,38 +116,52 @@ export function useRepositoryTabs({
         }));
     }, []);
 
+    // Brings the tab that already holds a repository forward, dropping the tab
+    // that asked for the open -- the start tab the request came from -- so the
+    // repository is not left listed twice.
+    const revealTab = useCallback((tabId: string, targetTabId: string | null) => {
+        setPersisted((current) => {
+            const drop = (tabs: RepositoryTab[]) => tabs.filter((tab) => tab.id !== targetTabId);
+            return {
+                ...current,
+                workspace: {
+                    ...current.workspace,
+                    ungrouped_tabs: drop(current.workspace.ungrouped_tabs),
+                    groups: current.workspace.groups.map((group) => ({
+                        ...group,
+                        collapsed: group.tabs.some((tab) => tab.id === tabId) ? false : group.collapsed,
+                        tabs: drop(group.tabs),
+                    })),
+                    active_tab_id: tabId,
+                },
+            };
+        });
+    }, []);
+
     const openRepositoryPath = useCallback(async (path: string, targetTabId: string | null = null) => {
         if (busy) return;
-        const existing = workspaceTabs(workspace)
-            .find((tab) => tab.kind !== "start" && tab.repository_path === path);
+        const existing = findRepositoryTab(workspace, path);
         if (existing) {
-            setPersisted((current) => {
-                const drop = (tabs: RepositoryTab[]) => tabs.filter((tab) => tab.id !== targetTabId);
-                return {
-                    ...current,
-                    workspace: {
-                        ...current.workspace,
-                        ungrouped_tabs: drop(current.workspace.ungrouped_tabs),
-                        groups: current.workspace.groups.map((group) => ({
-                            ...group,
-                            collapsed: group.tabs.some((tab) => tab.id === existing.id) ? false : group.collapsed,
-                            tabs: drop(group.tabs),
-                        })),
-                        active_tab_id: existing.id,
-                    },
-                };
-            });
+            revealTab(existing.id, targetTabId);
             return;
         }
         setBusy(true);
         try {
-            adoptRepository(await gitcatApi.openRepository(path), targetTabId);
+            const opened = await gitcatApi.openRepository(path);
+            // A folder handed over from outside GitCat can be anywhere inside
+            // the repository, so the root only becomes known here. Opening a
+            // repository twice is free -- the backend answers with the handle
+            // the open tab already holds -- but a second tab for it is not what
+            // was asked for, so the open one is brought forward instead.
+            const already = findRepositoryTab(workspaceRef.current, opened.info.root);
+            if (already) revealTab(already.id, targetTabId);
+            else adoptRepository(opened, targetTabId);
         } catch (error) {
             showError("Repository could not be opened", error);
         } finally {
             setBusy(false);
         }
-    }, [adoptRepository, busy, workspace, showError]);
+    }, [adoptRepository, busy, revealTab, workspace, showError]);
 
     const chooseRepository = useCallback(async (targetTabId: string | null = null) => {
         if (busy) return;
@@ -279,7 +293,7 @@ export function useRepositoryTabs({
         while (closedTabsRef.current.length) {
             const candidate = closedTabsRef.current[closedTabsRef.current.length - 1];
             closedTabsRef.current = closedTabsRef.current.slice(0, -1);
-            if (!workspaceTabs(workspaceRef.current).some((tab) => tab.repository_path === candidate.repository_path)) {
+            if (!findRepositoryTab(workspaceRef.current, candidate.repository_path)) {
                 restore = candidate;
                 break;
             }

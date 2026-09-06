@@ -22,7 +22,9 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager, State, WindowEvent};
 use tokio_util::sync::CancellationToken;
 
-use crate::launch::{OPEN_REQUEST_EVENT, OpenRequestPayload, PendingOpen, repository_argument};
+use crate::launch::{
+    OPEN_REQUEST_EVENT, OpenRequestPayload, PendingOpen, focus_window, repository_argument,
+};
 use crate::watcher::RepositoryWatchState;
 use crate::window_state::WindowModeStore;
 
@@ -816,8 +818,7 @@ pub fn run() {
         // the workspace and the last one to exit would win.
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.set_focus();
+                focus_window(&window);
             }
             if let Some(path) = repository_argument(argv) {
                 let _ = tauri::Emitter::emit(app, OPEN_REQUEST_EVENT, OpenRequestPayload { path });
