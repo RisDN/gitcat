@@ -13,6 +13,7 @@ import { MergeEditor } from "../components/conflict";
 import { DiffViewer, type DiffViewMode } from "../components/diff";
 import { ChangeCountSummary, type FileChangeCounts } from "../components/file-tree";
 import { GraphColumnMenu } from "../components/GraphColumnMenu";
+import { InitialCommitPrompt } from "../components/InitialCommitPrompt";
 import { SearchBar } from "../components/SearchBar";
 import { Button, Spinner } from "../components/ui";
 import { gitcatApi } from "../lib/api";
@@ -57,6 +58,7 @@ export interface HistoryPaneProps {
     columns: GraphColumnSettings;
     columnWidths: GraphColumnWidths;
     copySha: (oid: string) => Promise<void>;
+    createInitialCommit: () => void;
     currentHeadOid: string | null;
     diff: FileDiff | null;
     diffLoading: boolean;
@@ -70,6 +72,7 @@ export interface HistoryPaneProps {
     overviewLoading: boolean;
     remoteIconUrls: Map<string, string>;
     avatarImages: ReadonlyMap<string, string>;
+    repositoryName: string;
     runMutation: RunMutation;
     saveConflictResult: (text: string, lineEnding: ConflictLineEndingPolicy) => void;
     searchBusy: boolean;
@@ -113,6 +116,7 @@ export function HistoryPane({
     columns,
     columnWidths,
     copySha,
+    createInitialCommit,
     currentHeadOid,
     diff,
     diffLoading,
@@ -126,6 +130,7 @@ export function HistoryPane({
     overviewLoading,
     remoteIconUrls,
     avatarImages,
+    repositoryName,
     runMutation,
     saveConflictResult,
     searchBusy,
@@ -209,6 +214,12 @@ export function HistoryPane({
         }
     }, [checkoutRemoteBranch, runMutation, snapshot]);
 
+    // A branch only starts existing with its first commit, so an unborn HEAD
+    // over an empty history is the one state where there is no graph to draw
+    // and an offer to make that commit is more use than an empty panel.
+    const emptyRepository = snapshot?.head.kind === "unborn" && history?.commits.length === 0;
+    const stagedCount = snapshot?.status.entries.filter((entry) => entry.index).length ?? 0;
+
     const commitResize = () => {
         const next = draftWidthsRef.current;
         draftWidthsRef.current = null;
@@ -290,6 +301,14 @@ export function HistoryPane({
                         </div>
                         <GraphColumnMenu columns={columns} onChange={setColumns} onWidthsChange={setColumnWidths} />
                     </div>
+                    {emptyRepository ? (
+                        <InitialCommitPrompt
+                            busy={busy || overviewLoading || historyLoading}
+                            onInitialize={createInitialCommit}
+                            repositoryName={repositoryName}
+                            stagedCount={stagedCount}
+                        />
+                    ) : null}
                     {/* No reserved scrollbar gutter: it left a permanent ten
                         pixel strip the selected row could not reach, so the
                         highlight stopped short of the pane edge even with

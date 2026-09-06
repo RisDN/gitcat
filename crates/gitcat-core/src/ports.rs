@@ -80,6 +80,16 @@ pub trait GitBackend: Send + Sync {
         path: &Path,
         options: &CommitOptions,
     ) -> ApiResult<MutationResult>;
+    /// Makes the first commit of a repository that has none.
+    ///
+    /// A repository with an unborn HEAD has nothing to show and nothing to
+    /// build on, so this is the one commit GitCat offers to compose itself:
+    /// where the index is empty it seeds a `README.md` named after the
+    /// repository folder, exactly what the hosting services and GitKraken put
+    /// there first. Anything already staged is committed as it stands, and
+    /// nothing else in the working tree is touched -- the rest stays untracked
+    /// for the user to stage in their own order.
+    async fn create_initial_commit(&self, path: &Path, message: &str) -> ApiResult<MutationResult>;
     async fn reword_commit(
         &self,
         path: &Path,

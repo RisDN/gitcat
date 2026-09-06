@@ -377,6 +377,15 @@ async fn create_commit(
 }
 
 #[tauri::command]
+async fn commit_initial(
+    core: State<'_, Arc<CoreApi>>,
+    repository_id: RepositoryId,
+    message: String,
+) -> ApiResult<MutationResult> {
+    core.create_initial_commit(&repository_id, &message).await
+}
+
+#[tauri::command]
 async fn commit_reword(
     core: State<'_, Arc<CoreApi>>,
     repository_id: RepositoryId,
@@ -879,6 +888,7 @@ pub fn run() {
             conflicts_resolve,
             conflicts_auto_resolve,
             create_commit,
+            commit_initial,
             commit_reword,
             branch_create,
             branch_checkout,

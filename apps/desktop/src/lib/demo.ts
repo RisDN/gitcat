@@ -874,6 +874,15 @@ class DemoGitCatApi implements GitCatApi {
     return this.mutation(before, oid);
   }
 
+  // The demo repository always has history, so the empty-repository offer
+  // never appears here; it commits like any other so the API stays whole.
+  async createInitialCommit(
+    repositoryId: RepositoryId,
+    message: string,
+  ): Promise<MutationResult> {
+    return this.createCommit(repositoryId, { message, amend: false, signoff: false });
+  }
+
   async createBranch(
     repositoryId: RepositoryId,
     name: string,

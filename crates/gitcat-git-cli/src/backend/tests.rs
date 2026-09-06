@@ -1775,6 +1775,165 @@ async fn unstage_in_unborn_repository_preserves_modified_worktree_file() {
     );
 }
 
+// The offer to make the first commit is drawn where the graph would be, so it
+// only appears if an empty repository pages as an empty history rather than as
+// an error.
+#[tokio::test]
+async fn history_of_an_unborn_repository_is_an_empty_page() {
+    let directory = tempdir().expect("temp repository");
+    let backend = GitCliBackend::default();
+    backend
+        .init_repository(directory.path(), "main")
+        .await
+        .expect("initialize repository");
+
+    let page = backend
+        .history(
+            directory.path(),
+            &HistoryQuery {
+                scope: HistoryScope::AllRefs,
+                limit: 50,
+                cursor: None,
+            },
+        )
+        .await
+        .expect("history of an unborn repository");
+
+    assert!(page.commits.is_empty());
+    assert!(!page.has_more);
+}
+
+#[tokio::test]
+async fn initial_commit_seeds_a_readme_when_nothing_is_staged() {
+    let directory = tempdir().expect("temp repository");
+    let backend = GitCliBackend::default();
+    backend
+        .init_repository(directory.path(), "main")
+        .await
+        .expect("initialize repository");
+    git(directory.path(), &["config", "user.name", "GitCat Test"]);
+    git(
+        directory.path(),
+        &["config", "user.email", "gitcat@example.test"],
+    );
+
+    backend
+        .create_initial_commit(directory.path(), "Initial commit")
+        .await
+        .expect("create the initial commit");
+
+    let name = directory
+        .path()
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("temp directory name");
+    assert_eq!(
+        fs::read_to_string(directory.path().join("README.md")).expect("read seeded README"),
+        format!("# {name}\n")
+    );
+    assert_eq!(
+        git_stdout(directory.path(), &["log", "-1", "--format=%s"]),
+        "Initial commit"
+    );
+    assert_eq!(
+        git_stdout(
+            directory.path(),
+            &["show", "--name-only", "--format=", "HEAD"]
+        ),
+        "README.md"
+    );
+    let snapshot = backend
+        .snapshot(directory.path())
+        .await
+        .expect("snapshot after the initial commit");
+    assert!(snapshot.status.clean);
+    assert!(matches!(snapshot.head, HeadState::Branch { .. }));
+}
+
+#[tokio::test]
+async fn initial_commit_takes_the_staged_files_and_seeds_no_readme() {
+    let directory = tempdir().expect("temp repository");
+    let backend = GitCliBackend::default();
+    backend
+        .init_repository(directory.path(), "main")
+        .await
+        .expect("initialize repository");
+    git(directory.path(), &["config", "user.name", "GitCat Test"]);
+    git(
+        directory.path(),
+        &["config", "user.email", "gitcat@example.test"],
+    );
+    fs::write(directory.path().join("main.rs"), "fn main() {}\n").expect("write staged file");
+    fs::write(directory.path().join("notes.txt"), "later\n").expect("write untracked file");
+    backend
+        .stage_paths(directory.path(), &["main.rs".into()])
+        .await
+        .expect("stage the file");
+
+    backend
+        .create_initial_commit(directory.path(), "Initial commit")
+        .await
+        .expect("create the initial commit");
+
+    assert!(!directory.path().join("README.md").exists());
+    assert_eq!(
+        git_stdout(
+            directory.path(),
+            &["show", "--name-only", "--format=", "HEAD"]
+        ),
+        "main.rs"
+    );
+    // The rest of the working tree is the user's to stage in their own order.
+    let snapshot = backend
+        .snapshot(directory.path())
+        .await
+        .expect("snapshot after the initial commit");
+    assert_eq!(snapshot.status.entries.len(), 1);
+    assert_eq!(snapshot.status.entries[0].path, "notes.txt");
+}
+
+#[tokio::test]
+async fn initial_commit_keeps_an_existing_readme() {
+    let directory = tempdir().expect("temp repository");
+    let backend = GitCliBackend::default();
+    backend
+        .init_repository(directory.path(), "main")
+        .await
+        .expect("initialize repository");
+    git(directory.path(), &["config", "user.name", "GitCat Test"]);
+    git(
+        directory.path(),
+        &["config", "user.email", "gitcat@example.test"],
+    );
+    fs::write(
+        directory.path().join("README.md"),
+        "# Written by hand\n",
+    )
+    .expect("write README");
+
+    backend
+        .create_initial_commit(directory.path(), "Initial commit")
+        .await
+        .expect("create the initial commit");
+
+    assert_eq!(
+        fs::read_to_string(directory.path().join("README.md")).expect("read README"),
+        "# Written by hand\n"
+    );
+}
+
+#[tokio::test]
+async fn initial_commit_rejects_a_repository_that_has_one() {
+    let (directory, backend, _) = committed_repository().await;
+
+    let error = backend
+        .create_initial_commit(directory.path(), "Initial commit")
+        .await
+        .expect_err("a repository with a commit is refused");
+
+    assert_eq!(error.code, ErrorCode::InvalidRequest);
+}
+
 #[tokio::test]
 async fn reset_rejects_detached_head() {
     let (directory, backend, oid) = committed_repository().await;

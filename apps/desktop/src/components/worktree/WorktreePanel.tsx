@@ -60,7 +60,7 @@ interface WorktreePanelProps {
   onDraftChange: (draft: CommitDraft) => void;
 }
 
-function buildCommitMessage(draft: CommitDraft): string {
+export function buildCommitMessage(draft: CommitDraft): string {
   const summary = draft.message.trim();
   const description = draft.description.trim();
   return description ? `${summary}\n\n${description}` : summary;

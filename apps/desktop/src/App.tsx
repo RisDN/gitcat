@@ -17,7 +17,7 @@ import {
 } from "./components/top-tabs";
 import { UnavailableRepositoryView } from "./components/UnavailableRepositoryView";
 import { WelcomeView } from "./components/WelcomeView";
-import type { CommitDraft } from "./components/worktree";
+import { buildCommitMessage, type CommitDraft } from "./components/worktree";
 import type { DiffViewMode } from "./components/diff";
 import { gitcatApi } from "./lib/api";
 import { useAppUpdate } from "./lib/updates";
@@ -691,6 +691,19 @@ function App() {
         if (!activeTabId) return;
         setCommitDrafts((current) => ({ ...current, [activeTabId]: draft }));
     }, [activeTabId]);
+    // The first commit of an empty repository is the one GitCat composes
+    // itself. A summary the user already typed on the working-copy row wins
+    // over the default, and clears afterwards exactly as the commit form does.
+    const createInitialCommit = useCallback(() => {
+        const draft = activeCommitDraft;
+        const message = draft.message.trim() ? buildCommitMessage(draft) : "Initial commit";
+        void runMutation(
+            "Initial commit created",
+            (repository) => gitcatApi.createInitialCommit(repository.repository_id, message),
+        ).then((created) => {
+            if (created) updateActiveCommitDraft({ ...draft, message: "", description: "", amend: false });
+        });
+    }, [activeCommitDraft, runMutation, updateActiveCommitDraft]);
     if (initializing) {
         return (
             <AppShell className="items-center justify-center gap-3 text-muted [&>svg]:animate-orbit">
@@ -856,6 +869,7 @@ function App() {
                             columnWidths={graphColumnWidths}
                             columns={graphColumns}
                             copySha={copySha}
+                            createInitialCommit={createInitialCommit}
                             currentHeadOid={currentHeadOid}
                             diff={diff}
                             diffLoading={diffLoading}
@@ -869,6 +883,7 @@ function App() {
                             overviewLoading={overviewLoading}
                             remoteIconUrls={iconUrlsByRemote}
                             avatarImages={avatarImages}
+                            repositoryName={activeTab?.display_name ?? ""}
                             runMutation={runMutation}
                             saveConflictResult={saveConflictResult}
                             searchBusy={searchBusy}

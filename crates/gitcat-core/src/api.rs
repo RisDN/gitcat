@@ -351,6 +351,21 @@ impl CoreApi {
         self.commit(repository_id, options).await
     }
 
+    /// Composes the first commit for a repository that has none.
+    ///
+    /// The empty repository is the one case where GitCat can offer a commit
+    /// rather than wait for one: see [`GitBackend::create_initial_commit`].
+    pub async fn create_initial_commit(
+        &self,
+        repository_id: &RepositoryId,
+        message: &str,
+    ) -> ApiResult<MutationResult> {
+        self.mutate(repository_id, |backend, path| async move {
+            backend.create_initial_commit(&path, message).await
+        })
+        .await
+    }
+
     pub async fn reword_commit(
         &self,
         repository_id: &RepositoryId,
@@ -1171,6 +1186,14 @@ mod tests {
             _options: &CommitOptions,
         ) -> ApiResult<MutationResult> {
             self.mutation("create_commit", path).await
+        }
+
+        async fn create_initial_commit(
+            &self,
+            path: &Path,
+            _message: &str,
+        ) -> ApiResult<MutationResult> {
+            self.mutation("create_initial_commit", path).await
         }
 
         async fn reword_commit(

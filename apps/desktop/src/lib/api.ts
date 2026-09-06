@@ -104,6 +104,11 @@ export interface GitCatCommands {
   ): Promise<MutationResult>;
   autoResolveConflicts(repositoryId: RepositoryId): Promise<MutationResult>;
   createCommit(repositoryId: RepositoryId, options: CommitOptions): Promise<MutationResult>;
+  /**
+   * Composes the first commit of a repository that has none: what is staged if
+   * anything is, otherwise a seeded `README.md`.
+   */
+  createInitialCommit(repositoryId: RepositoryId, message: string): Promise<MutationResult>;
   rewordCommit(
     repositoryId: RepositoryId,
     oid: string,
@@ -293,6 +298,8 @@ export function createTauriGitCatApi(): GitCatApi {
       invokeTauri("conflicts_auto_resolve", { repositoryId }),
     createCommit: (repositoryId, options) =>
       invokeTauri("create_commit", { repositoryId, options }),
+    createInitialCommit: (repositoryId, message) =>
+      invokeTauri("commit_initial", { repositoryId, message }),
     rewordCommit: (repositoryId, oid, message, expected) =>
       invokeTauri("commit_reword", { repositoryId, oid, message, expected }),
     createBranch: (repositoryId, name, startOid, checkout) =>

@@ -37,6 +37,11 @@ use crate::{
     },
 };
 
+/// The file an empty repository is seeded with so its first commit has
+/// something in it. The hosting services and GitKraken all start here too, and
+/// a README is the one file whose absence is always a gap.
+const INITIAL_README: &str = "README.md";
+
 #[derive(Debug, Clone)]
 struct CommitAuthor {
     name: String,
@@ -804,6 +809,39 @@ impl GitCliBackend {
             conflicts,
             needs_user_action,
         })
+    }
+
+    /// Puts a `README.md` in an empty repository and answers with its path.
+    ///
+    /// A file that is already there is left exactly as it is: this seeds a
+    /// starting point for a repository that has none, it never overwrites what
+    /// the user wrote. The heading is the repository folder's own name, which
+    /// is what the hosting services fill a new README with.
+    async fn write_initial_readme(&self, path: &Path) -> ApiResult<String> {
+        let root = path.to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            let target = root.join(INITIAL_README);
+            if target.exists() {
+                return Ok(INITIAL_README.to_owned());
+            }
+            let name = root
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("Repository");
+            fs::write(&target, format!("# {name}\n")).map_err(|error| {
+                ApiError::new(ErrorCode::Io, "The initial README could not be written")
+                    .with_details(error.to_string())
+            })?;
+            Ok(INITIAL_README.to_owned())
+        })
+        .await
+        .map_err(|error| {
+            ApiError::new(
+                ErrorCode::Internal,
+                "Writing the initial README did not finish",
+            )
+            .with_details(error.to_string())
+        })?
     }
 
     pub(crate) async fn mutate(
@@ -2149,6 +2187,39 @@ impl GitBackend for GitCliBackend {
             path,
             args,
             Some(options.message.as_bytes()),
+            CancellationToken::new(),
+            false,
+        )
+        .await
+    }
+
+    async fn create_initial_commit(&self, path: &Path, message: &str) -> ApiResult<MutationResult> {
+        validate_message(message)?;
+        if self.head_oid(path).await?.is_some() {
+            return Err(ApiError::new(
+                ErrorCode::InvalidRequest,
+                "The repository already has a commit",
+            ));
+        }
+        let (_, _, parsed) = self.generation_and_refs(path).await?;
+        // Whatever the user staged is the commit they meant to make; the README
+        // is only for the repository that has nothing staged at all.
+        let staged = parsed
+            .status
+            .entries
+            .iter()
+            .any(|entry| entry.index.is_some() && !entry.conflicted);
+        if !staged {
+            let readme = self.write_initial_readme(path).await?;
+            let mut args = os_args(&["add", "--"]);
+            args.push(OsString::from(readme));
+            self.mutate(path, args, None, CancellationToken::new(), false)
+                .await?;
+        }
+        self.mutate(
+            path,
+            os_args(&["commit", "-F", "-"]),
+            Some(message.as_bytes()),
             CancellationToken::new(),
             false,
         )
