@@ -81,10 +81,27 @@ pub(crate) fn sparse_patterns(paths: &[String]) -> ApiResult<Vec<String>> {
                 "Sparse checkout path is malformed",
             ));
         }
+        // Backslashes were accepted as separators above, so a Windows drive
+        // root is refused on every platform rather than only where `Path`
+        // parses it as a prefix.
+        if has_windows_drive_prefix(trimmed) {
+            return Err(ApiError::new(
+                ErrorCode::InvalidPath,
+                "File path must stay inside the repository",
+            ));
+        }
         validate_relative_path(trimmed)?;
         patterns.push(format!("/{trimmed}"));
     }
     Ok(patterns)
+}
+
+fn has_windows_drive_prefix(path: &str) -> bool {
+    let mut chars = path.chars();
+    matches!(
+        (chars.next(), chars.next()),
+        (Some(letter), Some(':')) if letter.is_ascii_alphabetic()
+    )
 }
 
 pub(crate) fn validate_paths(paths: &[String]) -> ApiResult<()> {

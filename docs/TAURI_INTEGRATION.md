@@ -112,17 +112,18 @@ There are no shell or filesystem plugin permissions. Only the Rust backend start
 
 ## Auto-update
 
-Windows only, stable channel, manual release publishing.
+Windows and Linux (AppImage only), stable channel, manual release publishing.
 
 - Manifest endpoint: `https://github.com/RisDN/gitcat/releases/latest/download/latest.json`.
 - Update payloads are minisign-signed; the public key lives in `tauri.conf.json` under `plugins.updater.pubkey`. The private key and its passphrase are the `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository secrets. The passphrase must not be empty: an empty value is not a settable environment variable on Windows, so the Tauri CLI would fall back to an interactive prompt and the build would hang.
-- `bundle.createUpdaterArtifacts` makes the NSIS bundle emit `*-setup.exe.sig` next to the installer.
+- `bundle.createUpdaterArtifacts` makes the NSIS bundle emit `*-setup.exe.sig` next to the installer and the AppImage bundle emit `*.AppImage.sig`.
+- On Linux the Tauri updater only supports the AppImage, which it replaces in place. `.deb` and `.rpm` installs still check the manifest and would try to download an AppImage; those packages are updated through the package manager instead.
 - NSIS `installMode` is `passive`: the installer shows a progress bar, replaces the app, and the frontend calls `relaunch()`.
 - The app version comes from the workspace `Cargo.toml`; `tauri.conf.json` intentionally has no `version` field so there is a single source of truth.
 
 The frontend hook is `apps/desktop/src/lib/updates.ts` (`useAppUpdate`). It checks once, four seconds after startup, and never downloads on its own. When an update exists, `UpdateIndicator` shows a button in the status bar; clicking it downloads the installer with progress, installs it, and restarts. In the browser demo runtime, the hook is inert.
 
-The release workflow is `.github/workflows/release-windows.yml`, triggered manually. With `publish: true` it generates `latest.json` from the signature file and creates the `v<version>` GitHub release with the installer, its `.sig`, and the manifest.
+The release workflow is `.github/workflows/release.yml`. Triggered manually with `publish: true`, it builds Windows and Linux, merges both signatures into one `latest.json`, and creates the `v<version>` GitHub release with the installer, the AppImage, `.deb`, `.rpm`, the `.sig` files, and the manifest. A daily schedule publishes the same set as a rolling `nightly` pre-release, which the updater ignores because only full releases become `releases/latest`.
 
 Installers are not Authenticode-signed, so SmartScreen warns on each update.
 

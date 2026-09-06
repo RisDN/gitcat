@@ -38,6 +38,18 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "linux": {
+      "deb": {
+        "depends": [
+          "git"
+        ]
+      },
+      "rpm": {
+        "depends": [
+          "git"
+        ]
+      }
+    },
     "windows": {
       "nsis": {
         "template": "nsis/installer.nsi",

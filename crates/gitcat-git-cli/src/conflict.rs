@@ -763,9 +763,9 @@ pub(crate) fn new_conflict_temporary(
             };
             builder.permissions(fs::Permissions::from_mode(mode));
         }
-        return builder
+        builder
             .tempfile_in(parent)
-            .map_err(conflict_temporary_error);
+            .map_err(conflict_temporary_error)
     }
     #[cfg(not(unix))]
     {
