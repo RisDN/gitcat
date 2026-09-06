@@ -1,8 +1,8 @@
-import { GitFork, Globe, Lock, RefreshCw, Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { ChevronDown, GitFork, Globe, Lock, RefreshCw, Search } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { markForgeAccepted, markForgeRejected } from "../../app/forgeConnections";
-import { cx, getApiError } from "../../lib";
+import { getApiError } from "../../lib";
 import { groupByOwner } from "../../lib/forge";
 import { forgeRepositories } from "../../lib/forgeAuth";
 import type { ForgeRepository } from "../../lib/types";
@@ -29,6 +29,11 @@ function RepositoryIcon({ repository }: { repository: ForgeRepository }) {
  * The whole list is fetched once and filtered here: it is a few hundred rows
  * at most, and a request per keystroke would spend the service's rate limit on
  * typing.
+ *
+ * Picking one closes the list and names it in the field, the way a select
+ * behaves: the choice stays visible while the rest of the clone form takes the
+ * space the list was holding. The field reopens the list, because changing the
+ * choice is the only thing left to do with it.
  */
 export function ForgeRepositoryPicker({
   account,
@@ -47,6 +52,8 @@ export function ForgeRepositoryPicker({
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [reloadToken, setReloadToken] = useState(0);
+  const [open, setOpen] = useState(true);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,37 +85,81 @@ export function ForgeRepositoryPicker({
   const matches = useMemo(() => {
     const needle = filter.trim().toLocaleLowerCase();
     if (!needle) return repositories;
+    // Only the name is matched, because only the name is on the rows: a hit
+    // whose reason is invisible reads as a wrong result.
     return repositories.filter((repository) =>
-      repository.full_name.toLocaleLowerCase().includes(needle)
-      || (repository.description ?? "").toLocaleLowerCase().includes(needle));
+      repository.full_name.toLocaleLowerCase().includes(needle));
   }, [filter, repositories]);
 
   const groups = useMemo(() => groupByOwner(matches, account), [account, matches]);
+  const chosen = selected
+    ? repositories.find((repository) => repository.full_name === selected) ?? null
+    : null;
+
+  const openList = () => {
+    // The search that found the repository is kept: reopening usually means
+    // picking a neighbour out of the same results, and retyping the query to
+    // get back to them is work the field already did. The text is selected, so
+    // a different search still costs one keystroke.
+    setOpen(true);
+    requestAnimationFrame(() => searchRef.current?.select());
+  };
+
+  const choose = (repository: ForgeRepository) => {
+    onSelect(repository);
+    setOpen(false);
+  };
 
   return (
     <div className="flex min-h-0 flex-col gap-2">
       <div className="flex items-center gap-1.5">
-        <div className="flex h-8.5 min-w-0 flex-1 items-center gap-2 rounded-[5px] border border-border bg-background px-2.25 text-muted focus-within:border-accent focus-within:text-accent">
-          <Search size={14} />
-          <Input
-            aria-label="Search repositories"
-            className="min-w-0 flex-1 border-0 bg-transparent text-foreground outline-0 placeholder:text-muted"
-            onChange={(event) => setFilter(event.target.value)}
-            placeholder={`Search ${host} repositories`}
-            value={filter}
-          />
-        </div>
+        {open || !chosen ? (
+          <div className="flex h-8.5 min-w-0 flex-1 items-center gap-2 rounded-[5px] border border-border bg-background px-2.25 text-muted focus-within:border-accent focus-within:text-accent">
+            <Search size={14} />
+            <Input
+              aria-label="Search repositories"
+              className="min-w-0 flex-1 border-0 bg-transparent text-foreground outline-0 placeholder:text-muted"
+              onChange={(event) => setFilter(event.target.value)}
+              onKeyDown={(event) => {
+                // Escape backs out of a search that changed nothing, and only
+                // where there is still a choice to fall back to.
+                if (event.key === "Escape" && chosen) {
+                  event.stopPropagation();
+                  setOpen(false);
+                }
+              }}
+              placeholder="Search Remotes"
+              ref={searchRef}
+              value={filter}
+            />
+          </div>
+        ) : (
+          <button
+            aria-expanded={false}
+            aria-label={`Selected repository ${chosen.full_name}. Choose another`}
+            className="flex h-8.5 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-[5px] border border-accent bg-accent/12 px-2.25 text-left text-[11px] text-foreground"
+            onClick={openList}
+            type="button"
+          >
+            <RepositoryIcon repository={chosen} />
+            <span className="min-w-0 flex-1 truncate">{chosen.full_name}</span>
+            <ChevronDown className="shrink-0 text-muted" size={14} />
+          </button>
+        )}
         <IconButton
           aria-label="Reload the repository list"
           disabled={loading}
-          onClick={() => setReloadToken((current) => current + 1)}
+          onClick={() => {
+            setReloadToken((current) => current + 1);
+            openList();
+          }}
           title="Reload"
         >
           <RefreshCw size={14} />
         </IconButton>
       </div>
 
-      {loading ? (
+      {!open && chosen ? null : loading ? (
         <div className="flex h-40 items-center justify-center gap-2 text-[11px] text-muted">
           <Spinner label="Loading repositories" /> Loading repositories…
         </div>
@@ -128,22 +179,14 @@ export function ForgeRepositoryPicker({
                 {group.repositories.map((repository) => (
                   <li key={repository.full_name}>
                     <button
-                      className={cx(
-                        "flex w-full min-w-0 cursor-pointer items-center gap-1.5 px-2.25 py-1.5 pl-3.5 text-left text-[11px]",
-                        selected === repository.full_name
-                          ? "bg-accent/16 text-foreground"
-                          : "text-foreground hover:bg-foreground/5",
-                      )}
-                      onClick={() => onSelect(repository)}
+                      // The list only opens to change the choice, and the
+                      // field above already names it, so no row is marked.
+                      className="flex w-full min-w-0 cursor-pointer items-center gap-1.5 px-2.25 py-1.5 pl-3.5 text-left text-[11px] text-foreground hover:bg-foreground/5"
+                      onClick={() => choose(repository)}
                       type="button"
                     >
                       <RepositoryIcon repository={repository} />
                       <span className="min-w-0 truncate">{repository.name}</span>
-                      {repository.description ? (
-                        <span className="min-w-0 flex-1 truncate text-muted">
-                          {repository.description}
-                        </span>
-                      ) : null}
                     </button>
                   </li>
                 ))}
