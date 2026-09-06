@@ -83,7 +83,13 @@ impl ForgeService {
             }
         }
 
-        let pulls = client.pull_requests(&repo.owner, &repo.repo).await?;
+        let mut listed = client.pull_requests(&repo.owner, &repo.repo).await;
+        if rejected(&listed) {
+            if let Some(renewed) = self.renewed_client(&repo.host).await {
+                listed = renewed.pull_requests(&repo.owner, &repo.repo).await;
+            }
+        }
+        let pulls = listed?;
         write_cache(&self.pulls, key, pulls.clone(), usize::MAX, PULLS_TTL);
         Ok(pulls)
     }
@@ -173,15 +179,13 @@ impl ForgeService {
         };
         let client = GitHubClient::new(self.http.clone(), &host, Some(token));
 
-        let mut repositories = Vec::new();
-        for page in 1..=MAX_REPO_PAGES {
-            let batch = client.repositories(page).await?;
-            let complete = batch.len() < usize::from(REPOS_PER_REQUEST);
-            repositories.extend(batch);
-            if complete {
-                break;
+        let mut listed = list_repositories(&client).await;
+        if rejected(&listed) {
+            if let Some(renewed) = self.renewed_client(&host).await {
+                listed = list_repositories(&renewed).await;
             }
         }
+        let repositories = listed?;
 
         write_cache(
             &self.repos,
@@ -224,9 +228,17 @@ impl ForgeService {
             .as_deref()
             .map(str::trim)
             .filter(|text| !text.is_empty());
-        let created = client
+        let mut outcome = client
             .create_repository(request.name.trim(), description, request.private)
-            .await?;
+            .await;
+        if rejected(&outcome) {
+            if let Some(renewed) = self.renewed_client(&host).await {
+                outcome = renewed
+                    .create_repository(request.name.trim(), description, request.private)
+                    .await;
+            }
+        }
+        let created = outcome?;
 
         // What the picker searches is now one repository out of date.
         if let Ok(mut repos) = self.repos.lock() {
@@ -255,6 +267,20 @@ impl ForgeService {
         }
     }
 
+    /// A client carrying a freshly renewed credential, for a request the
+    /// service has just refused.
+    ///
+    /// A token can stop working before the expiry it was issued with: it is
+    /// revoked on the service's own page, or another sign-in supersedes it.
+    /// `ForgeAuth::access_token` renews on the clock alone, so without this the
+    /// user is told the credential was rejected while the refresh token that
+    /// would have answered it sits unused. The renewal is stored, so the next
+    /// request -- a check batch, an avatar walk -- starts from the live token.
+    async fn renewed_client(&self, host: &str) -> Option<GitHubClient> {
+        let renewed = self.auth.renew_rejected(host).await?;
+        Some(GitHubClient::new(self.http.clone(), host, Some(renewed)))
+    }
+
     async fn client(&self, repo: &ForgeRepo) -> Option<GitHubClient> {
         if repo.forge != ForgeKind::GitHub || repo.owner.is_empty() || repo.repo.is_empty() {
             return None;
@@ -265,6 +291,26 @@ impl ForgeService {
             self.auth.access_token(&repo.host).await,
         ))
     }
+}
+
+/// Whether a request failed because the credential was refused, which is the
+/// one failure a renewal can do anything about.
+fn rejected<T>(result: &ApiResult<T>) -> bool {
+    matches!(result, Err(error) if error.code == ErrorCode::AuthenticationRequired)
+}
+
+/// Walks the repository pages until the service returns a short one.
+async fn list_repositories(client: &GitHubClient) -> ApiResult<Vec<ForgeRepository>> {
+    let mut repositories = Vec::new();
+    for page in 1..=MAX_REPO_PAGES {
+        let batch = client.repositories(page).await?;
+        let complete = batch.len() < usize::from(REPOS_PER_REQUEST);
+        repositories.extend(batch);
+        if complete {
+            break;
+        }
+    }
+    Ok(repositories)
 }
 
 fn repo_key(repo: &ForgeRepo) -> String {

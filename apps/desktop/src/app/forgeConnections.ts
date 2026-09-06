@@ -1,5 +1,6 @@
 import { useEffect, useSyncExternalStore } from "react";
 
+import { getApiError } from "../lib/api";
 import { forgeCredentials, setForgeToken } from "../lib/avatars";
 import { forgeSignOut, pollForgeLogin, startForgeLogin } from "../lib/forgeAuth";
 import { isTauriEnvironment, openExternal } from "../lib/platform";
@@ -17,6 +18,15 @@ export interface ForgeConnections {
     pending: DeviceAuthorization | null;
     notice: ForgeNotice | null;
     loaded: boolean;
+    /**
+     * Hosts whose stored credential the service refused on the last request.
+     *
+     * A credential is only known to work once something has been asked of it:
+     * the store answers what is held, not whether it is still accepted. Held
+     * separately from `credentials` because it is learned from requests rather
+     * than read back from storage.
+     */
+    rejected: readonly string[];
 }
 
 /**
@@ -28,7 +38,13 @@ export interface ForgeConnections {
  * granted token was never collected. The store keeps polling regardless of
  * which dialog is open, or whether any is.
  */
-let state: ForgeConnections = { credentials: [], pending: null, notice: null, loaded: false };
+let state: ForgeConnections = {
+    credentials: [],
+    pending: null,
+    notice: null,
+    loaded: false,
+    rejected: [],
+};
 const listeners = new Set<() => void>();
 let loading: Promise<void> | null = null;
 
@@ -42,8 +58,13 @@ function subscribe(listener: () => void): () => void {
     return () => { listeners.delete(listener); };
 }
 
+/**
+ * What to show the user for a failure. A Tauri command rejects with the
+ * serialised `ApiError` object, not an `Error`, so `String(error)` on one
+ * reads "[object Object]" -- the message has to be taken out of it.
+ */
 function message(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
+    return getApiError(error).message;
 }
 
 /** Reads the stored credentials again. An unreadable store reads as none. */
@@ -53,7 +74,10 @@ export async function reloadForgeConnections(): Promise<void> {
         return;
     }
     try {
-        publish({ credentials: await forgeCredentials(), loaded: true });
+        // Every rejection is dropped: the credentials have just been read
+        // again, and a refusal recorded against the previous one says nothing
+        // about what is stored now.
+        publish({ credentials: await forgeCredentials(), loaded: true, rejected: [] });
     } catch {
         publish({ loaded: true });
     }
@@ -173,6 +197,25 @@ export async function storeForgeToken(host: string, token: string | null): Promi
     }
 }
 
+/**
+ * Records that the service refused the credential stored for one host.
+ *
+ * Callers report what their own request came back with, so a host is marked
+ * refused only after something was actually asked of it.
+ */
+export function markForgeRejected(host: string): void {
+    const target = host.trim().toLowerCase();
+    if (!target || state.rejected.includes(target)) return;
+    publish({ rejected: [...state.rejected, target] });
+}
+
+/** Records that the service answered one host, clearing an earlier refusal. */
+export function markForgeAccepted(host: string): void {
+    const target = host.trim().toLowerCase();
+    if (!state.rejected.includes(target)) return;
+    publish({ rejected: state.rejected.filter((entry) => entry !== target) });
+}
+
 export function dismissForgeNotice(): void {
     if (state.notice) publish({ notice: null });
 }
@@ -188,6 +231,23 @@ export function useForgeConnections(): ForgeConnections {
         loading = reloadForgeConnections().finally(() => { loading = null; });
     }, []);
     return connections;
+}
+
+/** Whether the service refused what is stored for one host. */
+export function forgeRejected(connections: ForgeConnections, host: string): boolean {
+    return connections.rejected.includes(host.trim().toLowerCase());
+}
+
+/**
+ * Whether a host holds a credential the service has not refused.
+ *
+ * This is what the interface should call connected: a stored credential alone
+ * is a credential that may already have been revoked on the service's own
+ * page, and marking that as connected sends the user looking for a fault
+ * somewhere else.
+ */
+export function forgeConnected(connections: ForgeConnections, host: string): boolean {
+    return Boolean(credentialFor(connections, host)) && !forgeRejected(connections, host);
 }
 
 /** The credential held for one host, if there is one. */

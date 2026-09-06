@@ -1,4 +1,4 @@
-import { Check, CircleCheck, Copy, ExternalLink } from "lucide-react";
+import { Check, CircleAlert, CircleCheck, Copy, ExternalLink } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import {
@@ -6,10 +6,13 @@ import {
   connectForge,
   credentialFor,
   disconnectForge,
+  forgeRejected,
+  markForgeAccepted,
+  markForgeRejected,
   storeForgeToken,
   useForgeConnections,
 } from "../../app/forgeConnections";
-import { cx, identityInitials } from "../../lib";
+import { cx, getApiError, identityInitials } from "../../lib";
 import { forgeAccount } from "../../lib/forgeAuth";
 import { hostNameError } from "../../lib/integrations";
 import type { Integration } from "../../lib/integrations";
@@ -91,6 +94,9 @@ export function ForgeConnectPanel({
           credential={credential}
           host={host ?? ""}
           onDisconnect={() => { if (host) void disconnectForge(host); }}
+          onReconnect={() => { if (host) void connectForge(host); }}
+          rejected={Boolean(host) && forgeRejected(connections, host ?? "")}
+          signingIn={connections.pending !== null}
         />
       ) : pending ? (
         <div className="flex flex-col gap-1.5 rounded-[5px] border border-border bg-background p-2.5">
@@ -211,17 +217,28 @@ export function ForgeConnectPanel({
  * credential belongs to is asked of the service itself; until it answers, and
  * whenever it will not, the card falls back to what the credential already
  * knows.
+ *
+ * A credential the service has refused is still stored, so the card stays --
+ * but it says so and offers the sign-in instead of calling itself connected.
+ * A token can be revoked on the service's own page or run out of the expiry it
+ * was issued with, and neither is visible from the store.
  */
 function ConnectedAccount({
   account,
   credential,
   host,
   onDisconnect,
+  onReconnect,
+  rejected,
+  signingIn,
 }: {
   account: ForgeAccount | null;
   credential: ForgeCredential;
   host: string;
   onDisconnect: () => void;
+  onReconnect: () => void;
+  rejected: boolean;
+  signingIn: boolean;
 }) {
   const name = account?.name ?? account?.login ?? credential.account ?? host;
   const handle = account?.login ?? credential.account;
@@ -234,10 +251,25 @@ function ConnectedAccount({
         <div className="truncate text-[12px] font-[650] text-foreground">{name}</div>
         <div className="truncate text-[11px] text-muted">{secondary}</div>
       </div>
-      <span className="mx-auto flex shrink-0 items-center gap-1.5 px-2 text-[12px] font-[600] text-success">
-        <CircleCheck size={15} />
-        Connected
-      </span>
+      {rejected ? (
+        <span
+          className="mx-auto flex shrink-0 items-center gap-1.5 px-2 text-[12px] font-[600] text-warning"
+          title={`${host} refused the stored credential`}
+        >
+          <CircleAlert size={15} />
+          Sign in again
+        </span>
+      ) : (
+        <span className="mx-auto flex shrink-0 items-center gap-1.5 px-2 text-[12px] font-[600] text-success">
+          <CircleCheck size={15} />
+          Connected
+        </span>
+      )}
+      {rejected && credential.kind === "oauth" ? (
+        <Button compact disabled={signingIn} onClick={onReconnect} tone="accent">
+          Sign in
+        </Button>
+      ) : null}
       <Button
         aria-label={`Disconnect from ${host}`}
         compact
@@ -308,9 +340,15 @@ function useForgeAccount(
     void forgeAccount(host)
       .then((found) => {
         accounts.set(key, found);
+        markForgeAccepted(host);
         if (live) setAccount(found);
       })
-      .catch(() => { if (live) setAccount(null); });
+      .catch((reason: unknown) => {
+        // Naming the account is a request like any other, so its answer is
+        // also what tells the card whether the credential still works.
+        if (getApiError(reason).code === "authentication_required") markForgeRejected(host);
+        if (live) setAccount(null);
+      });
     return () => { live = false; };
   }, [host, key]);
 

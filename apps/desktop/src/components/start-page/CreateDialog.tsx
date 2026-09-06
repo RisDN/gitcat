@@ -1,7 +1,7 @@
 import { Monitor } from "lucide-react";
 import { useId, useState } from "react";
 
-import { credentialFor, useForgeConnections } from "../../app/forgeConnections";
+import { forgeConnected, useForgeConnections } from "../../app/forgeConnections";
 import { chooseDirectory, cx, FIELD_INPUT, gitcatApi, joinPath } from "../../lib";
 import { INTEGRATIONS, selfHostedHosts } from "../../lib/integrations";
 import type { Integration } from "../../lib/integrations";
@@ -57,7 +57,7 @@ export function CreateDialog({
   const integration = INTEGRATIONS.find((entry) => entry.id === provider);
   const hosts = integration ? selfHostedHosts(integration, overrides) : [];
   const selectedHost = host && hosts.includes(host) ? host : hosts[0] ?? null;
-  const connected = Boolean(selectedHost && credentialFor(connections, selectedHost));
+  const connected = Boolean(selectedHost && forgeConnected(connections, selectedHost));
 
   const path = parent.trim() && name.trim() ? joinPath(parent, name) : "";
   const submittable = Boolean(path) && (!integration || connected) && !busy;
@@ -103,7 +103,6 @@ export function CreateDialog({
             <SourceButton
               active={provider === entry.id}
               badge={entry.support === "links_only" ? <Badge>Coming soon</Badge> : null}
-              connected={selfHostedHosts(entry, overrides).some((named) => credentialFor(connections, named))}
               disabled={entry.support === "links_only"}
               icon={<entry.icon size={15} />}
               key={entry.id}

@@ -5,13 +5,14 @@ import { cx } from "../../lib";
 /**
  * One row of the service list the clone and initialize dialogs open with.
  *
- * A connected service is marked rather than described: the list is a choice,
- * and what a connection means belongs on the panel it opens.
+ * The row carries no connection mark. Whether a credential works is only
+ * known once something has been asked of the service, so a mark drawn from
+ * what is merely stored can sit there saying the opposite of the panel beside
+ * it. What a connection means belongs on the panel the row opens.
  */
 export function SourceButton({
   active,
   badge = null,
-  connected = false,
   disabled = false,
   icon,
   label,
@@ -20,7 +21,6 @@ export function SourceButton({
 }: {
   active: boolean;
   badge?: ReactNode;
-  connected?: boolean;
   disabled?: boolean;
   icon: ReactNode;
   label: string;
@@ -43,9 +43,7 @@ export function SourceButton({
     >
       {icon}
       <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
-      {connected ? (
-        <span aria-label="Connected" className="size-1.75 shrink-0 rounded-full bg-success" title="Connected" />
-      ) : badge}
+      {badge}
     </button>
   );
 }

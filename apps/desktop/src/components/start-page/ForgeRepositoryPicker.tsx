@@ -1,7 +1,8 @@
 import { GitFork, Globe, Lock, RefreshCw, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { cx } from "../../lib";
+import { markForgeAccepted, markForgeRejected } from "../../app/forgeConnections";
+import { cx, getApiError } from "../../lib";
 import { groupByOwner } from "../../lib/forge";
 import { forgeRepositories } from "../../lib/forgeAuth";
 import type { ForgeRepository } from "../../lib/types";
@@ -53,13 +54,20 @@ export function ForgeRepositoryPicker({
     setError(null);
     forgeRepositories(host, reloadToken > 0)
       .then((listed) => {
+        markForgeAccepted(host);
         if (cancelled) return;
         setRepositories(listed);
         setLoading(false);
       })
       .catch((reason: unknown) => {
+        const failure = getApiError(reason);
+        // The list is the first thing that asks the service anything, so it is
+        // where a credential that has stopped working is found out. Recording
+        // it here is what keeps the service from being marked connected while
+        // its own answer says otherwise.
+        if (failure.code === "authentication_required") markForgeRejected(host);
         if (cancelled) return;
-        setError(reason instanceof Error ? reason.message : String(reason));
+        setError(failure.message);
         setLoading(false);
       });
     return () => {
@@ -84,7 +92,7 @@ export function ForgeRepositoryPicker({
           <Search size={14} />
           <Input
             aria-label="Search repositories"
-            className="min-w-0 flex-1 border-0 bg-transparent outline-0 placeholder:text-muted"
+            className="min-w-0 flex-1 border-0 bg-transparent text-foreground outline-0 placeholder:text-muted"
             onChange={(event) => setFilter(event.target.value)}
             placeholder={`Search ${host} repositories`}
             value={filter}

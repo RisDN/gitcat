@@ -1,7 +1,12 @@
 import { Globe } from "lucide-react";
 import { useState } from "react";
 
-import { credentialFor, useForgeConnections } from "../../app/forgeConnections";
+import {
+  credentialFor,
+  forgeConnected,
+  forgeRejected,
+  useForgeConnections,
+} from "../../app/forgeConnections";
 import { chooseDirectory, cx, joinPath, repositoryNameFromUrl } from "../../lib";
 import { INTEGRATIONS, selfHostedHosts } from "../../lib/integrations";
 import type { Integration } from "../../lib/integrations";
@@ -57,7 +62,7 @@ export function CloneDialog({
   // Where to put the clone is a question about a repository that has been
   // chosen. Until the service can offer one, the connection is the only thing
   // on the page.
-  const ready = !integration || Boolean(selectedHost && credentialFor(connections, selectedHost));
+  const ready = !integration || Boolean(selectedHost && forgeConnected(connections, selectedHost));
 
   // The clone is named after the repository, the way Git names it on the
   // command line, so the page asks where it goes and nothing else.
@@ -123,7 +128,6 @@ export function CloneDialog({
             <SourceButton
               active={source === entry.id}
               badge={entry.support === "links_only" ? <Badge>Coming soon</Badge> : null}
-              connected={selfHostedHosts(entry, overrides).some((named) => credentialFor(connections, named))}
               disabled={entry.support === "links_only"}
               icon={<entry.icon size={15} />}
               key={entry.id}
@@ -229,7 +233,12 @@ function RepositorySource({
     return <ForgeConnectPanel host={null} integration={integration} />;
   }
 
-  const credential = credentialFor(connections, selectedHost);
+  // A refused credential sends the user back to the connection rather than to
+  // a repository list that cannot load: the panel says what happened and the
+  // way out of it is the same sign-in button.
+  const credential = forgeRejected(connections, selectedHost)
+    ? undefined
+    : credentialFor(connections, selectedHost);
 
   return (
     <div className="flex min-h-0 flex-col gap-2.5">
