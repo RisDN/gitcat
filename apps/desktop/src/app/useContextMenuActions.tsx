@@ -91,6 +91,19 @@ function commitRefContext(
     };
 }
 
+// Git refuses to delete the branch HEAD points at. The menu item stays live
+// and answers with the reason instead of greying out, because a disabled row
+// explains nothing about why the branch cannot go.
+const CHECKED_OUT_DELETE_DETAIL = "Cannot delete currently checked out branch. Switch branches first.";
+
+function checkedOutDeleteToast(name: string): Omit<ToastMessage, "id"> {
+    return {
+        tone: "error",
+        title: `Delete Failed: refs/heads/${name}`,
+        detail: CHECKED_OUT_DELETE_DETAIL,
+    };
+}
+
 export interface ContextMenuActionsParams {
     activateRepositoryTab: (nextId: string | undefined) => void;
     activeRepository: RuntimeRepository | undefined;
@@ -230,12 +243,12 @@ export function useContextMenuActions({
             ],
         };
         const historyItems = (withCherryPick: boolean): ContextAction[] => [
-            { id: "branch", label: "Create branch here…", icon: <GitBranchPlus size={15} />, disabled: !enabled("create_branch"), separatorBefore: true },
+            { id: "branch", label: "Create branch here", icon: <GitBranchPlus size={15} />, disabled: !enabled("create_branch"), separatorBefore: true },
             ...(withCherryPick
                 ? [{ id: "cherry_pick", label: "Cherry pick commit", icon: <GitPullRequestArrow size={15} />, disabled: !enabled("cherry_pick") }]
                 : []),
             resetItem,
-            { id: "reword", label: "Edit commit message…", icon: <Pencil size={15} />, disabled: !enabled("reword") },
+            { id: "reword", label: "Edit commit message", icon: <Pencil size={15} />, disabled: !enabled("reword") },
             { id: "revert", label: "Revert commit", icon: <RotateCcw size={15} />, disabled: !enabled("revert") },
         ];
         const copyItems = (): ContextAction[] => [
@@ -257,8 +270,8 @@ export function useContextMenuActions({
                 : []),
         ];
         const tagItems = (): ContextAction[] => [
-            { id: "tag", label: "Create tag here…", icon: <Tag size={15} />, disabled: !enabled("create_tag"), separatorBefore: true },
-            { id: "tag_annotated", label: "Create annotated tag here…", icon: <Tag size={15} />, disabled: !enabled("create_tag") },
+            { id: "tag", label: "Create tag here", icon: <Tag size={15} />, disabled: !enabled("create_tag"), separatorBefore: true },
+            { id: "tag_annotated", label: "Create annotated tag here", icon: <Tag size={15} />, disabled: !enabled("create_tag") },
         ];
 
         // The checked-out branch: no checkout of itself, no merge into itself,
@@ -267,10 +280,11 @@ export function useContextMenuActions({
             return [
                 { id: "pull", label: PULL_LABELS[defaultPullMode], icon: <Download size={15} />, disabled: !branchAcceptsPull(snapshot, refInfo, "local") },
                 { id: "push", label: "Push", icon: <Upload size={15} />, disabled: !branchPushTarget(snapshot, refInfo, "local") },
-                { id: "set_upstream", label: "Set upstream…", icon: <Link size={15} /> },
+                { id: "set_upstream", label: "Set upstream", icon: <Link size={15} /> },
                 { id: "checkout", label: "Checkout this commit", icon: <GitCommitHorizontal size={15} />, disabled: !enabled("checkout"), separatorBefore: true },
                 ...historyItems(false),
-                { id: "rename_ref", label: `Rename ${displayName}…`, icon: <Pencil size={15} />, separatorBefore: true },
+                { id: "rename_ref", label: `Rename ${displayName}`, icon: <Pencil size={15} />, separatorBefore: true },
+                { id: "delete_ref", label: `Delete ${displayName}`, icon: <Trash2 size={15} />, danger: true },
                 ...copyItems(),
                 ...tagItems(),
             ];
@@ -279,7 +293,7 @@ export function useContextMenuActions({
         // Any other branch ref: a remote-tracking ref of the checked-out branch
         // keeps pull/push, everything else only integrates into HEAD.
         if (branchRef) {
-            const canDelete = !isRemoteRef && Boolean(refInfo) && !refInfo?.is_head;
+            const canDelete = !isRemoteRef && Boolean(refInfo);
             return [
                 ...(reference.tracksHead && refInfo
                     ? [
@@ -307,8 +321,8 @@ export function useContextMenuActions({
                 ...(isRemoteRef
                     ? []
                     : [
-                        { id: "rename_ref", label: `Rename ${displayName}…`, icon: <Pencil size={15} />, disabled: !refInfo, separatorBefore: true },
-                        { id: "delete_ref", label: `Delete ${displayName}…`, icon: <Trash2 size={15} />, danger: true, disabled: !canDelete },
+                        { id: "rename_ref", label: `Rename ${displayName}`, icon: <Pencil size={15} />, disabled: !refInfo, separatorBefore: true },
+                        { id: "delete_ref", label: `Delete ${displayName}`, icon: <Trash2 size={15} />, danger: true, disabled: !canDelete },
                     ]),
                 ...copyItems(),
                 ...tagItems(),
@@ -411,7 +425,8 @@ export function useContextMenuActions({
                 break;
             case "delete_ref":
                 if (reference.refInfo && !reference.isRemoteRef) {
-                    setConfirmRequest({ kind: "delete_branch", name: reference.refInfo.name, force: false });
+                    if (reference.refInfo.is_head) addToast(checkedOutDeleteToast(reference.refInfo.name));
+                    else setConfirmRequest({ kind: "delete_branch", name: reference.refInfo.name, force: false });
                 }
                 break;
             case "reword":
@@ -519,8 +534,8 @@ export function useContextMenuActions({
                 icon: <FolderInput size={15} />,
                 disabled: group.id === tabMenu.groupId,
             })),
-            { id: "new_folder", label: "Move to new folder…", icon: <FolderPlus size={15} /> },
-            { id: "alias", label: "Rename tab…", icon: <Tag size={15} />, separatorBefore: true },
+            { id: "new_folder", label: "Move to new folder", icon: <FolderPlus size={15} /> },
+            { id: "alias", label: "Rename tab", icon: <Tag size={15} />, separatorBefore: true },
             { id: "copy_path", label: "Copy repository path", icon: <Copy size={15} /> },
             { id: "close_others", label: "Close other repositories", icon: <X size={15} />, disabled: orderedTabs.length <= 1, separatorBefore: true },
             { id: "close_right", label: "Close repositories to the right", icon: <X size={15} />, disabled: tabIndex < 0 || tabIndex === orderedTabs.length - 1 },
@@ -583,14 +598,14 @@ export function useContextMenuActions({
                 icon: <Upload size={15} />,
                 disabled: !branchPushTarget(snapshot, branch, scope),
             },
-            { id: "create_branch", label: "Create branch here…", icon: <GitBranchPlus size={15} />, separatorBefore: true },
-            { id: "rename", label: `Rename ${displayName}…`, icon: <Pencil size={15} />, disabled: !isLocal, separatorBefore: true },
+            { id: "create_branch", label: "Create branch here", icon: <GitBranchPlus size={15} />, separatorBefore: true },
+            { id: "rename", label: `Rename ${displayName}`, icon: <Pencil size={15} />, disabled: !isLocal, separatorBefore: true },
             {
                 id: "delete",
-                label: `Delete ${displayName}…`,
+                label: `Delete ${displayName}`,
                 icon: <Trash2 size={15} />,
                 danger: true,
-                disabled: !isLocal || branch.is_head,
+                disabled: !isLocal,
             },
             { id: "copy", label: "Copy branch name", icon: <Copy size={15} />, separatorBefore: true },
         ];
@@ -623,7 +638,9 @@ export function useContextMenuActions({
                 if (isLocal) setPrompt({ kind: "rename_branch", branch });
                 break;
             case "delete":
-                if (isLocal) setConfirmRequest({ kind: "delete_branch", name: branch.name, force: false });
+                if (!isLocal) break;
+                if (branch.is_head) addToast(checkedOutDeleteToast(branch.name));
+                else setConfirmRequest({ kind: "delete_branch", name: branch.name, force: false });
                 break;
             case "copy":
                 void navigator.clipboard.writeText(displayName)
