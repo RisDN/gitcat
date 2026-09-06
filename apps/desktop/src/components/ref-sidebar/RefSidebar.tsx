@@ -209,7 +209,7 @@ export function RefSidebar({
           <Search size={14} />
           <Input
             aria-label="Filter branches"
-            className="min-w-0 flex-1 border-0 bg-transparent outline-0 placeholder:text-muted"
+            className="min-w-0 flex-1 border-0 bg-transparent text-foreground outline-0 placeholder:text-muted"
             onChange={(event) => setFilter(event.target.value)}
             placeholder="Filter branches"
             value={filter}
