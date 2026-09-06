@@ -194,7 +194,7 @@ The web build is written to `apps/desktop/dist`; native artifacts are written un
 
 ## Releases
 
-The current version is 1.2.0. `.github/workflows/release-windows.yml` (`workflow_dispatch`) builds the Windows release on `windows-latest`: it enforces the `x86_64-pc-windows-msvc` host, runs fmt, clippy, tests, and typecheck, then bundles the NSIS installer and uploads the installer plus the binary as an artifact.
+The current version is 1.5.0. `.github/workflows/release-windows.yml` (`workflow_dispatch`) builds the Windows release on `windows-latest`: it enforces the `x86_64-pc-windows-msvc` host, runs fmt, clippy, tests, and typecheck, then bundles the NSIS installer and uploads the installer plus the binary as an artifact.
 
 The build is verified to be self-contained: the job fails if `gitcat-desktop.exe` still imports `WebView2Loader.dll` or if a dynamic loader DLL is left in the release output, and it prints the installer's SHA-256.
 
