@@ -7,11 +7,12 @@ use std::{
 
 use gitcat_contracts::{
     ChangeKind, CommitOptions, CommitSearchQuery, DiffRequest, DiffTarget, ExpectedState,
-    HeadState, HistoryQuery, HistoryScope, RepositoryId, RepositorySnapshot,
+    HeadState, HistoryQuery, HistoryScope, PushOptions, RepositoryId, RepositorySnapshot,
 };
 use gitcat_core::CoreApi;
 use gitcat_git_cli::GitCliBackend;
 use tempfile::{TempDir, tempdir};
+use tokio_util::sync::CancellationToken;
 
 struct TestRepository {
     _directory: TempDir,
@@ -293,3 +294,106 @@ async fn branch_lifecycle_uses_public_core_api_and_expected_state() {
             .all(|branch| branch.name != "feature/renamed")
     );
 }
+
+/// Pushing what the remote already has costs nothing.
+///
+/// The remote directory is removed before the second push: a command that
+/// actually reached it would fail, so a successful result is proof the answer
+/// came from the remote-tracking ref alone.
+#[tokio::test]
+async fn a_push_with_nothing_to_send_never_contacts_the_remote() {
+    let repository = initialized_repository().await;
+    commit_file(&repository, "pushed.txt", "one\n", "feat: first").await;
+
+    let remote = repository
+        .path
+        .parent()
+        .expect("parent directory")
+        .join("remote.git");
+    run_git(
+        &repository.path,
+        &["init", "--bare", &remote.to_string_lossy()],
+    );
+    run_git(
+        &repository.path,
+        &["remote", "add", "origin", &remote.to_string_lossy()],
+    );
+    run_git(
+        &repository.path,
+        &["push", "--set-upstream", "origin", "main"],
+    );
+
+    fs::remove_dir_all(&remote).expect("remove the bare remote");
+
+    let result = repository
+        .api
+        .push(
+            &repository.id,
+            &PushOptions {
+                remote: None,
+                branch: None,
+                set_upstream: false,
+            },
+            CancellationToken::new(),
+        )
+        .await
+        .expect("push reports up to date without reaching the remote");
+    assert_eq!(result.notice.as_deref(), Some("Everything up-to-date"));
+}
+
+/// A commit the remote does not have sends the command, remote or no remote.
+#[tokio::test]
+async fn a_push_with_something_to_send_still_runs() {
+    let repository = initialized_repository().await;
+    commit_file(&repository, "pushed.txt", "one\n", "feat: first").await;
+
+    let remote = repository
+        .path
+        .parent()
+        .expect("parent directory")
+        .join("ahead.git");
+    run_git(
+        &repository.path,
+        &["init", "--bare", &remote.to_string_lossy()],
+    );
+    run_git(
+        &repository.path,
+        &["remote", "add", "origin", &remote.to_string_lossy()],
+    );
+    run_git(
+        &repository.path,
+        &["push", "--set-upstream", "origin", "main"],
+    );
+
+    commit_file(&repository, "pushed.txt", "two\n", "feat: second").await;
+
+    let result = repository
+        .api
+        .push(
+            &repository.id,
+            &PushOptions {
+                remote: None,
+                branch: None,
+                set_upstream: false,
+            },
+            CancellationToken::new(),
+        )
+        .await
+        .expect("push the new commit");
+    assert_eq!(result.notice, None);
+}
+
+fn run_git(repository: &Path, args: &[&str]) {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(repository)
+        .args(args)
+        .output()
+        .expect("run git subprocess");
+    assert!(
+        output.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+

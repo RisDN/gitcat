@@ -473,6 +473,8 @@ export interface MutationResult {
   generation: string;
   conflicts: StatusEntry[];
   needs_user_action: boolean;
+  /** What the command did not have to do, when "done" would overstate it. */
+  notice?: string | null;
 }
 
 export interface CloneOptions {

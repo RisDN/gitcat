@@ -810,6 +810,7 @@ impl GitCliBackend {
             generation,
             conflicts,
             needs_user_action,
+            notice: None,
         })
     }
 
@@ -861,6 +862,149 @@ impl GitCliBackend {
         };
         self.mutate_with(path, args, stdin, cancellation, options)
             .await
+    }
+
+    /// The commit a push would send, and the commit its destination already
+    /// has -- when both are knowable without contacting the remote.
+    ///
+    /// Gittyup answers this locally before spending a network round trip, and
+    /// so does this: the destination's remote-tracking ref already names a
+    /// commit, and a push that would send the one the branch is on has nothing
+    /// to do. The tracking ref can be stale, which is the price of not asking
+    /// the remote; that is the same data the ahead/behind counters are drawn
+    /// from, so a user acting on what the window shows gets a consistent
+    /// answer.
+    ///
+    /// `None` means the shape is one this cannot answer for -- a detached
+    /// HEAD, a `push.default` that sends more than one branch, no destination
+    /// to derive. Those go to Git unchanged.
+    async fn push_destination_state(
+        &self,
+        path: &Path,
+        options: &PushOptions,
+    ) -> ApiResult<Option<(String, String)>> {
+        // A named branch is both the source and the destination name; only a
+        // push that names none is about whatever HEAD is on.
+        let branch = match &options.branch {
+            Some(branch) => {
+                self.validate_branch_name(branch).await?;
+                branch.clone()
+            }
+            None => {
+                let head = self
+                    .read_allow_failure(
+                        Some(path),
+                        os_args(&["symbolic-ref", "--quiet", "--short", "HEAD"]),
+                    )
+                    .await?;
+                if !head.success() {
+                    return Ok(None);
+                }
+                let head = head.stdout_lossy().trim().to_owned();
+                if head.is_empty() {
+                    return Ok(None);
+                }
+                head
+            }
+        };
+
+        let config = |key: String| async move {
+            let output = self
+                .read_allow_failure(Some(path), os_args(&["config", "--get", key.as_str()]))
+                .await?;
+            let value = output.stdout_lossy().trim().to_owned();
+            ApiResult::Ok(if output.success() && !value.is_empty() {
+                Some(value)
+            } else {
+                None
+            })
+        };
+
+        // `matching` and `nothing` do not describe one branch going to one
+        // place, so nothing here can stand in for the command.
+        let mode = config("push.default".to_owned())
+            .await?
+            .unwrap_or_else(|| "simple".to_owned());
+        if options.branch.is_none()
+            && !matches!(
+                mode.as_str(),
+                "simple" | "current" | "upstream" | "tracking"
+            )
+        {
+            return Ok(None);
+        }
+
+        // The remote the push actually goes to. An explicitly chosen one wins,
+        // which is what keeps an upstream on a different remote out of the
+        // comparison.
+        let remote = match &options.remote {
+            Some(remote) => remote.clone(),
+            None => {
+                let configured = match config(format!("branch.{branch}.pushRemote")).await? {
+                    Some(value) => Some(value),
+                    None => match config("remote.pushDefault".to_owned()).await? {
+                        Some(value) => Some(value),
+                        None => config(format!("branch.{branch}.remote")).await?,
+                    },
+                };
+                match configured {
+                    Some(remote) => remote,
+                    None => return Ok(None),
+                }
+            }
+        };
+
+        let destination = match &options.branch {
+            Some(branch) => branch.clone(),
+            None if matches!(mode.as_str(), "upstream" | "tracking") => {
+                // Only the branch's own upstream names the destination here,
+                // and only on the remote that upstream lives on.
+                if config(format!("branch.{branch}.remote")).await?.as_deref() != Some(&remote) {
+                    return Ok(None);
+                }
+                match config(format!("branch.{branch}.merge")).await? {
+                    Some(merge) => merge
+                        .strip_prefix("refs/heads/")
+                        .unwrap_or(&merge)
+                        .to_owned(),
+                    None => return Ok(None),
+                }
+            }
+            None => branch.clone(),
+        };
+
+        let local = self
+            .rev_parse_commit(path, &format!("refs/heads/{branch}"))
+            .await?;
+        let tracking = self
+            .rev_parse_commit(path, &format!("refs/remotes/{remote}/{destination}"))
+            .await?;
+        Ok(match (local, tracking) {
+            (Some(local), Some(tracking)) => Some((local, tracking)),
+            _ => None,
+        })
+    }
+
+    /// The commit a ref points at, or `None` when the ref does not resolve.
+    async fn rev_parse_commit(&self, path: &Path, reference: &str) -> ApiResult<Option<String>> {
+        let output = self
+            .read_allow_failure(
+                Some(path),
+                os_args(&[
+                    "rev-parse",
+                    "--verify",
+                    "--quiet",
+                    "--end-of-options",
+                    &format!("{reference}^{{commit}}"),
+                ]),
+            )
+            .await?;
+        let value = output.stdout_lossy().trim().to_owned();
+        Ok(if output.success() && !value.is_empty() {
+            Some(value)
+        } else {
+            None
+        })
     }
 
     pub(crate) async fn mutate_with(
@@ -2559,6 +2703,17 @@ impl GitBackend for GitCliBackend {
                 ErrorCode::InvalidSettings,
                 "Setting upstream requires an explicit remote and branch",
             ));
+        }
+        // Setting the upstream is a change to the repository's own
+        // configuration, so it runs even when the commits are already there.
+        if !options.set_upstream
+            && let Some((local, tracking)) = self.push_destination_state(path, options).await?
+            && local == tracking
+        {
+            let before_oid = self.head_oid(path).await?;
+            let mut result = self.mutation_result(path, before_oid).await?;
+            result.notice = Some("Everything up-to-date".to_owned());
+            return Ok(result);
         }
         let mut args = os_args(&["push", "--porcelain", "--progress"]);
         if options.set_upstream {

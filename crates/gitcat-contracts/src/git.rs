@@ -669,6 +669,11 @@ pub struct MutationResult {
     pub generation: String,
     pub conflicts: Vec<StatusEntry>,
     pub needs_user_action: bool,
+    /// What the command did not have to do, for the cases where "done" would
+    /// overstate it -- a push whose destination already had the commits. The
+    /// ordinary result carries nothing here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notice: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

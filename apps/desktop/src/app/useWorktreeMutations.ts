@@ -125,6 +125,10 @@ export function useWorktreeMutations({
                         title: `${title}: attention required`,
                         detail: `${result.conflicts.length} conflict${result.conflicts.length === 1 ? " remains" : "s remain"}. Resolve them in the Working tree panel.`,
                     });
+                } else if (isMutationResult(result) && result.notice) {
+                    // The command reported that it had nothing to do; saying
+                    // only "complete" would claim work that never happened.
+                    addToast({ tone: "info", title, detail: result.notice });
                 } else if (!options?.silent) {
                     addToast({ tone: "success", title });
                 }

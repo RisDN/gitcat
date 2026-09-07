@@ -1635,6 +1635,7 @@ mod tests {
             generation: "g2".into(),
             conflicts: Vec::new(),
             needs_user_action: false,
+            notice: None,
         }
     }
 }
