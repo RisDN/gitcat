@@ -682,9 +682,12 @@ async fn forge_token_set(
 
 /// Which hosts hold a token, with a hint too short to be the credential. The
 /// token itself never travels back to the webview.
+///
+/// Asked of `ForgeAuth` rather than the store, because only it can say which
+/// of the scopes GitCat needs a stored sign-in is short of.
 #[tauri::command]
-async fn forge_credentials(tokens: State<'_, Arc<TokenStore>>) -> ApiResult<Vec<ForgeCredential>> {
-    tokens.credentials()
+async fn forge_credentials(auth: State<'_, Arc<ForgeAuth>>) -> ApiResult<Vec<ForgeCredential>> {
+    auth.credentials()
 }
 
 /// The pull requests open against one repository.

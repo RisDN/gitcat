@@ -247,6 +247,10 @@ impl TokenStore {
     /// What the settings screen may show: which hosts hold a token, and a hint
     /// short enough not to be the credential.
     ///
+    /// `missing_scopes` is left empty here: what GitCat asks a service for is
+    /// not the store's business, and [`ForgeAuth::credentials`] fills it in
+    /// against the scope list that does live with the sign-in flow.
+    ///
     /// A host whose entry has disappeared -- deleted through the operating
     /// system rather than through GitCat -- is dropped from the index here
     /// rather than reported as a token that no longer exists.
@@ -261,6 +265,7 @@ impl TokenStore {
                     hint: hint(credential.access_token()),
                     kind: credential.kind(),
                     account: credential.account().map(str::to_owned),
+                    missing_scopes: Vec::new(),
                 });
                 live.insert(host.clone());
             }

@@ -70,6 +70,16 @@ pub struct ForgeCredential {
     /// Account the credential belongs to, when the sign-in reported one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account: Option<String>,
+    /// Scopes GitCat now asks for that this sign-in does not carry.
+    ///
+    /// A sign-in holds the scopes that were asked for when it was made, and no
+    /// service widens one in place: a credential granted by a build that did
+    /// not ask for `workflow` goes on being rejected by a push that touches
+    /// `.github/workflows` until the user signs in again. Always empty for a
+    /// typed token, whose grant the store cannot see -- unknown is not the
+    /// same as incomplete.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub missing_scopes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
