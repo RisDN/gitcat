@@ -2214,6 +2214,120 @@ async fn rejects_bare_repository_with_stable_error() {
     assert_eq!(error.code, ErrorCode::UnsupportedOperation);
 }
 
+/// Because each fetch command names one remote, it reaches a single host and
+/// carries that host's token -- even in a repository whose remotes sit on
+/// different hosts, where a combined `fetch --all` could offer no token at all.
+#[tokio::test]
+async fn fetch_authenticates_each_remote_by_its_own_host() {
+    #[derive(Default)]
+    struct RecordingCredentials {
+        hosts: std::sync::Mutex<Vec<String>>,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::credentials::GitCredentialSource for RecordingCredentials {
+        async fn token_for(&self, host: &str) -> Option<String> {
+            self.hosts
+                .lock()
+                .expect("record host")
+                .push(host.to_owned());
+            Some("token".into())
+        }
+    }
+
+    let (directory, _, _) = committed_repository().await;
+    let credentials = Arc::new(RecordingCredentials::default());
+    let backend = GitCliBackend::default().with_credentials(credentials.clone());
+    // Two hosts that refuse a connection at once: the fetch is expected to
+    // fail, and what is under test is the credential it asked for first.
+    git(
+        directory.path(),
+        &["remote", "add", "origin", "https://127.0.0.1:9/one.git"],
+    );
+    git(
+        directory.path(),
+        &["remote", "add", "mirror", "https://localhost:9/two.git"],
+    );
+
+    backend
+        .fetch(
+            directory.path(),
+            &FetchOptions {
+                remote: None,
+                prune: false,
+                tags: false,
+            },
+            CancellationToken::new(),
+        )
+        .await
+        .expect_err("unreachable remote");
+
+    let hosts = credentials.hosts.lock().expect("recorded hosts").clone();
+    assert_eq!(
+        hosts.len(),
+        1,
+        "a fetch asks for one host per remote, got {hosts:?}"
+    );
+    assert!(
+        hosts[0] == "127.0.0.1" || hosts[0] == "localhost",
+        "unexpected host {hosts:?}"
+    );
+}
+
+/// A fetch with no remote selected runs one command per remote, so a
+/// repository with several remotes updates all of them -- and each command
+/// reaches a single host, which is what lets it carry that host's token.
+#[tokio::test]
+async fn fetch_without_a_remote_updates_every_remote() {
+    let (directory, backend, _) = committed_repository().await;
+    let bares: Vec<_> = ["origin", "mirror"]
+        .into_iter()
+        .map(|name| {
+            let bare = tempdir().expect("bare remote");
+            git(bare.path(), &["init", "--bare", "--quiet"]);
+            let bare_path = bare.path().to_string_lossy().into_owned();
+            git(directory.path(), &["remote", "add", name, &bare_path]);
+            git(directory.path(), &["push", "--quiet", name, "main"]);
+            bare
+        })
+        .collect();
+    for name in ["origin", "mirror"] {
+        git(
+            directory.path(),
+            &["update-ref", "-d", &format!("refs/remotes/{name}/main")],
+        );
+    }
+
+    backend
+        .fetch(
+            directory.path(),
+            &FetchOptions {
+                remote: None,
+                prune: false,
+                tags: false,
+            },
+            CancellationToken::new(),
+        )
+        .await
+        .expect("fetch every remote");
+
+    for name in ["origin", "mirror"] {
+        assert!(
+            !git_stdout(
+                directory.path(),
+                &[
+                    "rev-parse",
+                    "--verify",
+                    &format!("refs/remotes/{name}/main")
+                ],
+            )
+            .is_empty(),
+            "{name} was not fetched"
+        );
+    }
+    drop(bares);
+}
+
 #[tokio::test]
 async fn local_remote_fetch_pull_and_push_use_explicit_modes() {
     let (directory, backend, _) = committed_repository().await;

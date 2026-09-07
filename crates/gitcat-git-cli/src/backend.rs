@@ -737,10 +737,12 @@ impl GitCliBackend {
     /// Options for a network command, carrying a token when it is unambiguous
     /// which host the command will contact.
     ///
-    /// A command that reaches several hosts -- `fetch --all` across remotes on
-    /// different services -- is left to the credential helpers Git already has:
-    /// installing one clears them for the whole command, and a token for one
-    /// host is no use to another.
+    /// A command that reaches several hosts -- a push or pull with no explicit
+    /// remote in a repository whose remotes sit on different services -- is
+    /// left to the credential helpers Git already has: installing one clears
+    /// them for the whole command, and a token for one host is no use to
+    /// another. A fetch never lands here with more than one host, because it
+    /// runs one command per remote.
     async fn network_options(&self, remotes: &[RemoteInfo], remote: Option<&str>) -> GitRunOptions {
         let mut options = GitRunOptions::network(NETWORK_OUTPUT_CAP);
         let Some(source) = self.credentials.as_ref() else {
@@ -2458,23 +2460,36 @@ impl GitBackend for GitCliBackend {
         let remotes = self
             .validate_remote_selection(path, options.remote.as_deref())
             .await?;
-        let mut args = os_args(&["fetch", "--progress"]);
-        if options.prune {
-            args.push("--prune".into());
-        }
-        if options.tags {
-            args.push("--tags".into());
-        }
-        if let Some(remote) = &options.remote {
+        // Every remote is fetched by its own command rather than through
+        // `fetch --all`, so each one reaches a single host and can carry the
+        // token issued for that host.
+        let targets: Vec<String> = match &options.remote {
+            Some(remote) => vec![remote.clone()],
+            None => remotes.iter().map(|entry| entry.name.clone()).collect(),
+        };
+        let mut result = None;
+        for target in targets {
+            let mut args = os_args(&["fetch", "--progress"]);
+            if options.prune {
+                args.push("--prune".into());
+            }
+            if options.tags {
+                args.push("--tags".into());
+            }
             args.push("--".into());
-            args.push(remote.into());
-        } else {
-            args.push("--all".into());
+            args.push(target.as_str().into());
+            let run = self.network_options(&remotes, Some(target.as_str())).await;
+            result = Some(
+                self.mutate_with(path, args, None, cancellation.clone(), run)
+                    .await?,
+            );
         }
-        let run = self
-            .network_options(&remotes, options.remote.as_deref())
-            .await;
-        self.mutate_with(path, args, None, cancellation, run).await
+        result.ok_or_else(|| {
+            ApiError::new(
+                ErrorCode::UpstreamMissing,
+                "Repository has no configured remote",
+            )
+        })
     }
 
     async fn pull(
