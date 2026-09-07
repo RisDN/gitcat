@@ -5,7 +5,7 @@ import { identityInitials, parseCoAuthors } from "../../lib";
 import type { ChangedFile, CommitDetails as CommitDetailsType } from "../../lib/types";
 import type { FileTreeItem, FileViewMode } from "../file-tree";
 import { ChangeCountSummary, FileTree, FileTreeControls, fileChangeCounts, sumChangeCounts } from "../file-tree";
-import { Badge, SidePanel } from "../ui";
+import { SidePanel } from "../ui";
 import { MessageEditor, MessageView } from "./CommitMessage";
 import { Avatar, CoAuthorRow, FilesPanel, IdentityRow, ParentRefs, StatsRow } from "./CommitSections";
 import { ShaBar, ShaCopy } from "./ShaBar";
@@ -138,7 +138,6 @@ export function CommitDetails({ details, avatarImages, selectedPath, busy = fals
                 <span className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
                     <ChangeCountSummary counts={fileCounts} labels size="md" />
                 </span>
-                {details.parent_oids.length > 1 ? <Badge tone="warning">merge</Badge> : null}
             </StatsRow>
             <FilesPanel>
                 <FileTreeControls mode={fileViewMode} onModeChange={onFileViewModeChange} />
