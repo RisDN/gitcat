@@ -208,7 +208,7 @@ The web build is written to `apps/desktop/dist`; native artifacts are written un
 
 ## Releases
 
-The current version is 1.5.0. `.github/workflows/release.yml` builds both platforms in parallel and then publishes them together:
+The current version is 1.6.0. `.github/workflows/release.yml` builds both platforms in parallel and then publishes them together:
 
 
 - `build-windows` on `windows-latest` enforces the `x86_64-pc-windows-msvc` host, runs fmt, clippy, tests, and typecheck, then bundles the NSIS installer. The build is verified to be self-contained: the job fails if `gitcat-desktop.exe` still imports `WebView2Loader.dll` or if a dynamic loader DLL is left in the release output, and it prints the installer's SHA-256.
