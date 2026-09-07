@@ -34,7 +34,7 @@ export function useRepositoryCommands({
             remote: null,
             prune: autoPrune,
             tags: false,
-        }));
+        }), { queueKey: "fetch" });
     }, [autoPrune, runMutation]);
 
     const pullActiveRepository = useCallback((mode: PullMode = defaultPullMode) => {
@@ -44,7 +44,7 @@ export function useRepositoryCommands({
             mode,
             prune: autoPrune,
             autostash: true,
-        }));
+        }), { queueKey: "pull" });
     }, [autoPrune, defaultPullMode, runMutation]);
 
     // A branch with no upstream is the one case where the push has to say so,
@@ -56,7 +56,7 @@ export function useRepositoryCommands({
             remote: null,
             branch: null,
             set_upstream: options?.setUpstream === true,
-        }));
+        }), { queueKey: `push:${options?.setUpstream === true}` });
     }, [runMutation]);
 
     const createBranchAtHead = useCallback(() => {
@@ -67,7 +67,7 @@ export function useRepositoryCommands({
     }, [addToast, snapshot]);
 
     const stashActiveRepository = useCallback(() => {
-        void runMutation("Changes stashed", (repository) => gitcatApi.stashPush(repository.repository_id, null, true));
+        void runMutation("Changes stashed", (repository) => gitcatApi.stashPush(repository.repository_id, null, true), { queueKey: "stash" });
     }, [runMutation]);
 
     const popLatestStash = useCallback(() => {
@@ -75,19 +75,19 @@ export function useRepositoryCommands({
         void runMutation(
             "Stash popped",
             (repository) => gitcatApi.stashApply(repository.repository_id, stashes[0].oid, true),
-            { wipTitleHint: stashes[0].message },
+            { queueKey: `stash-pop:${stashes[0].oid}`, wipTitleHint: stashes[0].message },
         );
     }, [runMutation, stashes]);
 
     const continueActiveOperation = useCallback(() => {
         const operation = snapshot ? continuableOperation(snapshot.operation_state) : null;
-        if (operation) void runMutation("Operation continued", (repository) => gitcatApi.continueOperation(repository.repository_id, operation));
+        if (operation) void runMutation("Operation continued", (repository) => gitcatApi.continueOperation(repository.repository_id, operation), { queueKey: `continue:${operation}` });
     }, [runMutation, snapshot]);
 
     const abortActiveOperation = useCallback(() => {
         const operation = snapshot ? continuableOperation(snapshot.operation_state) : null;
         if (!operation || !window.confirm(`Abort the active ${operation.replace("_", "-")} operation and discard its in-progress state?`)) return;
-        void runMutation("Operation aborted", (repository) => gitcatApi.abortOperation(repository.repository_id, operation));
+        void runMutation("Operation aborted", (repository) => gitcatApi.abortOperation(repository.repository_id, operation), { queueKey: `abort:${operation}` });
     }, [runMutation, snapshot]);
 
     const skipActiveOperation = useCallback(() => {
@@ -95,12 +95,12 @@ export function useRepositoryCommands({
         if (!operation || operation === "merge") return;
         const label = operation.replace("_", "-");
         if (!window.confirm(`Skip the commit currently being applied by this ${label} and drop its changes?`)) return;
-        void runMutation("Commit skipped", (repository) => gitcatApi.skipOperation(repository.repository_id, operation));
+        void runMutation("Commit skipped", (repository) => gitcatApi.skipOperation(repository.repository_id, operation), { queueKey: `skip:${operation}` });
     }, [runMutation, snapshot]);
 
     const autoResolveActiveConflicts = useCallback(() => {
         if (!snapshot?.status.entries.some((entry) => entry.conflicted)) return;
-        void runMutation("Recorded conflict resolutions applied", (repository) => gitcatApi.autoResolveConflicts(repository.repository_id));
+        void runMutation("Recorded conflict resolutions applied", (repository) => gitcatApi.autoResolveConflicts(repository.repository_id), { queueKey: "auto-resolve" });
     }, [runMutation, snapshot]);
 
     const focusCommitMessage = useCallback(() => {

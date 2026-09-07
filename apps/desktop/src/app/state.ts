@@ -57,6 +57,13 @@ export type RunMutation = (
         optimistic?: () => (() => void) | undefined;
         onError?: (error: unknown) => boolean;
         /**
+         * Names the kind of operation for the mutation queue. A command asked
+         * for again while one of the same kind is already running or waiting
+         * is dropped rather than queued twice; a mutation with no key never
+         * collides with another.
+         */
+        queueKey?: string;
+        /**
          * On success, shows this as the WIP row's title until the next
          * mutation (any mutation not itself passing this option clears it).
          * Mirrors GitKraken, which labels the working-tree row with the

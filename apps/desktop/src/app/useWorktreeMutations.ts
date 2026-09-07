@@ -1,9 +1,10 @@
-import { useCallback, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { useCallback, useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
 
 import type { FolderCollapseTarget } from "../components/file-tree";
 import type { ToastMessage } from "../components/ToastRegion";
 import { gitcatApi } from "../lib/api";
 import type { FileViewMode, HistoryPage, RepositorySnapshot } from "../lib/types";
+import { createMutationQueue } from "./mutationQueue";
 import { expectedState, isMutationResult } from "./snapshot";
 import type { CenterView, RuntimeRepository } from "./state";
 import { nextWorktreeSelection, optimisticWorktreeSelection, optimisticWorktreeSnapshot, type WorktreeStageAction } from "./worktree";
@@ -81,6 +82,14 @@ export function useWorktreeMutations({
         };
     }, [activeRepository, selectedWorktreeFile, snapshot]);
 
+    // The queue reads the hold through a ref because a task can be started long
+    // after the render that enqueued it, and the `busy` it captured then says
+    // nothing about the repository now.
+    const blockedRef = useRef(false);
+    blockedRef.current = busy || overviewLoading;
+    const queueRef = useRef<ReturnType<typeof createMutationQueue> | null>(null);
+    if (!queueRef.current) queueRef.current = createMutationQueue({ blocked: () => blockedRef.current });
+
     const runMutation = useCallback(async (
         title: string,
         operation: (repository: RuntimeRepository) => Promise<unknown>,
@@ -88,41 +97,54 @@ export function useWorktreeMutations({
             silent?: boolean;
             optimistic?: () => (() => void) | undefined;
             onError?: (error: unknown) => boolean;
+            queueKey?: string;
             wipTitleHint?: string;
         },
     ): Promise<boolean> => {
-        if (!activeRepository || busy || overviewLoading) return false;
-        let rollbackOptimistic: (() => void) | undefined;
-        let operationCompleted = false;
-        ++overviewLoadSequence.current;
-        setBusy(true);
-        try {
-            rollbackOptimistic = options?.optimistic?.();
-            const result = await operation(activeRepository);
-            operationCompleted = true;
-            if (activeRepositoryIdRef.current === activeRepository.repository_id) {
-                setWipTitleHint(options?.wipTitleHint ?? null);
-                await loadOverview(activeRepository, true)
-                    .catch((error) => showError("Refresh failed", error));
+        if (!activeRepository) return false;
+        // The repository is fixed when the operation is asked for, not when it
+        // runs: a queued push belongs to the tab it was pressed in.
+        const repository = activeRepository;
+        return queueRef.current!.run(async () => {
+            let rollbackOptimistic: (() => void) | undefined;
+            let operationCompleted = false;
+            ++overviewLoadSequence.current;
+            setBusy(true);
+            try {
+                rollbackOptimistic = options?.optimistic?.();
+                const result = await operation(repository);
+                operationCompleted = true;
+                if (activeRepositoryIdRef.current === repository.repository_id) {
+                    setWipTitleHint(options?.wipTitleHint ?? null);
+                    await loadOverview(repository, true)
+                        .catch((error) => showError("Refresh failed", error));
+                }
+                if (isMutationResult(result) && result.conflicts.length) {
+                    addToast({
+                        tone: "info",
+                        title: `${title}: attention required`,
+                        detail: `${result.conflicts.length} conflict${result.conflicts.length === 1 ? " remains" : "s remain"}. Resolve them in the Working tree panel.`,
+                    });
+                } else if (!options?.silent) {
+                    addToast({ tone: "success", title });
+                }
+                return true;
+            } catch (error) {
+                if (!operationCompleted) rollbackOptimistic?.();
+                if (!options?.onError?.(error)) showError(`${title} failed`, error);
+                return false;
+            } finally {
+                setBusy(false);
             }
-            if (isMutationResult(result) && result.conflicts.length) {
-                addToast({
-                    tone: "info",
-                    title: `${title}: attention required`,
-                    detail: `${result.conflicts.length} conflict${result.conflicts.length === 1 ? " remains" : "s remain"}. Resolve them in the Working tree panel.`,
-                });
-            } else if (!options?.silent) {
-                addToast({ tone: "success", title });
-            }
-            return true;
-        } catch (error) {
-            if (!operationCompleted) rollbackOptimistic?.();
-            if (!options?.onError?.(error)) showError(`${title} failed`, error);
-            return false;
-        } finally {
-            setBusy(false);
-        }
-    }, [activeRepository, addToast, busy, loadOverview, overviewLoading, setWipTitleHint, showError]);
+        }, {
+            key: options?.queueKey,
+            // Staging is silent and frequent; a queue notice belongs to the
+            // commands the user pressed a button or a shortcut for.
+            onQueued: options?.silent
+                ? undefined
+                : () => addToast({ tone: "info", title: "Queued", detail: "Waiting for the running operation to finish." }),
+        });
+    }, [activeRepository, addToast, loadOverview, setWipTitleHint, showError]);
 
     const rewordCommit = useCallback((oid: string, message: string) => {
         if (!snapshot) return Promise.resolve(false);

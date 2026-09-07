@@ -196,19 +196,22 @@ export function useGlobalKeybinds({
                 if (activeRepository) setRightPanelVisible((visible) => !visible);
             } else if (matches(keybinds.fetch)) {
                 event.preventDefault();
-                if (activeRepository && !busy) fetchActiveRepository();
+                // The repository commands below carry no busy guard on purpose:
+                // one asked for while another is running is queued behind it
+                // rather than dropped, so the shortcut is never a dead key.
+                if (activeRepository) fetchActiveRepository();
             } else if (matches(keybinds.pull)) {
                 event.preventDefault();
-                if (activeRepository && !busy) pullActiveRepository();
+                if (activeRepository) pullActiveRepository();
             } else if (matches(keybinds.push)) {
                 event.preventDefault();
-                if (activeRepository && !busy) pushActiveRepository();
+                if (activeRepository) pushActiveRepository();
             } else if (matches(keybinds.create_branch)) {
                 event.preventDefault();
                 if (activeRepository && !busy) createBranchAtHead();
             } else if (matches(keybinds.stash)) {
                 event.preventDefault();
-                if (activeRepository && !busy) stashActiveRepository();
+                if (activeRepository) stashActiveRepository();
             } else if (matches(keybinds.show_worktree)) {
                 event.preventDefault();
                 if (activeRepository) {
@@ -231,10 +234,10 @@ export function useGlobalKeybinds({
                 if (selectedOid) void copySha(selectedOid);
             } else if (matches(keybinds.continue_operation)) {
                 event.preventDefault();
-                if (!busy) continueActiveOperation();
+                continueActiveOperation();
             } else if (matches(keybinds.abort_operation)) {
                 event.preventDefault();
-                if (!busy) abortActiveOperation();
+                abortActiveOperation();
             } else if (
                 matches(keybinds.stage_all)
             ) {
@@ -258,7 +261,7 @@ export function useGlobalKeybinds({
                 focusCommitMessage();
             } else if (matches(keybinds.auto_resolve_conflicts)) {
                 event.preventDefault();
-                if (!busy) autoResolveActiveConflicts();
+                autoResolveActiveConflicts();
             } else if (matches(keybinds.commit)) {
                 event.preventDefault();
                 window.dispatchEvent(new Event("gitcat:commit"));
