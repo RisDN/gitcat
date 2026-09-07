@@ -51,6 +51,21 @@ pub trait GitCredentialSource: Send + Sync {
     /// The token to offer for one host, or `None` to leave Git to whatever
     /// credential helpers the user has configured.
     async fn token_for(&self, host: &str) -> Option<String>;
+
+    /// A token to replace one the service has just refused.
+    ///
+    /// A stored token can stop working before the expiry it was issued with:
+    /// it is revoked on the service's own page, or another sign-in supersedes
+    /// it. The command that carried it comes back "authentication required",
+    /// and a renewal is the only thing that answers that without asking the
+    /// user to sign in again. Answering with the same token says the renewal
+    /// changed nothing, which is how the caller knows not to try again.
+    ///
+    /// Sources that hold nothing renewable -- a token the user typed -- keep
+    /// the default and every failure stays a failure.
+    async fn renew_rejected(&self, _host: &str) -> Option<String> {
+        None
+    }
 }
 
 /// The `-c` arguments that install the helper for one command.

@@ -802,6 +802,13 @@ impl GitCredentialSource for ForgeCredentials {
     async fn token_for(&self, host: &str) -> Option<String> {
         self.0.access_token(host).await
     }
+
+    /// A sign-in the service refused is renewed here, so a fetch or a push that
+    /// met a revoked token repairs itself instead of reporting a failure the
+    /// refresh token could have answered.
+    async fn renew_rejected(&self, host: &str) -> Option<String> {
+        self.0.renew_rejected(host).await
+    }
 }
 
 fn task_join_error(error: impl std::fmt::Display) -> ApiError {

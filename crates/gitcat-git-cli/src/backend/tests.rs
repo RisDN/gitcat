@@ -3316,3 +3316,90 @@ async fn merge_conflict_is_a_successful_transition_requiring_user_action() {
         .await
         .expect("abort merge");
 }
+
+/// One rejection is worth one renewal, and only a rejection.
+#[test]
+fn only_a_refused_credential_is_worth_renewing() {
+    let mut options = GitRunOptions::network(1024);
+    options.credential = Some(HostCredential {
+        host: "github.com".into(),
+        token: "spent".into(),
+    });
+    let refused = |code| -> ApiResult<MutationResult> { Err(ApiError::new(code, "failed")) };
+
+    assert_eq!(
+        renewal_candidate(&refused(ErrorCode::AuthenticationRequired), &options)
+            .map(|credential| credential.host.as_str()),
+        Some("github.com"),
+    );
+    assert!(renewal_candidate(&refused(ErrorCode::NonFastForward), &options).is_none());
+    assert!(renewal_candidate(&refused(ErrorCode::NetworkFailed), &options).is_none());
+
+    // A command left to the user's own credential helpers has nothing to renew.
+    let mut anonymous = GitRunOptions::network(1024);
+    anonymous.credential = None;
+    assert!(renewal_candidate(&refused(ErrorCode::AuthenticationRequired), &anonymous).is_none());
+}
+
+/// The same token twice means the service dropped a live credential; running
+/// the command again would spend another round trip on the same answer.
+#[test]
+fn a_renewal_that_changes_nothing_is_not_retried() {
+    let previous = HostCredential {
+        host: "github.com".into(),
+        token: "spent".into(),
+    };
+
+    assert_eq!(
+        renewed_token(&previous, Some("fresh".into())),
+        Some("fresh".into())
+    );
+    assert_eq!(renewed_token(&previous, Some("spent".into())), None);
+    assert_eq!(renewed_token(&previous, None), None);
+}
+
+/// A failure the credential had nothing to do with must not spend a renewal:
+/// the refresh token is a limited resource and the retry would fail the same
+/// way.
+#[tokio::test]
+async fn an_unreachable_remote_never_asks_for_a_renewal() {
+    #[derive(Default)]
+    struct CountingCredentials {
+        renewals: std::sync::Mutex<u32>,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::credentials::GitCredentialSource for CountingCredentials {
+        async fn token_for(&self, _host: &str) -> Option<String> {
+            Some("token".into())
+        }
+
+        async fn renew_rejected(&self, _host: &str) -> Option<String> {
+            *self.renewals.lock().expect("count renewals") += 1;
+            Some("renewed".into())
+        }
+    }
+
+    let (directory, _, _) = committed_repository().await;
+    let credentials = Arc::new(CountingCredentials::default());
+    let backend = GitCliBackend::default().with_credentials(credentials.clone());
+    git(
+        directory.path(),
+        &["remote", "add", "origin", "https://127.0.0.1:9/one.git"],
+    );
+
+    backend
+        .fetch(
+            directory.path(),
+            &FetchOptions {
+                remote: None,
+                prune: false,
+                tags: false,
+            },
+            CancellationToken::new(),
+        )
+        .await
+        .expect_err("unreachable remote");
+
+    assert_eq!(*credentials.renewals.lock().expect("count renewals"), 0);
+}

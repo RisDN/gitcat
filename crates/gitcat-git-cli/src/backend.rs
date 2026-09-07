@@ -1007,6 +1007,51 @@ impl GitCliBackend {
         })
     }
 
+    /// Runs a network mutation, and gives a refused credential exactly one
+    /// second chance.
+    ///
+    /// The token GitCat holds can die between commands -- revoked on the
+    /// service's page, or superseded by a sign-in elsewhere -- and the user has
+    /// no way to tell that apart from "the push failed". A rejection is worth
+    /// one renewal: if the source can produce a different token, the same
+    /// command runs again with it. One retry, and only when the token actually
+    /// changed, so a service that keeps refusing is reported rather than asked
+    /// twice.
+    async fn mutate_network(
+        &self,
+        path: &Path,
+        args: Vec<OsString>,
+        cancellation: CancellationToken,
+        options: GitRunOptions,
+    ) -> ApiResult<MutationResult> {
+        let result = self
+            .mutate_with(
+                path,
+                args.clone(),
+                None,
+                cancellation.clone(),
+                options.clone(),
+            )
+            .await;
+        let (Some(credential), Some(source)) = (
+            renewal_candidate(&result, &options),
+            self.credentials.as_ref(),
+        ) else {
+            return result;
+        };
+        let renewed = source.renew_rejected(&credential.host).await;
+        let Some(token) = renewed_token(credential, renewed) else {
+            return result;
+        };
+        let mut retry = options.clone();
+        retry.credential = Some(HostCredential {
+            host: credential.host.clone(),
+            token,
+        });
+        self.mutate_with(path, args, None, cancellation, retry)
+            .await
+    }
+
     pub(crate) async fn mutate_with(
         &self,
         path: &Path,
@@ -2624,7 +2669,7 @@ impl GitBackend for GitCliBackend {
             args.push(target.as_str().into());
             let run = self.network_options(&remotes, Some(target.as_str())).await;
             result = Some(
-                self.mutate_with(path, args, None, cancellation.clone(), run)
+                self.mutate_network(path, args, cancellation.clone(), run)
                     .await?,
             );
         }
@@ -2680,7 +2725,7 @@ impl GitBackend for GitCliBackend {
         let run = self
             .network_options(&remotes, options.remote.as_deref())
             .await;
-        self.mutate_with(path, args, None, cancellation, run).await
+        self.mutate_network(path, args, cancellation, run).await
     }
 
     async fn push(
@@ -2730,7 +2775,7 @@ impl GitBackend for GitCliBackend {
         let run = self
             .network_options(&remotes, options.remote.as_deref())
             .await;
-        self.mutate_with(path, args, None, cancellation, run).await
+        self.mutate_network(path, args, cancellation, run).await
     }
 
     async fn checkout_commit(&self, path: &Path, oid: &str) -> ApiResult<MutationResult> {
@@ -3182,6 +3227,33 @@ mod tests;
 /// The host a password would be sent to, which only exists for the transports
 /// that use one. An SSH remote authenticates with a key, so a token is not what
 /// it is missing.
+/// The credential a failed network command should be retried with, if any.
+///
+/// Only a refusal is worth renewing: every other failure -- an unreachable
+/// host, a rejected non-fast-forward -- would fail identically with a new
+/// token. A command that carried no token has nothing to renew either; it was
+/// left to the user's own credential helpers.
+fn renewal_candidate<'a>(
+    result: &ApiResult<MutationResult>,
+    options: &'a GitRunOptions,
+) -> Option<&'a HostCredential> {
+    match result {
+        Err(error) if error.code == ErrorCode::AuthenticationRequired => {
+            options.credential.as_ref()
+        }
+        _ => None,
+    }
+}
+
+/// The token to try again with.
+///
+/// Getting the same token back means the renewal changed nothing: the service
+/// dropped a credential that is still the current one, and running the command
+/// a second time would spend another round trip on the same answer.
+fn renewed_token(previous: &HostCredential, renewed: Option<String>) -> Option<String> {
+    renewed.filter(|token| token != &previous.token)
+}
+
 fn password_host(url: Option<&RemoteUrlParts>) -> Option<&str> {
     let url = url?;
     matches!(url.scheme, RemoteUrlScheme::Https | RemoteUrlScheme::Http)
