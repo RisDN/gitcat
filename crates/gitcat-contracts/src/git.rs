@@ -711,6 +711,25 @@ pub struct PushOptions {
     pub remote: Option<String>,
     pub branch: Option<String>,
     pub set_upstream: bool,
+    #[serde(default)]
+    pub force: PushForce,
+}
+
+/// How far a push may go in overwriting what the remote already has.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PushForce {
+    /// Fast-forward only, which is what a push means unless the user says
+    /// otherwise.
+    #[default]
+    None,
+    /// Overwrite, but only while the remote is where the last fetch left it.
+    /// Work someone else pushed in the meantime stops the push instead of
+    /// disappearing.
+    WithLease,
+    /// Overwrite whatever is there. The user has been told what this discards
+    /// and asked for it anyway.
+    Force,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

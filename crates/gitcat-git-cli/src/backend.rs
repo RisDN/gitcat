@@ -2751,7 +2751,11 @@ impl GitBackend for GitCliBackend {
         }
         // Setting the upstream is a change to the repository's own
         // configuration, so it runs even when the commits are already there.
+        // A forced push is an order to make the remote match this branch, and
+        // the local view of the remote is exactly what may be out of date, so
+        // it is never answered from the tracking ref either.
         if !options.set_upstream
+            && options.force == PushForce::None
             && let Some((local, tracking)) = self.push_destination_state(path, options).await?
             && local == tracking
         {
@@ -2761,6 +2765,17 @@ impl GitBackend for GitCliBackend {
             return Ok(result);
         }
         let mut args = os_args(&["push", "--porcelain", "--progress"]);
+        match options.force {
+            PushForce::None => {}
+            // `--force-if-includes` is what makes the lease mean what the user
+            // read: without it a background fetch that moved the tracking ref
+            // satisfies the lease on work this branch never saw.
+            PushForce::WithLease => {
+                args.push("--force-with-lease".into());
+                args.push("--force-if-includes".into());
+            }
+            PushForce::Force => args.push("--force".into()),
+        }
         if options.set_upstream {
             args.push("--set-upstream".into());
         }

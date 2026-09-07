@@ -25,6 +25,12 @@ export type PromptState =
 export type ConfirmState =
     | { kind: "delete_branch"; name: string; force: boolean }
     | { kind: "delete_stash"; oid: string; selector: string; message: string }
+    /**
+     * A push that overwrites the remote. `ignoreRemote` is the second step:
+     * the lease was refused because the remote moved, and the user asked to
+     * overwrite it anyway. It is never the state a menu opens with.
+     */
+    | { kind: "force_push"; remote: string; branch: string; ignoreRemote: boolean }
     | null;
 
 export interface CommitMenuState {

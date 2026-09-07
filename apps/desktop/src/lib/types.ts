@@ -501,10 +501,15 @@ export interface PullOptions {
   autostash: boolean;
 }
 
+/** How far a push may go in overwriting what the remote already has. */
+export type PushForce = "none" | "with_lease" | "force";
+
 export interface PushOptions {
   remote: string | null;
   branch: string | null;
   set_upstream: boolean;
+  /** Omitted is `"none"`: a push is fast-forward only unless it says otherwise. */
+  force?: PushForce;
 }
 
 export interface FetchOptions {

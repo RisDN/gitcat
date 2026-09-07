@@ -2195,6 +2195,7 @@ async fn rejects_custom_remote_helpers_and_ambiguous_push_selection() {
                 remote: None,
                 branch: Some("main".into()),
                 set_upstream: false,
+                force: PushForce::None,
             },
             CancellationToken::new(),
         )
@@ -2343,6 +2344,7 @@ async fn local_remote_fetch_pull_and_push_use_explicit_modes() {
                 remote: Some("origin".into()),
                 branch: Some("main".into()),
                 set_upstream: true,
+                force: PushForce::None,
             },
             CancellationToken::new(),
         )

@@ -280,6 +280,7 @@ export function useContextMenuActions({
             return [
                 { id: "pull", label: PULL_LABELS[defaultPullMode], icon: <Download size={15} />, disabled: !branchAcceptsPull(snapshot, refInfo, "local") },
                 { id: "push", label: "Push", icon: <Upload size={15} />, disabled: !branchPushTarget(snapshot, refInfo, "local") },
+                { id: "force_push", label: "Force push", icon: <Upload size={15} />, danger: true, disabled: !branchPushTarget(snapshot, refInfo, "local") },
                 { id: "set_upstream", label: "Set upstream", icon: <Link size={15} /> },
                 { id: "checkout", label: "Checkout this commit", icon: <GitCommitHorizontal size={15} />, disabled: !enabled("checkout"), separatorBefore: true },
                 ...historyItems(false),
@@ -299,6 +300,7 @@ export function useContextMenuActions({
                     ? [
                         { id: "pull", label: PULL_LABELS[defaultPullMode], icon: <Download size={15} />, disabled: !branchAcceptsPull(snapshot, refInfo, reference.scope) },
                         { id: "push", label: "Push", icon: <Upload size={15} />, disabled: !branchPushTarget(snapshot, refInfo, reference.scope) },
+                        { id: "force_push", label: "Force push", icon: <Upload size={15} />, danger: true, disabled: !branchPushTarget(snapshot, refInfo, reference.scope) },
                     ]
                     : []),
                 {
@@ -415,6 +417,15 @@ export function useContextMenuActions({
                     branch: target.branch,
                     set_upstream: target.setUpstream,
                 }));
+                break;
+            }
+            case "force_push": {
+                const target = reference.refInfo
+                    ? branchPushTarget(snapshot, reference.refInfo, reference.scope)
+                    : null;
+                // Overwriting the remote is asked for here and carried out by
+                // the confirmation, which is also where the lease is chosen.
+                if (target) setConfirmRequest({ kind: "force_push", remote: target.remote, branch: target.branch, ignoreRemote: false });
                 break;
             }
             case "set_upstream":
@@ -598,6 +609,13 @@ export function useContextMenuActions({
                 icon: <Upload size={15} />,
                 disabled: !branchPushTarget(snapshot, branch, scope),
             },
+            {
+                id: "force_push",
+                label: "Force push",
+                icon: <Upload size={15} />,
+                danger: true,
+                disabled: !branchPushTarget(snapshot, branch, scope),
+            },
             { id: "create_branch", label: "Create branch here", icon: <GitBranchPlus size={15} />, separatorBefore: true },
             { id: "rename", label: `Rename ${displayName}`, icon: <Pencil size={15} />, disabled: !isLocal, separatorBefore: true },
             {
@@ -629,6 +647,11 @@ export function useContextMenuActions({
                     branch: target.branch,
                     set_upstream: target.setUpstream,
                 }));
+                break;
+            }
+            case "force_push": {
+                const target = branchPushTarget(snapshot, branch, scope);
+                if (target) setConfirmRequest({ kind: "force_push", remote: target.remote, branch: target.branch, ignoreRemote: false });
                 break;
             }
             case "create_branch":

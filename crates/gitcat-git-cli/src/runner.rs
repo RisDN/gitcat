@@ -607,6 +607,14 @@ fn classify_failure(stderr: &str, stdout: &str, exit: &str) -> ApiError {
             ErrorCode::AuthenticationRequired,
             "Remote authentication failed",
         )
+    } else if lower.contains("stale info") || lower.contains("remote ref updated since checkout") {
+        // The lease on the remote did not hold: it moved after the last fetch,
+        // or it moved into work this branch never had. Either way something is
+        // there that a forced push would have discarded unseen.
+        (
+            ErrorCode::NonFastForward,
+            "The remote moved since the last fetch, so the force push was refused",
+        )
     } else if lower.contains("non-fast-forward") || lower.contains("fetch first") {
         (
             ErrorCode::NonFastForward,
@@ -683,6 +691,18 @@ fn classify_failure(stderr: &str, stdout: &str, exit: &str) -> ApiError {
 /// a choice this cannot make for them.
 fn recovery_actions(code: ErrorCode, lower: &str) -> Vec<(&'static str, &'static str)> {
     match code {
+        // A refused lease is the one place where overwriting is a step the user
+        // may legitimately want next -- they already asked to force once -- so
+        // it is offered beside the safe answer, never instead of it.
+        ErrorCode::NonFastForward
+            if lower.contains("stale info")
+                || lower.contains("remote ref updated since checkout") =>
+        {
+            vec![
+                ("pull", "Pull, then push again"),
+                ("push_force", "Force push, overwriting the remote"),
+            ]
+        }
         ErrorCode::NonFastForward => vec![("pull", "Pull, then push again")],
         ErrorCode::UpstreamMissing if lower.contains("has no upstream branch") => {
             vec![("push_set_upstream", "Push and set the upstream branch")]

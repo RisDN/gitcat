@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useMemo, useRef, type Dispatch, type SetStateAction } from "react";
 
 import { gitcatApi } from "../lib/api";
 import type { PersistedState, RepositorySnapshot } from "../lib/types";
@@ -25,6 +25,10 @@ export function useDialogActions({
     setPrompt,
     snapshot,
 }: DialogActionsParams) {
+    // What the last force push aimed at, so the failure's own "overwrite"
+    // action knows what it is overwriting.
+    const lastForcePush = useRef<{ remote: string; branch: string } | null>(null);
+
     const submitPrompt = useCallback((value: string, secondaryValue?: string) => {
         if (!prompt) return;
         const currentPrompt = prompt;
@@ -149,8 +153,29 @@ export function useDialogActions({
                     expectedState(snapshot),
                 ));
                 break;
+            case "force_push":
+                lastForcePush.current = request;
+                void runMutation("Force push complete", (repository) => gitcatApi.push(repository.repository_id, {
+                    remote: request.remote,
+                    branch: request.branch,
+                    set_upstream: false,
+                    force: request.ignoreRemote ? "force" : "with_lease",
+                }), { queueKey: `push:${request.remote}:${request.branch}` });
+                break;
         }
     }, [confirmRequest, runMutation, snapshot]);
+
+    /**
+     * The second half of a force push whose lease was refused.
+     *
+     * The failure itself offers this, so it starts from the push that was just
+     * attempted rather than from a menu. It asks again before overwriting: the
+     * first confirmation was for a lease that would have stopped exactly this.
+     */
+    const escalateForcePush = useCallback(() => {
+        const previous = lastForcePush.current;
+        if (previous) setConfirmRequest({ kind: "force_push", ...previous, ignoreRemote: true });
+    }, [setConfirmRequest]);
 
     const confirmConfig = useMemo(() => {
         if (!confirmRequest) return null;
@@ -173,8 +198,20 @@ export function useDialogActions({
                     confirmLabel: "Delete",
                 };
             }
+            case "force_push": {
+                const target = `${confirmRequest.remote}/${confirmRequest.branch}`;
+                return confirmRequest.ignoreRemote
+                    ? {
+                        message: `${target} has commits this branch has never seen. Pushing anyway discards them for everyone.`,
+                        confirmLabel: "Overwrite the remote",
+                    }
+                    : {
+                        message: `Force pushing replaces ${target} with "${confirmRequest.branch}", discarding commits on the remote that are not in this branch. Work pushed by someone else since the last fetch stops the push instead.`,
+                        confirmLabel: "Force push",
+                    };
+            }
         }
     }, [confirmRequest]);
 
-    return { confirmConfig, promptConfig, submitConfirm, submitPrompt };
+    return { confirmConfig, escalateForcePush, promptConfig, submitConfirm, submitPrompt };
 }

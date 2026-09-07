@@ -447,16 +447,6 @@ function App() {
         stashes,
     });
 
-    // The Git failure classifier names the step that unblocks a failure; this
-    // is where those names get something to run.
-    useEffect(() => {
-        registerRecoveryHandlers({
-            open_settings: () => setSettingsOpen(true),
-            pull: () => pullActiveRepository(),
-            push_set_upstream: () => pushActiveRepository({ setUpstream: true }),
-        });
-    }, [pullActiveRepository, pushActiveRepository, registerRecoveryHandlers]);
-
     const { refreshActiveRepository } = useAutoRefresh({
         activeRepository,
         activeRepositoryIdRef,
@@ -591,7 +581,7 @@ function App() {
         workspace: persisted.workspace,
     });
 
-    const { confirmConfig, promptConfig, submitConfirm, submitPrompt } = useDialogActions({
+    const { confirmConfig, escalateForcePush, promptConfig, submitConfirm, submitPrompt } = useDialogActions({
         confirmRequest,
         prompt,
         runMutation,
@@ -600,6 +590,18 @@ function App() {
         setPrompt,
         snapshot,
     });
+
+    // The Git failure classifier names the step that unblocks a failure; this
+    // is where those names get something to run. It sits below the dialogs
+    // because one of the steps is a confirmation rather than a command.
+    useEffect(() => {
+        registerRecoveryHandlers({
+            open_settings: () => setSettingsOpen(true),
+            pull: () => pullActiveRepository(),
+            push_force: () => escalateForcePush(),
+            push_set_upstream: () => pushActiveRepository({ setUpstream: true }),
+        });
+    }, [escalateForcePush, pullActiveRepository, pushActiveRepository, registerRecoveryHandlers]);
 
     const activeConflictCount =snapshot?.status.entries.filter((entry) => entry.conflicted).length ?? 0;
     const wipStats = useMemo(() => {

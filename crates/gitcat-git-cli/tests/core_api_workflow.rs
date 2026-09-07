@@ -6,8 +6,9 @@ use std::{
 };
 
 use gitcat_contracts::{
-    ChangeKind, CommitOptions, CommitSearchQuery, DiffRequest, DiffTarget, ExpectedState,
-    HeadState, HistoryQuery, HistoryScope, PushOptions, RepositoryId, RepositorySnapshot,
+    ApiError, ChangeKind, CommitOptions, CommitSearchQuery, DiffRequest, DiffTarget, ErrorCode,
+    ExpectedState, HeadState, HistoryQuery, HistoryScope, MutationResult, PushForce, PushOptions,
+    RepositoryId, RepositorySnapshot,
 };
 use gitcat_core::CoreApi;
 use gitcat_git_cli::GitCliBackend;
@@ -333,6 +334,7 @@ async fn a_push_with_nothing_to_send_never_contacts_the_remote() {
                 remote: None,
                 branch: None,
                 set_upstream: false,
+                force: PushForce::None,
             },
             CancellationToken::new(),
         )
@@ -375,6 +377,7 @@ async fn a_push_with_something_to_send_still_runs() {
                 remote: None,
                 branch: None,
                 set_upstream: false,
+                force: PushForce::None,
             },
             CancellationToken::new(),
         )
@@ -397,3 +400,165 @@ fn run_git(repository: &Path, args: &[&str]) {
     );
 }
 
+async fn push(repository: &TestRepository, force: PushForce) -> Result<MutationResult, ApiError> {
+    repository
+        .api
+        .push(
+            &repository.id,
+            &PushOptions {
+                remote: None,
+                branch: None,
+                set_upstream: false,
+                force,
+            },
+            CancellationToken::new(),
+        )
+        .await
+}
+
+fn remote_tip(remote: &Path) -> String {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(remote)
+        .args(["rev-parse", "refs/heads/main"])
+        .output()
+        .expect("read the bare remote tip");
+    String::from_utf8_lossy(&output.stdout).trim().to_owned()
+}
+
+/// A rewritten branch is what force push exists for: the ordinary push is
+/// refused, and the lease -- held against a tracking ref nothing has moved --
+/// lets it through.
+#[tokio::test]
+async fn a_leased_force_push_replaces_a_rewritten_branch() {
+    let repository = initialized_repository().await;
+    commit_file(
+        &repository,
+        "pushed.txt",
+        "one
+",
+        "feat: first",
+    )
+    .await;
+
+    let remote = repository
+        .path
+        .parent()
+        .expect("parent directory")
+        .join("leased.git");
+    run_git(
+        &repository.path,
+        &["init", "--bare", &remote.to_string_lossy()],
+    );
+    run_git(
+        &repository.path,
+        &["remote", "add", "origin", &remote.to_string_lossy()],
+    );
+    run_git(
+        &repository.path,
+        &["push", "--set-upstream", "origin", "main"],
+    );
+
+    run_git(
+        &repository.path,
+        &["commit", "--amend", "-m", "feat: reworded"],
+    );
+    let rewritten = remote_tip(&repository.path);
+
+    let refused = push(&repository, PushForce::None)
+        .await
+        .expect_err("a rewritten branch is not a fast-forward");
+    assert_eq!(refused.code, ErrorCode::NonFastForward);
+
+    push(&repository, PushForce::WithLease)
+        .await
+        .expect("the lease holds, so the force push goes through");
+    assert_eq!(remote_tip(&remote), rewritten);
+}
+
+/// A lease is refused when the remote moved where this branch never looked,
+/// and the failure says overwriting is the step that would get past it.
+#[tokio::test]
+async fn a_lease_refuses_a_remote_that_moved_unseen() {
+    let repository = initialized_repository().await;
+    commit_file(
+        &repository,
+        "pushed.txt",
+        "one
+",
+        "feat: first",
+    )
+    .await;
+
+    let parent = repository.path.parent().expect("parent directory");
+    let remote = parent.join("unseen.git");
+    run_git(
+        &repository.path,
+        &["init", "--bare", &remote.to_string_lossy()],
+    );
+    run_git(
+        &repository.path,
+        &["remote", "add", "origin", &remote.to_string_lossy()],
+    );
+    run_git(
+        &repository.path,
+        &["push", "--set-upstream", "origin", "main"],
+    );
+
+    // Somebody else pushes. This repository never fetches it, so its
+    // remote-tracking ref still names the commit the lease is held against.
+    let other = parent.join("other");
+    run_git(
+        &repository.path,
+        &["clone", &remote.to_string_lossy(), &other.to_string_lossy()],
+    );
+    // The bare repository was initialized with whatever default branch name
+    // this Git uses, so its HEAD need not be the branch that was pushed to it.
+    run_git(&other, &["checkout", "-B", "main", "origin/main"]);
+    fs::write(
+        other.join("theirs.txt"),
+        "theirs
+",
+    )
+    .expect("write their file");
+    run_git(&other, &["add", "theirs.txt"]);
+    run_git(
+        &other,
+        &[
+            "-c",
+            "user.name=Other",
+            "-c",
+            "user.email=other@example.invalid",
+            "-c",
+            "commit.gpgSign=false",
+            "commit",
+            "-m",
+            "feat: theirs",
+        ],
+    );
+    run_git(&other, &["push", "origin", "main"]);
+    let theirs = remote_tip(&remote);
+
+    run_git(
+        &repository.path,
+        &["commit", "--amend", "-m", "feat: reworded"],
+    );
+    let refused = push(&repository, PushForce::WithLease)
+        .await
+        .expect_err("the lease does not cover a commit this branch never saw");
+    assert_eq!(refused.code, ErrorCode::NonFastForward);
+    assert!(
+        refused
+            .recovery_actions
+            .iter()
+            .any(|action| action.kind == "push_force"),
+        "a refused lease offers overwriting as the next step: {:?}",
+        refused.recovery_actions,
+    );
+    assert_eq!(remote_tip(&remote), theirs, "nothing was overwritten");
+
+    push(&repository, PushForce::Force)
+        .await
+        .expect("an outright force overwrites what the lease protected");
+    assert_ne!(remote_tip(&remote), theirs);
+}
