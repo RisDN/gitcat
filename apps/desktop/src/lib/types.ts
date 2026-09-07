@@ -186,6 +186,11 @@ export interface ForgeCredential {
   kind: CredentialKind;
   /** Account the credential belongs to, when the sign-in reported one. */
   account?: string;
+  /**
+   * Scopes GitCat now asks for that this sign-in was never granted. A service
+   * does not widen a token in place, so the only way out is to sign in again.
+   */
+  missing_scopes?: string[];
 }
 
 export interface ForgeAccount {

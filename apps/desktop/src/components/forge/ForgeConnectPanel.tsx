@@ -222,6 +222,11 @@ export function ForgeConnectPanel({
  * but it says so and offers the sign-in instead of calling itself connected.
  * A token can be revoked on the service's own page or run out of the expiry it
  * was issued with, and neither is visible from the store.
+ *
+ * A sign-in that is short of a scope GitCat now asks for reads the same way. It
+ * works for everything the older grant covered, so nothing else would ever
+ * mention it: the first sign of it is a push the service rejects, which is a
+ * confusing place to learn that the credential is the problem.
  */
 function ConnectedAccount({
   account,
@@ -243,43 +248,73 @@ function ConnectedAccount({
   const name = account?.name ?? account?.login ?? credential.account ?? host;
   const handle = account?.login ?? credential.account;
   const secondary = handle && handle !== name ? handle : host;
+  // A refusal is the louder of the two: it says nothing works, while a missing
+  // scope says one thing does not.
+  const missingScopes = credential.missing_scopes ?? [];
+  const stale = !rejected && missingScopes.length > 0;
+  const canSignIn = credential.kind === "oauth";
 
   return (
-    <div className="flex items-center gap-2.5 rounded-[7px] border border-border bg-background/45 px-3 py-2.5">
-      <AccountPicture name={name} url={account?.avatar_url} />
-      <div className="min-w-0">
-        <div className="truncate text-[12px] font-[650] text-foreground">{name}</div>
-        <div className="truncate text-[11px] text-muted">{secondary}</div>
-      </div>
-      {rejected ? (
-        <span
-          className="mx-auto flex shrink-0 items-center gap-1.5 px-2 text-[12px] font-[600] text-warning"
-          title={`${host} refused the stored credential`}
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-2.5 rounded-[7px] border border-border bg-background/45 px-3 py-2.5">
+        <AccountPicture name={name} url={account?.avatar_url} />
+        <div className="min-w-0">
+          <div className="truncate text-[12px] font-[650] text-foreground">{name}</div>
+          <div className="truncate text-[11px] text-muted">{secondary}</div>
+        </div>
+        {rejected || stale ? (
+          <span
+            className="mx-auto flex shrink-0 items-center gap-1.5 px-2 text-[12px] font-[600] text-warning"
+            title={rejected
+              ? `${host} refused the stored credential`
+              : `This sign-in is missing ${missingScopes.join(", ")}`}
+          >
+            <CircleAlert size={15} />
+            Sign in again
+          </span>
+        ) : (
+          <span className="mx-auto flex shrink-0 items-center gap-1.5 px-2 text-[12px] font-[600] text-success">
+            <CircleCheck size={15} />
+            Connected
+          </span>
+        )}
+        {(rejected || stale) && canSignIn ? (
+          <Button compact disabled={signingIn} onClick={onReconnect} tone="accent">
+            Sign in
+          </Button>
+        ) : null}
+        <Button
+          aria-label={`Disconnect from ${host}`}
+          compact
+          onClick={onDisconnect}
+          tone="danger"
         >
-          <CircleAlert size={15} />
-          Sign in again
-        </span>
-      ) : (
-        <span className="mx-auto flex shrink-0 items-center gap-1.5 px-2 text-[12px] font-[600] text-success">
-          <CircleCheck size={15} />
-          Connected
-        </span>
-      )}
-      {rejected && credential.kind === "oauth" ? (
-        <Button compact disabled={signingIn} onClick={onReconnect} tone="accent">
-          Sign in
+          Disconnect
         </Button>
+      </div>
+      {stale ? (
+        <small className="text-[10px] leading-[1.5] text-warning">{staleReason(missingScopes)}</small>
       ) : null}
-      <Button
-        aria-label={`Disconnect from ${host}`}
-        compact
-        onClick={onDisconnect}
-        tone="danger"
-      >
-        Disconnect
-      </Button>
     </div>
   );
+}
+
+/**
+ * Why an otherwise working sign-in is asked to be repeated.
+ *
+ * The `workflow` permission gets a sentence of its own because it is the one
+ * whose absence looks like a broken push rather than a missing feature: every
+ * other part of the commit goes up and the service rejects the whole push over
+ * one file under `.github/workflows`.
+ */
+function staleReason(missing: readonly string[]): string {
+  if (missing.includes("workflow")) {
+    return `This sign-in was granted before GitCat asked for the workflow permission, so pushing a`
+      + ` change under .github/workflows is rejected. Signing in again grants it; nothing else`
+      + ` changes.`;
+  }
+  return `This sign-in was granted without the ${missing.join(", ")} permission, which GitCat now asks`
+    + ` for. Signing in again grants it; nothing else changes.`;
 }
 
 /** The account's picture, or its initials while there is none to draw. */

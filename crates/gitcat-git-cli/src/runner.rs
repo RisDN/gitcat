@@ -557,8 +557,18 @@ fn io_error(error: io::Error) -> ApiError {
 }
 
 fn git_failure_error(output: &GitCommandOutput) -> ApiError {
-    let stderr = output.stderr_lossy_redacted();
-    let stdout = redact_sensitive(&output.stdout_lossy());
+    let exit = output.status.code().map_or_else(
+        || "terminated".to_owned(),
+        |code| format!("exit code {code}"),
+    );
+    classify_failure(
+        &output.stderr_lossy_redacted(),
+        &redact_sensitive(&output.stdout_lossy()),
+        &exit,
+    )
+}
+
+fn classify_failure(stderr: &str, stdout: &str, exit: &str) -> ApiError {
     let lower = format!("{stderr}\n{stdout}").to_ascii_lowercase();
     let (code, message) = if lower.contains("not a git repository") {
         (
@@ -602,6 +612,16 @@ fn git_failure_error(output: &GitCommandOutput) -> ApiError {
             ErrorCode::NonFastForward,
             "The remote rejected a non-fast-forward update",
         )
+    } else if lower.contains("without 'workflow' scope") {
+        (
+            ErrorCode::ProtectedOperation,
+            "The remote rejected the push because the sign-in may not change workflow files",
+        )
+    } else if lower.contains("remote rejected") || lower.contains("protected branch") {
+        (
+            ErrorCode::ProtectedOperation,
+            "The remote rejected the push",
+        )
     } else if lower.contains("would be overwritten") || lower.contains("local changes") {
         (
             ErrorCode::DirtyWorktree,
@@ -632,18 +652,17 @@ fn git_failure_error(output: &GitCommandOutput) -> ApiError {
         (ErrorCode::GitCommandFailed, "Git command failed")
     };
 
-    let exit = output.status.code().map_or_else(
-        || "terminated".to_owned(),
-        |code| format!("exit code {code}"),
-    );
-    let details = if stderr.trim().is_empty() {
-        stdout
-    } else {
-        stderr
-    };
+    // `push --porcelain` reports why a ref was rejected on stdout, so stderr
+    // alone ends at "failed to push some refs" with the reason missing. Stdout
+    // goes last because the cap keeps the tail.
+    let details = [collapse_progress(stderr), collapse_progress(stdout)]
+        .into_iter()
+        .filter(|part| !part.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
     let details = tail_chars(&details, STDERR_DETAILS_CAP);
     let details = if details.trim().is_empty() {
-        exit
+        exit.to_owned()
     } else {
         format!("{exit}: {}", details.trim())
     };
@@ -709,6 +728,21 @@ fn redact_after_marker(value: &mut String, marker: &str) {
     }
 }
 
+/// Git draws progress by rewriting one line with carriage returns, so a
+/// captured stream holds every intermediate percentage. Only the last segment
+/// of a line was ever meant to be read.
+fn collapse_progress(input: &str) -> String {
+    input
+        .split('\n')
+        .filter_map(|line| {
+            line.rsplit('\r')
+                .find(|segment| !segment.trim().is_empty())
+                .map(str::trim_end)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn tail_chars(input: &str, max_bytes: usize) -> String {
     if input.len() <= max_bytes {
         return input.to_owned();
@@ -727,6 +761,42 @@ pub(crate) fn os_args(values: &[&str]) -> Vec<OsString> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn push_failure_keeps_the_porcelain_rejection_reason() {
+        // Git sends the progress meter and the summary to stderr, while
+        // --porcelain puts the per-ref status on stdout.
+        let stderr = concat!(
+            "Counting objects:  50% (1/2)\rCounting objects: 100% (2/2), done.\n",
+            "error: failed to push some refs to 'https://example.test/repo.git'\n"
+        );
+        let stdout = concat!(
+            "To https://example.test/repo.git\n",
+            "!\trefs/heads/main:refs/heads/main\t[remote rejected] ",
+            "(refusing to allow an OAuth App to create or update workflow ",
+            "'.github/workflows/ci.yml' without 'workflow' scope)\nDone\n"
+        );
+
+        let error = classify_failure(stderr, stdout, "exit code 1");
+
+        assert_eq!(error.code, ErrorCode::ProtectedOperation);
+        let details = error.details.unwrap_or_default();
+        assert!(details.contains("without 'workflow' scope"), "{details}");
+        // The progress meter collapses to its final state.
+        assert!(details.contains("Counting objects: 100% (2/2), done."));
+        assert!(!details.contains("Counting objects:  50%"));
+    }
+
+    #[test]
+    fn non_fast_forward_still_wins_over_the_generic_rejection() {
+        let error = classify_failure(
+            "error: failed to push some refs",
+            "!\trefs/heads/main:refs/heads/main\t[rejected] (fetch first)",
+            "exit code 1",
+        );
+
+        assert_eq!(error.code, ErrorCode::NonFastForward);
+    }
 
     #[test]
     fn redacts_url_userinfo() {

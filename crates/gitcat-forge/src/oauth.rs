@@ -15,7 +15,8 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use gitcat_contracts::{
-    ApiError, ApiResult, DeviceAuthorization, ErrorCode, ForgeAccount, LoginPoll, LoginState,
+    ApiError, ApiResult, CredentialKind, DeviceAuthorization, ErrorCode, ForgeAccount,
+    ForgeCredential, LoginPoll, LoginState,
 };
 use serde::Deserialize;
 
@@ -27,8 +28,11 @@ pub const GITHUB_CLIENT_ID: &str = "Ov23liXsrhyLXSlqd0bE";
 
 /// `repo` reaches private repositories and is what a clone or a push needs;
 /// `read:org` lists the repositories an organisation shares with the user;
-/// `read:user` names the account the sign-in belongs to.
-pub const GITHUB_SCOPES: &str = "repo read:org read:user";
+/// `read:user` names the account the sign-in belongs to; `workflow` is what
+/// lets a push carry a change to `.github/workflows`. Without the last one a
+/// perfectly ordinary commit is rejected at the remote, and a Git client that
+/// cannot push one of its own repository's files is not finished.
+pub const GITHUB_SCOPES: &str = "repo read:org read:user workflow";
 
 /// A token is renewed slightly before it expires, so a request already in
 /// flight cannot land on the far side of the boundary.
@@ -218,6 +222,27 @@ impl ForgeAuth {
             .ok()
             .and_then(|pending| pending.get(&normalize(host)).map(|entry| entry.interval))
             .unwrap_or(DEFAULT_POLL_INTERVAL)
+    }
+
+    /// What the settings screen may show, with every sign-in judged against
+    /// the scopes GitCat asks for today.
+    ///
+    /// The store knows what it holds but not what the application needs, so the
+    /// comparison happens here, where [`GITHUB_SCOPES`] lives. A sign-in made
+    /// before a scope was added is otherwise indistinguishable from a working
+    /// one until a push is rejected for it.
+    pub fn credentials(&self) -> ApiResult<Vec<ForgeCredential>> {
+        let mut credentials = self.tokens.credentials()?;
+        for credential in &mut credentials {
+            if credential.kind != CredentialKind::OAuth {
+                continue;
+            }
+            let Some(StoredCredential::OAuth(stored)) = self.tokens.stored(&credential.host) else {
+                continue;
+            };
+            credential.missing_scopes = missing_scopes(&stored.scopes, GITHUB_SCOPES);
+        }
+        Ok(credentials)
     }
 
     /// Forgets the credential for one host, and any sign-in still in flight.
@@ -434,6 +459,46 @@ fn web_host(host: &str) -> &str {
     }
 }
 
+/// The scopes in `required` that `granted` does not cover.
+///
+/// A sign-in that reports no scopes at all was written by a build older than
+/// the field, and is treated as carrying none rather than guessed at -- the
+/// same rule a stored value of an unknown shape gets. Signing in again costs a
+/// round trip and nothing else.
+pub fn missing_scopes(granted: &str, required: &str) -> Vec<String> {
+    let granted = scope_list(granted);
+    scope_list(required)
+        .into_iter()
+        .filter(|required| !granted.iter().any(|granted| covers(granted, required)))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// A service answers with a comma-separated list and the constant above is
+/// written with spaces, so both separate.
+fn scope_list(scopes: &str) -> Vec<&str> {
+    scopes
+        .split([',', ' '])
+        .map(str::trim)
+        .filter(|scope| !scope.is_empty())
+        .collect()
+}
+
+/// GitHub nests a few of its scopes: `write:org` and `admin:org` both include
+/// `read:org`, and the bare `user` includes `read:user`. Nothing else GitCat
+/// asks for has a wider form, so the rule stays this small -- a scope that is
+/// not recognised as wider is simply reported missing, which asks the user for
+/// one sign-in rather than hiding a rejection.
+fn covers(granted: &str, required: &str) -> bool {
+    if granted == required {
+        return true;
+    }
+    let Some((_, area)) = required.split_once(':') else {
+        return false;
+    };
+    granted == area || granted == format!("write:{area}") || granted == format!("admin:{area}")
+}
+
 fn token_url(host: &str) -> String {
     format!("https://{}/login/oauth/access_token", web_host(host))
 }
@@ -504,7 +569,36 @@ struct AccountResponse {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    use crate::token::SecretStore;
+
     use super::*;
+
+    /// An in-memory credential backend, so what the settings screen is told
+    /// can be checked without the machine's own store.
+    #[derive(Default)]
+    struct MemorySecrets(Mutex<BTreeMap<String, String>>);
+
+    impl SecretStore for MemorySecrets {
+        fn get(&self, host: &str) -> ApiResult<Option<String>> {
+            Ok(self.0.lock().unwrap().get(host).cloned())
+        }
+
+        fn set(&self, host: &str, token: &str) -> ApiResult<()> {
+            self.0
+                .lock()
+                .unwrap()
+                .insert(host.to_owned(), token.to_owned());
+            Ok(())
+        }
+
+        fn delete(&self, host: &str) -> ApiResult<()> {
+            self.0.lock().unwrap().remove(host);
+            Ok(())
+        }
+    }
 
     fn credential(expires_at: Option<u64>) -> OAuthCredential {
         OAuthCredential {
@@ -535,6 +629,74 @@ mod tests {
         assert_eq!(
             api_base("git.example.test"),
             "https://git.example.test/api/v3"
+        );
+    }
+
+    #[test]
+    fn a_sign_in_made_before_a_scope_was_added_reports_it_missing() {
+        // Exactly what a sign-in from a build that predates the workflow scope
+        // holds, and why its pushes to .github/workflows come back rejected.
+        assert_eq!(
+            missing_scopes("repo,read:org,read:user", GITHUB_SCOPES),
+            vec!["workflow".to_owned()]
+        );
+        assert!(missing_scopes(GITHUB_SCOPES, GITHUB_SCOPES).is_empty());
+        // The service answers with commas, the constant is written with spaces.
+        assert!(missing_scopes("repo, read:org, read:user, workflow", GITHUB_SCOPES).is_empty());
+    }
+
+    #[test]
+    fn the_settings_screen_hears_about_a_stale_sign_in_but_not_about_a_typed_token() {
+        let dir = tempfile::tempdir().unwrap();
+        let tokens = Arc::new(TokenStore::with_secrets(
+            dir.path(),
+            Box::new(MemorySecrets::default()),
+        ));
+        tokens
+            .set_oauth(
+                "github.com",
+                &OAuthCredential {
+                    scopes: "repo,read:org,read:user".into(),
+                    ..credential(None)
+                },
+            )
+            .unwrap();
+        // A personal access token reports no scopes at all, and guessing that
+        // it is short of one would send the user to a sign-in it cannot fix.
+        tokens
+            .set("git.example.test", Some("ghp_typed1234"))
+            .unwrap();
+
+        let credentials = ForgeAuth::new(tokens).credentials().unwrap();
+
+        let sign_in = credentials
+            .iter()
+            .find(|credential| credential.host == "github.com")
+            .unwrap();
+        assert_eq!(sign_in.missing_scopes, vec!["workflow".to_owned()]);
+        let typed = credentials
+            .iter()
+            .find(|credential| credential.host == "git.example.test")
+            .unwrap();
+        assert!(typed.missing_scopes.is_empty());
+    }
+
+    #[test]
+    fn a_wider_scope_covers_the_narrower_one_that_is_asked_for() {
+        assert!(missing_scopes("repo admin:org user workflow", GITHUB_SCOPES).is_empty());
+        assert!(missing_scopes("repo write:org read:user workflow", GITHUB_SCOPES).is_empty());
+        // Narrower is not wider: read:org does not stand in for repo.
+        assert_eq!(
+            missing_scopes("read:org read:user workflow", GITHUB_SCOPES),
+            vec!["repo".to_owned()]
+        );
+    }
+
+    #[test]
+    fn a_sign_in_that_reports_no_scopes_is_treated_as_carrying_none() {
+        assert_eq!(
+            missing_scopes("", GITHUB_SCOPES).len(),
+            scope_list(GITHUB_SCOPES).len()
         );
     }
 

@@ -5,7 +5,7 @@ import { identityInitials, parseCoAuthors } from "../../lib";
 import type { ChangedFile, CommitDetails as CommitDetailsType } from "../../lib/types";
 import type { FileTreeItem, FileViewMode } from "../file-tree";
 import { ChangeCountSummary, FileTree, FileTreeControls, fileChangeCounts, sumChangeCounts } from "../file-tree";
-import { Badge, SidePanel } from "../ui";
+import { SidePanel } from "../ui";
 import { MessageEditor, MessageView } from "./CommitMessage";
 import { Avatar, CoAuthorRow, FilesPanel, IdentityRow, ParentRefs, StatsRow } from "./CommitSections";
 import { ShaBar, ShaCopy } from "./ShaBar";
@@ -52,18 +52,20 @@ export function CommitDetails({ details, avatarImages, selectedPath, busy = fals
     // underneath (e.g. after a successful reword reloads details). An unseen
     // edit request for this commit opens it instead; the token keeps a later
     // refresh from reopening an editor the user has closed.
+    //
+    // Every dependency here is a primitive on purpose: the callers pass a fresh
+    // `onReword` closure and `editRequest` object on each render, so depending on
+    // their identities re-ran this effect -- and closed the editor the user had
+    // just opened -- on any unrelated re-render of the pane.
+    const canReword = Boolean(onReword);
+    const requestedToken = editRequest && editRequest.oid === details.oid ? editRequest.token : null;
     useEffect(() => {
-        const requested = Boolean(
-            onReword
-            && editRequest
-            && editRequest.oid === details.oid
-            && editRequest.token !== appliedEditToken.current,
-        );
-        if (requested && editRequest) appliedEditToken.current = editRequest.token;
+        const requested = canReword && requestedToken !== null && requestedToken !== appliedEditToken.current;
+        if (requested && requestedToken !== null) appliedEditToken.current = requestedToken;
         setEditing(requested);
         setSubject(details.subject);
         setBody(details.body);
-    }, [details.oid, details.subject, details.body, editRequest, onReword]);
+    }, [details.oid, details.subject, details.body, requestedToken, canReword]);
 
     const dirty = subject.trim() !== details.subject.trim() || body.trim() !== details.body.trim();
     const canSave = Boolean(onReword) && subject.trim().length > 0 && dirty && !busy;
@@ -136,7 +138,6 @@ export function CommitDetails({ details, avatarImages, selectedPath, busy = fals
                 <span className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
                     <ChangeCountSummary counts={fileCounts} labels size="md" />
                 </span>
-                {details.parent_oids.length > 1 ? <Badge tone="warning">merge</Badge> : null}
             </StatsRow>
             <FilesPanel>
                 <FileTreeControls mode={fileViewMode} onModeChange={onFileViewModeChange} />
