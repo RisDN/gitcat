@@ -47,11 +47,15 @@ export function useRepositoryCommands({
         }));
     }, [autoPrune, defaultPullMode, runMutation]);
 
-    const pushActiveRepository = useCallback(() => {
+    // A branch with no upstream is the one case where the push has to say so,
+    // which is what the failure's own recovery action asks for. The options
+    // object matters: this is wired straight to a click handler elsewhere, and
+    // a bare boolean parameter would read the event itself as "set upstream".
+    const pushActiveRepository = useCallback((options?: { setUpstream?: boolean }) => {
         void runMutation("Push complete", (repository) => gitcatApi.push(repository.repository_id, {
             remote: null,
             branch: null,
-            set_upstream: false,
+            set_upstream: options?.setUpstream === true,
         }));
     }, [runMutation]);
 

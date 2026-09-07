@@ -64,6 +64,22 @@ impl ApiError {
         self.details = Some(details.into());
         self
     }
+
+    /// The next step to offer alongside the message. A recovery action names
+    /// what the user would otherwise have to work out for themselves -- pulling
+    /// before a rejected push, setting an upstream, signing in again -- and the
+    /// caller decides whether it can act on that kind.
+    pub fn with_recovery_action(
+        mut self,
+        kind: impl Into<String>,
+        label: impl Into<String>,
+    ) -> Self {
+        self.recovery_actions.push(RecoveryAction {
+            kind: kind.into(),
+            label: label.into(),
+        });
+        self
+    }
 }
 
 pub type ApiResult<T> = Result<T, ApiError>;

@@ -1,13 +1,20 @@
 import { AlertTriangle, CheckCircle2, Info, X } from "lucide-react";
 
 import { cx } from "../lib";
-import { IconButton } from "./ui";
+import { Button, IconButton } from "./ui";
+
+// The next step a toast can offer, already bound to whatever runs it.
+export interface ToastAction {
+  label: string;
+  run: () => void;
+}
 
 export interface ToastMessage {
   id: string;
   tone: "success" | "error" | "info";
   title: string;
   detail?: string;
+  actions?: ToastAction[];
 }
 
 const ICONS = {
@@ -49,6 +56,22 @@ export function ToastRegion({ toasts, onDismiss }: { toasts: ToastMessage[]; onD
             <strong className="block wrap-anywhere text-[12px]">{toast.title}</strong>
             {toast.detail ? (
               <p className="mt-0.75 wrap-anywhere text-[10px] leading-[1.4] text-muted">{toast.detail}</p>
+            ) : null}
+            {toast.actions?.length ? (
+              <div className="mt-1.75 flex flex-wrap gap-1.5">
+                {toast.actions.map((action) => (
+                  <Button
+                    compact
+                    key={action.label}
+                    onClick={() => {
+                      onDismiss(toast.id);
+                      action.run();
+                    }}
+                  >
+                    {action.label}
+                  </Button>
+                ))}
+              </div>
             ) : null}
           </div>
           <IconButton aria-label="Dismiss" className="size-5.5!" onClick={() => onDismiss(toast.id)}>

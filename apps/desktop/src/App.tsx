@@ -191,7 +191,7 @@ function App() {
         setTabMenu,
     });
 
-    const { addToast, dismissToast, showError, toasts } = useToasts();
+    const { addToast, dismissToast, registerRecoveryHandlers, showError, toasts } = useToasts();
 
     const { openTabRepository } = useWorkspaceBootstrap({
         activeRepository,
@@ -446,6 +446,16 @@ function App() {
         snapshot,
         stashes,
     });
+
+    // The Git failure classifier names the step that unblocks a failure; this
+    // is where those names get something to run.
+    useEffect(() => {
+        registerRecoveryHandlers({
+            open_settings: () => setSettingsOpen(true),
+            pull: () => pullActiveRepository(),
+            push_set_upstream: () => pushActiveRepository({ setUpstream: true }),
+        });
+    }, [pullActiveRepository, pushActiveRepository, registerRecoveryHandlers]);
 
     const { refreshActiveRepository } = useAutoRefresh({
         activeRepository,

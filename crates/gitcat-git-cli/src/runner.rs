@@ -666,7 +666,35 @@ fn classify_failure(stderr: &str, stdout: &str, exit: &str) -> ApiError {
     } else {
         format!("{exit}: {}", details.trim())
     };
-    ApiError::new(code, message).with_details(details)
+    recovery_actions(code, &lower)
+        .into_iter()
+        .fold(ApiError::new(code, message), |error, (kind, label)| {
+            error.with_recovery_action(kind, label)
+        })
+        .with_details(details)
+}
+
+/// What to offer doing next about a failure, where the next step follows from
+/// the failure itself.
+///
+/// The output of one Git command is all there is to go on, so an action is
+/// offered only where the wording says which command failed: "has no upstream
+/// branch" is a push, while a pull's "no tracking information" leaves the user
+/// a choice this cannot make for them.
+fn recovery_actions(code: ErrorCode, lower: &str) -> Vec<(&'static str, &'static str)> {
+    match code {
+        ErrorCode::NonFastForward => vec![("pull", "Pull, then push again")],
+        ErrorCode::UpstreamMissing if lower.contains("has no upstream branch") => {
+            vec![("push_set_upstream", "Push and set the upstream branch")]
+        }
+        ErrorCode::AuthenticationRequired => {
+            vec![("open_settings", "Check the hosting service connection")]
+        }
+        ErrorCode::ProtectedOperation if lower.contains("without 'workflow' scope") => {
+            vec![("open_settings", "Sign in again to allow workflow files")]
+        }
+        _ => Vec::new(),
+    }
 }
 
 pub(crate) fn redact_sensitive(input: &str) -> String {
@@ -796,6 +824,71 @@ mod tests {
         );
 
         assert_eq!(error.code, ErrorCode::NonFastForward);
+    }
+
+    #[test]
+    fn a_rejected_push_offers_the_step_that_unblocks_it() {
+        let non_fast_forward = classify_failure(
+            "error: failed to push some refs",
+            "!	refs/heads/main:refs/heads/main	[rejected] (fetch first)",
+            "exit code 1",
+        );
+        assert_eq!(
+            non_fast_forward
+                .recovery_actions
+                .iter()
+                .map(|action| action.kind.as_str())
+                .collect::<Vec<_>>(),
+            ["pull"]
+        );
+
+        let no_upstream = classify_failure(
+            "fatal: The current branch work has no upstream branch.",
+            "",
+            "exit code 128",
+        );
+        assert_eq!(no_upstream.code, ErrorCode::UpstreamMissing);
+        assert_eq!(
+            no_upstream
+                .recovery_actions
+                .iter()
+                .map(|action| action.kind.as_str())
+                .collect::<Vec<_>>(),
+            ["push_set_upstream"]
+        );
+
+        // A pull without tracking information is the same code, but setting an
+        // upstream is not the only sensible answer, so nothing is offered.
+        let pull = classify_failure(
+            "There is no tracking information for the current branch.",
+            "",
+            "exit code 1",
+        );
+        assert_eq!(pull.code, ErrorCode::UpstreamMissing);
+        assert!(pull.recovery_actions.is_empty());
+    }
+
+    #[test]
+    fn a_missing_workflow_scope_points_at_signing_in_again() {
+        let error = classify_failure(
+            "error: failed to push some refs",
+            "!	refs/heads/main:refs/heads/main	[remote rejected] (refusing to allow an OAuth App to create or update workflow '.github/workflows/ci.yml' without 'workflow' scope)",
+            "exit code 1",
+        );
+
+        assert_eq!(error.code, ErrorCode::ProtectedOperation);
+        let action = error.recovery_actions.first().expect("recovery action");
+        assert_eq!(action.kind, "open_settings");
+        assert_eq!(action.label, "Sign in again to allow workflow files");
+
+        // A protected branch has no step GitCat can offer.
+        let protected = classify_failure(
+            "! [remote rejected] main -> main (protected branch hook declined)",
+            "",
+            "exit code 1",
+        );
+        assert_eq!(protected.code, ErrorCode::ProtectedOperation);
+        assert!(protected.recovery_actions.is_empty());
     }
 
     #[test]
