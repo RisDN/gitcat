@@ -31,6 +31,8 @@ export type ConfirmState =
      * overwrite it anyway. It is never the state a menu opens with.
      */
     | { kind: "force_push"; remote: string; branch: string; ignoreRemote: boolean }
+    /** A push asked for in a repository with nowhere to push to. */
+    | { kind: "add_remote_for_push" }
     | null;
 
 export interface CommitMenuState {

@@ -5,6 +5,7 @@ import { getCommitGraphWidth, getCommitLaneXCss, getCommitRowBranchOrigin, getWi
 import { emptyChangeCounts, fileChangeCounts, sumChangeCounts } from "./components/file-tree";
 import type { FolderCollapseTarget } from "./components/file-tree";
 import { OperationBanner } from "./components/OperationBanner";
+import { AddRemoteDialog, type AddRemoteRequest } from "./components/remotes";
 import { REF_RAIL_WIDTH, RefPanel, type BranchContextMenuRequest } from "./components/ref-sidebar";
 import { StartPage } from "./components/start-page";
 import { AppShell, Resizer } from "./components/shell";
@@ -20,6 +21,7 @@ import { WelcomeView } from "./components/WelcomeView";
 import { buildCommitMessage, type CommitDraft } from "./components/worktree";
 import type { DiffViewMode } from "./components/diff";
 import { gitcatApi } from "./lib/api";
+import { createForgeRepository } from "./lib/forgeAuth";
 import { useAppUpdate } from "./lib/updates";
 import type {
     CommitActionAvailability,
@@ -107,6 +109,7 @@ function App() {
     const [prompt, setPrompt] = useState<PromptState>(null);
     const [startDialog, setStartDialog] = useState<"clone" | "create" | null>(null);
     const [confirmRequest, setConfirmRequest] = useState<ConfirmState>(null);
+    const [addRemoteOpen, setAddRemoteOpen] = useState(false);
     const [commitMenu, setCommitMenu] = useState<CommitMenuState | null>(null);
     // Opening the message editor from the graph has to wait for the commit's
     // details to load, so the request travels as an (oid, token) pair.
@@ -413,6 +416,29 @@ function App() {
         snapshot,
     });
 
+    const requestRemote = useCallback(() => setConfirmRequest({ kind: "add_remote_for_push" }), []);
+
+    // The remote is added first and the branch pushed after it, as two
+    // commands: a push that fails leaves a remote that was added, and saying
+    // only that the push failed would hide that.
+    const addRemoteAndPush = useCallback((request: AddRemoteRequest) => {
+        setAddRemoteOpen(false);
+        const branch = snapshot?.head.kind === "branch" ? snapshot.head.name : null;
+        void runMutation(`Remote ${request.remote} added`, async (repository) => {
+            const url = request.kind === "url"
+                ? request.url
+                : (await createForgeRepository(request.repository)).clone_url;
+            return gitcatApi.addRemote(repository.repository_id, request.remote, url);
+        }, { queueKey: "add-remote", silent: Boolean(branch) }).then((added) => {
+            if (!added || !branch) return;
+            void runMutation(`Pushed ${branch} to ${request.remote}`, (repository) => gitcatApi.push(repository.repository_id, {
+                remote: request.remote,
+                branch,
+                set_upstream: true,
+            }), { queueKey: `push:${request.remote}:${branch}` });
+        });
+    }, [runMutation, snapshot]);
+
     const copySha = useCallback(async (oid: string) => {
         try {
             await navigator.clipboard.writeText(oid);
@@ -439,6 +465,7 @@ function App() {
         addToast,
         autoPrune: persisted.settings.auto_prune,
         defaultPullMode: persisted.settings.default_pull_mode,
+        requestRemote,
         runMutation,
         selectWip,
         setRightPanelVisible,
@@ -583,6 +610,7 @@ function App() {
 
     const { confirmConfig, escalateForcePush, promptConfig, submitConfirm, submitPrompt } = useDialogActions({
         confirmRequest,
+        openAddRemote: () => setAddRemoteOpen(true),
         prompt,
         runMutation,
         setConfirmRequest,
@@ -786,6 +814,7 @@ function App() {
                     {confirmRequest && confirmConfig ? (
                         <ConfirmBar
                             confirmLabel={confirmConfig.confirmLabel}
+                            danger={confirmConfig.danger ?? true}
                             message={confirmConfig.message}
                             onCancel={() => setConfirmRequest(null)}
                             onConfirm={submitConfirm}
@@ -972,6 +1001,16 @@ function App() {
                         </div>
                     </main>
 
+                    {addRemoteOpen ? (
+                        <AddRemoteDialog
+                            busy={busy}
+                            onClose={() => setAddRemoteOpen(false)}
+                            onSubmit={addRemoteAndPush}
+                            overrides={forgeOverrides}
+                            pushes={snapshot?.head.kind === "branch"}
+                            repositoryName={activeRepository.info.name}
+                        />
+                    ) : null}
                 </>
             )}
 

@@ -10,6 +10,8 @@ export interface RepositoryCommandsParams {
     addToast: (toast: Omit<ToastMessage, "id">) => void;
     autoPrune: boolean;
     defaultPullMode: PullMode;
+    /** Asked instead of pushing when the repository has no remote at all. */
+    requestRemote: () => void;
     runMutation: RunMutation;
     selectWip: () => void;
     setPrompt: Dispatch<SetStateAction<PromptState>>;
@@ -22,6 +24,7 @@ export function useRepositoryCommands({
     addToast,
     autoPrune,
     defaultPullMode,
+    requestRemote,
     runMutation,
     selectWip,
     setPrompt,
@@ -52,12 +55,18 @@ export function useRepositoryCommands({
     // object matters: this is wired straight to a click handler elsewhere, and
     // a bare boolean parameter would read the event itself as "set upstream".
     const pushActiveRepository = useCallback((options?: { setUpstream?: boolean }) => {
+        // Git would only answer that there is no destination; offering to add
+        // one is the step that answer leaves the user to find.
+        if (snapshot && snapshot.remotes.length === 0) {
+            requestRemote();
+            return;
+        }
         void runMutation("Push complete", (repository) => gitcatApi.push(repository.repository_id, {
             remote: null,
             branch: null,
             set_upstream: options?.setUpstream === true,
         }), { queueKey: `push:${options?.setUpstream === true}` });
-    }, [runMutation]);
+    }, [requestRemote, runMutation, snapshot]);
 
     const createBranchAtHead = useCallback(() => {
         if (!snapshot) return;

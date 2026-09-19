@@ -8,6 +8,7 @@ import { makeId } from "./workspace";
 
 export interface DialogActionsParams {
     confirmRequest: ConfirmState;
+    openAddRemote: () => void;
     prompt: PromptState;
     runMutation: RunMutation;
     setConfirmRequest: Dispatch<SetStateAction<ConfirmState>>;
@@ -18,6 +19,7 @@ export interface DialogActionsParams {
 
 export function useDialogActions({
     confirmRequest,
+    openAddRemote,
     prompt,
     runMutation,
     setConfirmRequest,
@@ -162,8 +164,11 @@ export function useDialogActions({
                     force: request.ignoreRemote ? "force" : "with_lease",
                 }), { queueKey: `push:${request.remote}:${request.branch}` });
                 break;
+            case "add_remote_for_push":
+                openAddRemote();
+                break;
         }
-    }, [confirmRequest, runMutation, snapshot]);
+    }, [confirmRequest, openAddRemote, runMutation, snapshot]);
 
     /**
      * The second half of a force push whose lease was refused.
@@ -210,6 +215,11 @@ export function useDialogActions({
                         confirmLabel: "Force push",
                     };
             }
+            case "add_remote_for_push": return {
+                message: "There are no remotes to push to, would you like to add one?",
+                confirmLabel: "Yes",
+                danger: false,
+            };
         }
     }, [confirmRequest]);
 
