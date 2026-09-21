@@ -893,7 +893,6 @@ function App() {
                                 onCreateBranch={() => currentHeadOid ? setPrompt({ kind: "create_branch", startOid: currentHeadOid }) : undefined}
                                 onOpenPullRequest={openPullRequest}
                                 pullRequests={forgeStatus.pullRequests}
-                                checks={forgeStatus.checks}
                                 remoteBranches={snapshot?.remote_branches ?? []}
                                 remoteIconUrls={iconUrlsByRemote}
                                 tags={snapshot?.tags ?? []}

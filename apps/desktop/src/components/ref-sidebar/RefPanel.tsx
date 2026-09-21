@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import type { BranchInfo, CheckSummary, PullRequestInfo, RefLabel } from "../../lib/types";
+import type { BranchInfo, PullRequestInfo, RefLabel } from "../../lib/types";
 import { RefRail } from "./RefRail";
 import { RefSidebar } from "./RefSidebar";
 import type { BranchContextMenuRequest } from "./RefSidebar";
@@ -12,7 +12,6 @@ interface RefPanelProps {
   remoteBranches: BranchInfo[];
   remoteIconUrls?: ReadonlyMap<string, string>;
   pullRequests?: ReadonlyMap<string, PullRequestInfo>;
-  checks?: ReadonlyMap<string, CheckSummary>;
   tags: RefLabel[];
   toggleKeybind: string;
   onCollapse: () => void;

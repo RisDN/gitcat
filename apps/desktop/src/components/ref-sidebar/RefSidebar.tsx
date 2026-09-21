@@ -7,12 +7,11 @@ import type {
 } from "react";
 
 import { cx } from "../../lib";
-import type { BranchInfo, CheckSummary, PullRequestInfo, RefLabel } from "../../lib/types";
+import type { BranchInfo, PullRequestInfo, RefLabel } from "../../lib/types";
 import { IconButton, Input, SidePanel } from "../ui";
 import type { BranchTreeNode } from "./branchTree";
 import { branchIndent, buildBranchTree } from "./branchTree";
 import {
-  CheckBadge,
   PullRequestBadge,
   RefButton,
   RefCounters,
@@ -42,8 +41,6 @@ interface RefSidebarProps {
   remoteIconUrls?: ReadonlyMap<string, string>;
   /** Open pull requests, keyed by branch name without its remote. */
   pullRequests?: ReadonlyMap<string, PullRequestInfo>;
-  /** Reported check state, keyed the same way as the pull requests. */
-  checks?: ReadonlyMap<string, CheckSummary>;
   tags: RefLabel[];
   collapseKeybind: string;
   sections: RefSectionState;
@@ -71,7 +68,6 @@ export function RefSidebar({
   remoteBranches,
   remoteIconUrls,
   pullRequests,
-  checks,
   tags,
   collapseKeybind,
   sections,
@@ -108,13 +104,11 @@ export function RefSidebar({
   // A local row and the remote row tracking it describe the same branch, so
   // both look their decorations up under the plain branch name.
   const decorations = (name: string) => {
-    const summary = checks?.get(name);
     const pull = pullRequests?.get(name);
-    if (!summary && !pull) return null;
+    if (!pull) return null;
     return (
       <span className="flex shrink-0 items-center gap-1 pr-1">
-        {summary ? <CheckBadge summary={summary} /> : null}
-        {pull ? <PullRequestBadge onOpen={onOpenPullRequest} pull={pull} /> : null}
+        <PullRequestBadge onOpen={onOpenPullRequest} pull={pull} />
       </span>
     );
   };

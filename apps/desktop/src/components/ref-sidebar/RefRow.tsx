@@ -1,9 +1,9 @@
-import { CircleDot, FolderGit, GitPullRequest, GitPullRequestDraft } from "lucide-react";
+import { FolderGit, GitPullRequest, GitPullRequestDraft } from "lucide-react";
 import { useState } from "react";
 import type { ComponentPropsWithRef, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 
 import { cx } from "../../lib";
-import type { CheckState, CheckSummary, PullRequestInfo } from "../../lib/types";
+import type { PullRequestInfo } from "../../lib/types";
 
 const ENTRY = "flex min-h-7.5 min-w-0 flex-1 items-center bg-transparent pr-1.25 text-left text-foreground";
 
@@ -74,34 +74,6 @@ export function RemoteIcon({ iconUrl }: { iconUrl?: string }) {
       onError={() => setFailed(true)}
       src={iconUrl}
     />
-  );
-}
-
-// A check badge is a state, not a score: the counts belong in the tooltip so a
-// narrow row still reads at a glance.
-const CHECK_TONES: Record<Exclude<CheckState, "none">, string> = {
-  success: "text-success",
-  failure: "text-danger",
-  pending: "text-warning",
-  neutral: "text-muted",
-};
-
-function checkTitle({ state, total, failed, pending }: CheckSummary): string {
-  if (state === "failure") return `${failed} of ${total} checks failing`;
-  if (state === "pending") return `${pending} of ${total} checks running`;
-  if (state === "neutral") return `${total} checks reported nothing conclusive`;
-  return `${total} checks passing`;
-}
-
-export function CheckBadge({ summary }: { summary: CheckSummary }) {
-  if (summary.state === "none") return null;
-  return (
-    <span
-      className={cx("shrink-0", CHECK_TONES[summary.state])}
-      title={checkTitle(summary)}
-    >
-      <CircleDot aria-label={checkTitle(summary)} size={11} strokeWidth={2.5} />
-    </span>
   );
 }
 
