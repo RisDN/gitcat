@@ -208,12 +208,17 @@ The web build is written to `apps/desktop/dist`; native artifacts are written un
 
 ## Releases
 
-The current version is 1.7.0. `.github/workflows/release.yml` builds both platforms in parallel and then publishes them together:
+The current version is 1.8.0. `.github/workflows/release.yml` builds both platforms in parallel and then publishes them together:
 
 
 - `build-windows` on `windows-latest` enforces the `x86_64-pc-windows-msvc` host, runs fmt, clippy, tests, and typecheck, then bundles the NSIS installer. The build is verified to be self-contained: the job fails if `gitcat-desktop.exe` still imports `WebView2Loader.dll` or if a dynamic loader DLL is left in the release output, and it prints the installer's SHA-256.
 - `build-linux` on `ubuntu-24.04` (pinned, because the AppImage inherits that image's glibc as its minimum baseline) enforces the `x86_64-unknown-linux-gnu` host, installs the Tauri prerequisites, runs the same checks, and bundles the AppImage, `.deb`, and `.rpm`. It fails unless exactly one of each package exists and the binary links `libwebkit2gtk-4.1`, and it prints their SHA-256 sums. The `.deb` and `.rpm` declare a dependency on `git`.
-- `publish` merges the per-platform updater entries into one `latest.json` (`windows-x86_64` and `linux-x86_64`) and creates the GitHub release with every package and signature.
+- `publish` merges the per-platform updater entries into one `latest.json` (`windows-x86_64`, `linux-x86_64`, and package-specific `linux-x86_64-appimage`, `linux-x86_64-deb`, and `linux-x86_64-rpm`) and creates the GitHub release with every package and signature.
+
+The desktop app uses the shared [`catninth-updater`](https://github.com/catninth/updater)
+Rust library to check stable releases four seconds after startup and every six hours.
+Installation remains user-triggered. The native backend owns progress, signature
+verification, and restart; see [the integration guide](docs/TAURI_INTEGRATION.md#auto-update).
 
 Triggers:
 

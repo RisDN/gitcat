@@ -21,11 +21,12 @@ export function UpdateIndicator({ update }: { update: AppUpdateState }) {
     );
   }
 
-  if (update.status === "downloading") {
+  if (update.status === "downloading" || update.status === "installing") {
     return (
       <StatusItem className="text-accent">
         <RefreshCw className="animate-spin" size={12} />
-        {update.progress === null ? "Downloading update" : `Downloading update ${update.progress}%`}
+        {update.status === "installing" ? "Installing update" :
+          update.progress === null ? "Downloading update" : `Downloading update ${update.progress}%`}
       </StatusItem>
     );
   }

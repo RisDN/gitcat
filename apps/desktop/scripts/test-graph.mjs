@@ -9,6 +9,7 @@ const entryPoints = [
   fileURLToPath(new URL("../tests/mutationQueue.test.ts", import.meta.url)),
   fileURLToPath(new URL("../tests/paths.test.ts", import.meta.url)),
   fileURLToPath(new URL("../tests/themePresets.test.ts", import.meta.url)),
+  fileURLToPath(new URL("../tests/updates.test.ts", import.meta.url)),
 ];
 
 for (const entryPoint of entryPoints) {

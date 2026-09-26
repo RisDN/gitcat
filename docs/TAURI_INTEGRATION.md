@@ -9,7 +9,7 @@ The adapter lives in `apps/desktop/src-tauri`. It is a thin boundary: it owns th
 1. Initialize `tauri-plugin-dialog`, `tauri-plugin-process`, and `tauri-plugin-updater`.
 2. Create a `JsonStateStore` backed by `<app_data_dir>/state.json`.
 3. Create `GitCliBackend` and `CoreApi`.
-4. Register the typed command handler list.
+4. Configure `catninth-updater`, retain its polling handle, and register the typed command handler list.
 5. Start the main window.
 
 Opening a repository returns:
@@ -28,6 +28,7 @@ Every subsequent repository call receives a `repository_id`, not an arbitrary wo
 Repository:
 
 - `app_metadata`
+- `get_update_state`, `check_update`, `install_update`
 - `git_probe`
 - `repository_open`, `repository_init`, `repository_clone`, `repository_close`
 - `repository_snapshot`
@@ -105,23 +106,38 @@ The frontend saves after a 250 ms debounce. At startup, it reopens tab paths; a 
 
 - `core:default`
 - `dialog:allow-open`
-- `updater:default`
+- `dialog:allow-save`
 - `process:allow-restart`
 
 There are no shell or filesystem plugin permissions. Only the Rust backend starts Git processes. The production CSP allows only first-party/IPC/asset content; objects, frames, base URIs, and form actions are blocked. The CSP does not need an entry for the update endpoint: the updater's HTTP traffic runs in the Rust process, not in the webview.
 
 ## Auto-update
 
-Windows and Linux (AppImage only), stable channel, manual release publishing.
+The native integration in `apps/desktop/src-tauri/src/updater.rs` uses
+[`catninth-updater`](https://github.com/catninth/updater), pinned to a Git revision in
+`Cargo.toml` and `Cargo.lock`. No sibling checkout is required. Windows NSIS and
+Linux AppImage, `.deb`, and `.rpm` packages use the stable release channel.
 
-- Manifest endpoint: `https://github.com/RisDN/gitcat/releases/latest/download/latest.json`.
+- Repository: `RisDN/gitcat`. `CHECK_INTERVAL_MINUTES` is 360, with a four-second first-check delay. Change these consumer constants to configure the source and schedule.
+- The library reads the latest stable GitHub release and its Markdown body. It downloads `latest.json` from that exact release tag when the user requests installation, so a later release cannot change the selected version mid-install.
 - Update payloads are minisign-signed; the public key lives in `tauri.conf.json` under `plugins.updater.pubkey`. The private key and its passphrase are the `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository secrets. The passphrase must not be empty: an empty value is not a settable environment variable on Windows, so the Tauri CLI would fall back to an interactive prompt and the build would hang.
-- `bundle.createUpdaterArtifacts` makes the NSIS bundle emit `*-setup.exe.sig` next to the installer and the AppImage bundle emit `*.AppImage.sig`.
-- On Linux the Tauri updater only supports the AppImage, which it replaces in place. `.deb` and `.rpm` installs still check the manifest and would try to download an AppImage; those packages are updated through the package manager instead.
-- NSIS `installMode` is `passive`: the installer shows a progress bar, replaces the app, and the frontend calls `relaunch()`.
+- `bundle.createUpdaterArtifacts` enables signed updater artifacts. The release workflow explicitly signs any Linux package the bundler leaves unsigned. The manifest includes package-specific Linux targets and the legacy `linux-x86_64` AppImage target.
+- The native Tauri adapter verifies signatures and selects the installed package type. Linux `.deb`/`.rpm` installation requests elevation through `pkexec`.
+- NSIS `installMode` remains `passive`. The Windows before-exit hook releases the single-instance lock before handing off to the installer. On Linux/macOS, the after-install hook releases that lock before restarting. The library supports macOS, but GitCat's release workflow currently builds Windows and Linux only.
 - The app version comes from the workspace `Cargo.toml`; `tauri.conf.json` intentionally has no `version` field so there is a single source of truth.
 
-The frontend hook is `apps/desktop/src/lib/updates.ts` (`useAppUpdate`). It checks once, four seconds after startup, and never downloads on its own. When an update exists, `UpdateIndicator` shows a button in the status bar; clicking it downloads the installer with progress, installs it, and restarts. In the browser demo runtime, the hook is inert.
+The frontend hook is `apps/desktop/src/lib/updates.ts` (`useAppUpdate`). Its client
+subscribes to `app-update` before requesting `get_update_state` and ignores stale
+snapshots or command errors after newer events. `check_update` and `install_update`
+call the native library; there is no JavaScript updater plugin or polling timer.
+The backend prevents overlapping checks and installs and continues polling even
+when the frontend remounts. Downloads still require a click in `UpdateIndicator`.
+The browser demo remains inert. The native adapter publishes only visible state
+changes, including download percentage, installation, and errors.
+
+Native tests cover state mapping, version precedence, retry metadata, and progress.
+`npm run test:graph` includes client tests for event/snapshot races, concurrent
+actions, errors, and listener cleanup.
 
 The release workflow is `.github/workflows/release.yml`. Triggered manually with `publish: true`, it builds Windows and Linux, merges both signatures into one `latest.json`, and creates the `v<version>` GitHub release with the installer, the AppImage, `.deb`, `.rpm`, the `.sig` files, and the manifest. A daily schedule publishes the same set as a rolling `nightly` pre-release, which the updater ignores because only full releases become `releases/latest`.
 

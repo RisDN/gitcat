@@ -8,6 +8,22 @@ permissions:
   contents: read
 
 jobs:
+  test-frontend:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - run: npm ci
+      # prebuild also runs the updater IPC/lifecycle regression tests.
+      - run: npm run build
+
   test-windows:
     runs-on: windows-latest
     steps:

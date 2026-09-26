@@ -1,4 +1,5 @@
 mod launch;
+mod updater;
 mod watcher;
 mod window_state;
 
@@ -69,7 +70,6 @@ fn launch_repository_path(pending: State<'_, PendingOpen>) -> Option<String> {
 /// single-instance lock has to be released first: the replacement process
 /// starts before this one is gone, and would otherwise hand its arguments to a
 /// window that is on its way out and exit.
-#[tauri::command]
 fn app_relaunch(app: AppHandle) {
     tauri_plugin_single_instance::destroy(&app);
     app.restart();
@@ -857,6 +857,7 @@ pub fn run() {
             app.manage(RepositoryWatchState::default());
             app.manage(PendingOpen::new(repository_argument(std::env::args())));
             app.manage(WindowModeStore::new(data_dir.join("window.json")));
+            updater::setup(app.handle())?;
 
             if let Some(window) = app.get_webview_window("main") {
                 app.state::<WindowModeStore>().restore(&window);
@@ -871,7 +872,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_metadata,
-            app_relaunch,
+            updater::get_update_state,
+            updater::check_update,
+            updater::install_update,
             git_probe,
             launch_repository_path,
             repository_open,

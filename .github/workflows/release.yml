@@ -234,22 +234,44 @@ jobs:
             echo "::error::gitcat-desktop does not link libwebkit2gtk-4.1"; exit 1
           fi
           sha256sum "$bundle"/appimage/*.AppImage "$bundle"/deb/*.deb "$bundle"/rpm/*.rpm
-      - name: Write updater platform entry
+      - name: Sign Linux packages and write updater platform entry
         env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           set -euo pipefail
-          appimage=$(find target/release/bundle/appimage -maxdepth 1 -name '*.AppImage' | head -n 1)
-          signature="$appimage.sig"
-          if [ ! -f "$signature" ]; then
-            echo "::error::Missing updater signature: $signature. Is TAURI_SIGNING_PRIVATE_KEY set?"
-            exit 1
-          fi
+          bundle=target/release/bundle
+          appimage=$(find "$bundle/appimage" -maxdepth 1 -name '*.AppImage' | head -n 1)
+          deb=$(find "$bundle/deb" -maxdepth 1 -name '*.deb' | head -n 1)
+          rpm=$(find "$bundle/rpm" -maxdepth 1 -name '*.rpm' | head -n 1)
+          # Some bundler versions only sign the AppImage automatically.
+          for package in "$appimage" "$deb" "$rpm"; do
+            if [ ! -s "$package.sig" ]; then
+              (cd apps/desktop && npx tauri signer sign "../../$package")
+            fi
+          done
+          entry() {
+            local package="$1"
+            if [ ! -s "$package.sig" ]; then
+              echo "::error::Missing updater signature: $package.sig. Is TAURI_SIGNING_PRIVATE_KEY set?" >&2
+              return 1
+            fi
+            jq -n \
+              --arg signature "$(tr -d '\r\n' < "$package.sig")" \
+              --arg url "https://github.com/${{ github.repository }}/releases/download/$RELEASE_TAG/$(basename "$package")" \
+              '{signature: $signature, url: $url}'
+          }
+          appimage_entry=$(entry "$appimage")
+          deb_entry=$(entry "$deb")
+          rpm_entry=$(entry "$rpm")
           jq -n \
-            --arg signature "$(tr -d '\n' < "$signature")" \
-            --arg url "https://github.com/${{ github.repository }}/releases/download/$RELEASE_TAG/$(basename "$appimage")" \
-            '{"linux-x86_64": {signature: $signature, url: $url}}' \
-            > target/release/bundle/appimage/platform.json
+            --argjson appimage "$appimage_entry" \
+            --argjson deb "$deb_entry" \
+            --argjson rpm "$rpm_entry" \
+            '{"linux-x86_64": $appimage, "linux-x86_64-appimage": $appimage,
+              "linux-x86_64-deb": $deb, "linux-x86_64-rpm": $rpm}' \
+            > "$bundle/appimage/platform.json"
       - uses: actions/upload-artifact@v4
         with:
           name: gitcat-linux-x86_64
@@ -259,7 +281,9 @@ jobs:
             target/release/bundle/appimage/*.AppImage.sig
             target/release/bundle/appimage/platform.json
             target/release/bundle/deb/*.deb
+            target/release/bundle/deb/*.deb.sig
             target/release/bundle/rpm/*.rpm
+            target/release/bundle/rpm/*.rpm.sig
             target/release/gitcat-desktop
 
   publish:
@@ -310,7 +334,8 @@ jobs:
           assets=$(find artifacts -type f \
             \( -name '*-setup.exe' -o -name '*-setup.exe.sig' \
                -o -name '*.AppImage' -o -name '*.AppImage.sig' \
-               -o -name '*.deb' -o -name '*.rpm' \) | sort)
+               -o -name '*.deb' -o -name '*.deb.sig' \
+               -o -name '*.rpm' -o -name '*.rpm.sig' \) | sort)
           echo "$assets"
           if [ "$CHANNEL" = "nightly" ]; then
             # Rolling pre-release: replace yesterday's build and re-point the tag.
@@ -334,6 +359,7 @@ jobs:
           else
             # shellcheck disable=SC2086
             gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
               --title "GitCat v$VERSION" \
               --notes-file release-notes.txt \
               latest.json $assets

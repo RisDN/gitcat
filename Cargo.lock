@@ -463,6 +463,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "catninth-updater"
+version = "0.1.0"
+source = "git+https://github.com/catninth/updater?rev=961fdabb33a461c9f1e5a46366e766b781be5c8b#961fdabb33a461c9f1e5a46366e766b781be5c8b"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "minisign-verify",
+ "reqwest",
+ "rustls",
+ "semver",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin-updater",
+ "thiserror 2.0.19",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "cbc"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1465,7 +1485,7 @@ dependencies = [
 
 [[package]]
 name = "gitcat-contracts"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1475,7 +1495,7 @@ dependencies = [
 
 [[package]]
 name = "gitcat-core"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "async-trait",
  "dunce",
@@ -1489,9 +1509,10 @@ dependencies = [
 
 [[package]]
 name = "gitcat-desktop"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "async-trait",
+ "catninth-updater",
  "dunce",
  "gitcat-contracts",
  "gitcat-core",
@@ -1513,7 +1534,7 @@ dependencies = [
 
 [[package]]
 name = "gitcat-forge"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "base64 0.22.1",
  "gitcat-contracts",
@@ -1529,7 +1550,7 @@ dependencies = [
 
 [[package]]
 name = "gitcat-git-cli"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "async-trait",
  "dunce",
@@ -4449,9 +4470,9 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-updater"
-version = "2.10.1"
+version = "2.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "806d9dac662c2e4594ff03c647a552f2c9bd544e7d0f683ec58f872f952ce4af"
+checksum = "7a5cad8ed5948d988e1018ecd31e27cacedbf72ce3fb972940c3e4bf51639e4b"
 dependencies = [
  "base64 0.22.1",
  "dirs",
