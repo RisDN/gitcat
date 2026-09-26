@@ -13,7 +13,7 @@ use catninth_updater::{
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
-const REPOSITORY: &str = "RisDN/gitcat";
+const REPOSITORY: &str = "catninth/gitcat";
 const CHECK_INTERVAL_MINUTES: u64 = 360;
 const FIRST_CHECK_DELAY: Duration = Duration::from_secs(4);
 

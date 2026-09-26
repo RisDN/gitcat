@@ -118,7 +118,7 @@ The native integration in `apps/desktop/src-tauri/src/updater.rs` uses
 `Cargo.toml` and `Cargo.lock`. No sibling checkout is required. Windows NSIS and
 Linux AppImage, `.deb`, and `.rpm` packages use the stable release channel.
 
-- Repository: `RisDN/gitcat`. `CHECK_INTERVAL_MINUTES` is 360, with a four-second first-check delay. Change these consumer constants to configure the source and schedule.
+- Repository: `catninth/gitcat`. `CHECK_INTERVAL_MINUTES` is 360, with a four-second first-check delay. Change these consumer constants to configure the source and schedule.
 - The library reads the latest stable GitHub release and its Markdown body. It downloads `latest.json` from that exact release tag when the user requests installation, so a later release cannot change the selected version mid-install.
 - Update payloads are minisign-signed; the public key lives in `tauri.conf.json` under `plugins.updater.pubkey`. The private key and its passphrase are the `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository secrets. The passphrase must not be empty: an empty value is not a settable environment variable on Windows, so the Tauri CLI would fall back to an interactive prompt and the build would hang.
 - `bundle.createUpdaterArtifacts` enables signed updater artifacts. The release workflow explicitly signs any Linux package the bundler leaves unsigned. The manifest includes package-specific Linux targets and the legacy `linux-x86_64` AppImage target.
